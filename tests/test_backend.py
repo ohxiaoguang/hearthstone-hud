@@ -1,0 +1,38 @@
+"""Exercise Decky lifecycle against an isolated fake Decky module, not a fake HUD."""
+import asyncio
+import importlib.util
+import sys
+import tempfile
+import types
+import unittest
+from pathlib import Path
+
+class BackendTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.tmp=tempfile.TemporaryDirectory()
+        base=Path(self.tmp.name)
+        self.old=sys.modules.get('decky')
+        sys.modules['decky']=types.SimpleNamespace(DECKY_PLUGIN_SETTINGS_DIR=base/'settings',DECKY_PLUGIN_RUNTIME_DIR=base/'runtime')
+        spec=importlib.util.spec_from_file_location('hud_backend',Path(__file__).resolve().parents[1]/'main.py')
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        self.plugin=module.Plugin();await self.plugin._main()
+    async def asyncTearDown(self):
+        await self.plugin._unload()
+        if self.old is None:sys.modules.pop('decky',None)
+        else:sys.modules['decky']=self.old
+        self.tmp.cleanup()
+    async def test_settings_validation_and_visibility(self):
+        with self.assertRaises(ValueError):await self.plugin.configure({'scale':float('nan')})
+        with self.assertRaises(ValueError):await self.plugin.configure({'opacity':8})
+        with self.assertRaises(ValueError):await self.plugin.configure({'visible':'yes'})
+        await self.plugin.configure({'visible':False,'game_dir':self.tmp.name})
+        await asyncio.sleep(.3)
+        state=(self.plugin.runtime/'state.json').read_text()
+        self.assertIn('"visible": false',state)
+        self.assertFalse((await self.plugin.status())['running'])
+    async def test_no_missing_binary_launch(self):
+        with self.assertRaises(RuntimeError):await self.plugin.start_hud()
+        self.assertFalse((await self.plugin.status())['running'])
+    async def test_stop_idempotent(self):
+        await self.plugin.stop_hud();await self.plugin.stop_hud()
+        self.assertFalse((await self.plugin.status())['running'])

@@ -1,0 +1,55 @@
+# Dependencies and generated build output
+node_modules/
+dist/
+build/
+release/
+.cache/
+.pytest_cache/
+.mypy_cache/
+__pycache__/
+*.py[cod]
+*.tsbuildinfo
+CMakeFiles/
+CMakeCache.txt
+cmake-build-*/
+bin/*
+!bin/.gitkeep
+*.elf
+*.o
+*.a
+*.so
+*.so.*
+
+# Runtime, diagnostic output and private local configuration
+*.log
+logs/
+Logs/
+diagnostic.json
+state.json
+settings.json
+runtime/
+local/
+config.local.*
+*.local.json
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Personal recordings and test data (synthetic tests stay tracked)
+private/
+personal-test-data/
+tests/local/
+tests/private/
+
+# Temporary archives and editor/OS files
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.tmp
+*.swp
+.DS_Store
+.idea/
+.vscode/
