@@ -11,7 +11,7 @@ tmp = out.with_suffix('.zip.tmp')
 # A failed attempt must not leave a stale or partially written install ZIP.
 out.unlink(missing_ok=True)
 tmp.unlink(missing_ok=True)
-required = ['plugin.json','package.json','main.py','dist/index.js','bin/hearthstone-hud-renderer','assets/fonts/NotoSansCJKsc-Regular.otf','assets/test.png','LICENSE','licenses/Noto-OFL.txt','engine/__init__.py','engine/io.py','engine/power.py']
+required = ['plugin.json','package.json','main.py','dist/index.js','bin/hearthstone-hud-renderer','assets/fonts/NotoSansCJKsc-Regular.otf','assets/test.png','LICENSE','licenses/Noto-OFL.txt','engine/__init__.py','engine/io.py','engine/power.py','engine/tracker.py','engine/discovery.py','engine/cards.py','engine/deckstring.py','scripts/diagnose-logs.py']
 for name in required:
     if not (root/name).is_file():
         raise SystemExit('缺少发布文件：'+name)
@@ -19,7 +19,7 @@ header = binary.read_bytes()[:20]
 if len(header) < 20 or header[:6] != b'\x7fELF\x02\x01' or struct.unpack('<H',header[18:20])[0] != 62:
     raise SystemExit('拒绝打包：渲染器必须是 Linux x86_64 ELF')
 out.parent.mkdir(exist_ok=True)
-paths = [root/name for name in ['main.py','plugin.json','package.json','LICENSE','README.md']]
+paths = [root/name for name in ['main.py','plugin.json','package.json','LICENSE','README.md','scripts/diagnose-logs.py']]
 for folder in ['engine','dist','bin','assets','licenses','docs']:
     paths += [p for p in (root/folder).rglob('*') if p.is_file() and '__pycache__' not in str(p) and p.name != '.gitkeep']
 with zipfile.ZipFile(tmp,'w',zipfile.ZIP_DEFLATED) as z:

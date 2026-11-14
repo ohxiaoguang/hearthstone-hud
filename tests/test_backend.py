@@ -36,3 +36,21 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
     async def test_stop_idempotent(self):
         await self.plugin.stop_hud();await self.plugin.stop_hud()
         self.assertFalse((await self.plugin.status())['running'])
+
+    async def test_live_nested_log_to_atomic_hud_state_and_truncation(self):
+        import json
+        game=Path(self.tmp.name)/'game'
+        session=game/'Logs/nested/session';session.mkdir(parents=True)
+        power=session/'Power.log'
+        power.write_text('D 00:01:00.0000000 GameState.DebugPrintPower() - CREATE_GAME\n')
+        await self.plugin.configure({'game_dir':str(game)})
+        await asyncio.sleep(.6)
+        self.assertIsNotNone(self.plugin.parser.game, await self.plugin.status())
+        state=json.loads((self.plugin.runtime/'state.json').read_text())
+        self.assertEqual(state['schema'],2)
+        self.assertEqual(state['tracking']['status'],'identifying')
+        self.assertEqual(self.plugin.discovery['accepted'],1)
+        power.write_text('D 00:01:01.0000000 GameState.DebugPrintPower() - CREATE_GAME\n')
+        await asyncio.sleep(.4)
+        self.assertEqual(self.plugin.tail.generation,2)
+        self.assertEqual(self.plugin.parser.accepted,1)
