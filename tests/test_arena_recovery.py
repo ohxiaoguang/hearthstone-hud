@@ -21,9 +21,12 @@ class RecoveryTests(unittest.TestCase):
 
     def snapshot(self,cards,mode='DRAFTING',identity='first'):
         state=DraftState(mode,'CARD',False,tuple(DraftChoice('CARD_'+c) for c in 'ABC'),'42','HERO_08',tuple('CARD_'+c for c in cards))
+        # The snapshot is read at "now" in this harness: at or after every log
+        # line fed so far, which is what the anchor compares against.
+        wall=max(time.time(),self.ts.timestamp())
         for _ in range(2):
             self.t+=.01
-            self.recovery.observe(self.arena,state,dict(pid=100,process_instance=identity,observed_at=self.t))
+            self.recovery.observe(self.arena,state,dict(pid=100,process_instance=identity,observed_at=self.t,observed_wall=wall))
         return self.view()
 
     def pick(self,cid):
@@ -261,3 +264,112 @@ class MidJoinTests(unittest.TestCase):
         self.assertEqual(view['count'],4);self.assertEqual(len(view['picks']),1)
         self.assertEqual(len(view['history_picks']),3)
 
+
+class AnchorBoundaryTests(unittest.TestCase):
+    """Ordering is decided by the snapshot read time, not by log arrival order."""
+
+    T1=1700000000.0   # the stable memory snapshot is read here
+    T2=1700000060.0   # a later pick
+    T3=1700000120.0   # one more later pick
+
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
+        self.cards=Cards(self.tmp.name)
+        self.cards.install([dict(id='CARD_'+c,dbfId=i+1,name=c,type='MINION') for i,c in enumerate('ABCD')])
+        self.arena=Arena(self.cards);self.arena.attach_memory_deck('42','HERO_08','DRAFTING')
+        self.recovery=ArenaRecovery(clock=lambda:self.T1)
+        self.t=time.monotonic()
+
+    def observe(self,deck,wall,count=2,**extra):
+        state=DraftState('DRAFTING','CARD',False,tuple(DraftChoice('CARD_'+c) for c in 'ABC'),'42','HERO_08',
+                         tuple('CARD_'+c for c in deck),**extra)
+        for _ in range(count):
+            self.t+=.5
+            self.recovery.observe(self.arena,state,dict(pid=100,process_instance='same',observed_at=self.t,observed_wall=wall))
+
+    def feed(self,when,cid):
+        self.arena.feed(datetime.fromtimestamp(when),'Client chooses: card (CARD_'+cid+')')
+
+    def view(self):return self.recovery.merge(self.arena,self.arena.view())
+
+    def counts(self,view):
+        return (Counter(r['id'] for r in view['history_picks']),Counter(r['id'] for r in view['picks']))
+
+    def test_a_pick_logged_after_the_snapshot_is_counted_separately(self):
+        self.observe(('A',),self.T1)
+        self.feed(self.T2,'A')
+        view=self.view()
+        self.assertEqual(view['count'],2)
+        history,picks=self.counts(view)
+        self.assertEqual((history,picks),(Counter({'CARD_A':1}),Counter({'CARD_A':1})))
+        self.assertEqual(view['recovery_source'],'memory_and_logs')
+
+    def test_anchor_is_the_snapshot_time_not_a_log_time(self):
+        self.observe(('A',),self.T1)
+        self.feed(self.T2,'A');self.view()
+        self.assertEqual(self.recovery.anchor,self.T1)   # merging must not move it
+        self.feed(self.T1-30,'A');self.view()            # a late, older line must not either
+        self.assertEqual(self.recovery.anchor,self.T1)
+
+    def test_b_late_log_of_a_pre_snapshot_pick_covers_history_copy(self):
+        self.observe(('A',),self.T2)
+        self.feed(self.T1,'A')  # written at T1, delivered only after the snapshot
+        view=self.view()
+        self.assertEqual(view['count'],1)
+        history,picks=self.counts(view)
+        self.assertEqual((history,picks),(Counter(),Counter({'CARD_A':1})))
+        self.assertEqual(self.recovery.status()['recovered'],0)
+
+    def test_c_different_card_after_snapshot_keeps_both(self):
+        self.observe(('A',),self.T1)
+        self.feed(self.T2,'B')
+        view=self.view()
+        self.assertEqual(view['count'],2)
+        history,picks=self.counts(view)
+        self.assertEqual((history,picks),(Counter({'CARD_A':1}),Counter({'CARD_B':1})))
+
+    def test_d_two_repeated_picks_after_the_snapshot_are_both_counted(self):
+        self.observe(('A',),self.T1)
+        self.feed(self.T2,'A');self.assertEqual(self.view()['count'],2)
+        self.feed(self.T3,'A')
+        view=self.view()
+        self.assertEqual(view['count'],3)
+        history,picks=self.counts(view)
+        self.assertEqual((history,picks),(Counter({'CARD_A':1}),Counter({'CARD_A':2})))
+
+    def test_e_repeated_picks_are_not_absorbed_by_memory_growth(self):
+        self.observe(('A',),self.T1)
+        self.feed(self.T2,'A');self.view()
+        self.observe(('A','A'),self.T2+1)   # memory reflects only the first pick
+        self.feed(self.T3,'A')
+        view=self.view()
+        self.assertEqual(view['count'],3)
+        history,picks=self.counts(view)
+        self.assertEqual((history,picks),(Counter({'CARD_A':1}),Counter({'CARD_A':2})))
+
+    def test_record_without_timestamp_is_counted_and_flagged_not_guessed(self):
+        self.observe(('A',),self.T1)
+        self.arena.manual[(self.arena.session,'42','draft:42',1)]=dict(card_id='CARD_A',confirmed_at='')
+        view=self.view()
+        self.assertEqual(view['count'],2)                  # never silently swallowed
+        history,picks=self.counts(view)
+        self.assertEqual((history,picks),(Counter({'CARD_A':1}),Counter({'CARD_A':1})))
+        self.assertFalse(view['count_exact'])              # still marked uncertain
+        status=self.recovery.status()
+        self.assertEqual(status['untimed'],1)
+        self.assertIn('时间戳',view['recovery_note'])
+
+    def test_merge_without_a_snapshot_is_not_a_recovery(self):
+        view=self.view()
+        status=self.recovery.status()
+        self.assertTrue(status['merge_executed']);self.assertFalse(status['executed'])
+        self.assertFalse(status['snapshot']);self.assertEqual(status['recovered'],0)
+        self.assertEqual(view['history_picks'],[]);self.assertEqual(view['recovery_source'],'logs')
+
+    def test_exact_deck_reports_no_recovery(self):
+        self.observe(('A',),self.T1)
+        self.arena.exact_dbf={1:1};self.arena.exact_phase=self.arena.phase
+        view=self.view()
+        status=self.recovery.status()
+        self.assertTrue(view['exact']);self.assertFalse(status['executed'])
+        self.assertEqual(status['reason'],'exact_deck');self.assertEqual(status['recovered'],0)

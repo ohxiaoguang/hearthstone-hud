@@ -24,16 +24,20 @@ class MemoryWatch:
         try:
             reader=self.factory(self.stop_event)
             while not self.stop_event.is_set():
-                started=time.time()
                 try:state,diag=reader.poll()
                 except Exception as exc:
                     reader.close();state=None;diag=dict(code='read_error',status='内存读取失败',pid=None,error=str(exc)[:300])
                 if self.stop_event.is_set():break
                 now=time.monotonic()
+                # The reader stamps the wall clock after its last consistency
+                # check, so the recovery anchor describes the snapshot itself and
+                # not the start of the poll.
+                wall=diag.get('observed_wall')
                 with self.lock:
                     if (diag.get('pid'),diag.get('process_instance'))!=(self.diagnostic.get('pid'),self.diagnostic.get('process_instance')) or diag.get('code') in ('not_running','incompatible','permission_denied','mono_missing'):
                         self.generation+=1
-                    self.state=state;self.diagnostic=dict(diag);self.updated=now;self.updated_wall=started
+                    self.state=state;self.diagnostic=dict(diag);self.updated=now
+                    self.updated_wall=wall if isinstance(wall,(int,float)) and wall>0 else time.time()
                     key=(diag.get('code'),diag.get('error'))
                     if diag.get('error'):
                         if key!=self.last_error_key or now-self.last_error_time>=30:

@@ -4,6 +4,7 @@
 
 - 修复“候选识别成功、Association=matched，但 Recovered History 为 0”的路径：历史恢复此前被 Arena.log 的追平状态门控。日志未追平、文件陈旧或本轮没有新日志时，只读内存快照仍会按两次一致读取建立基线，日志随后到达只补差额（迟到的旧记录按时间戳并入历史，不重复计数）。
 - 内存牌组读取不再静默失败：`m_draftDeck` 是否存在、`m_slots` 槽位数量、`m_count` 解析（逐版本复制列表或单值）、成功解析的卡牌份数都会写入诊断；槽位异常只放弃牌组，不影响候选识别，也不猜测卡牌。
+- 一次选牌属于“快照之前”还是“之后”，只看日志事件时间与稳定快照读取时刻的比较：早于/等于快照的迟到日志并入历史不重复计数，晚于快照的按新选牌计入（重复 Card ID 逐次计），缺时间戳的不猜测、单独计数并标记待确认。
 - 每个提前返回都有原因码：`no_state / mode / slot / no_deck / no_deck_id / deck_empty / deck_overflow / deck_invalid / id_mismatch / waiting_second_read / exact_deck / log_rewind / recovered`，与中文说明一起显示在“复制诊断 → Arena Recovery”。
 - 手工补录被日志确认（同轮同卡、来源变化）不再清空已恢复历史；重选、ID 冲突、日志重写仍按原规则重新核对。
 - 详见 [修复说明与 SteamOS 验收步骤](docs/V0.5.1_ARENA_RECOVERY_FIX.md)。

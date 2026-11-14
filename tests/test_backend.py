@@ -141,16 +141,23 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
             def poll(self):return DraftState('DRAFTING','CARD',False,tuple(DraftChoice('CARD_'+c) for c in 'ABC'),'42','HERO_08',tuple(selected)),dict(code='card_selection',status='mock',pid=100,process_instance='same',error='')
             def close(self):pass
         self.plugin.memory_watch=MemoryWatch(lambda stop:Reader(),normal=.01)
-        root=Path(self.tmp.name)/'game';session=root/'Logs/session';session.mkdir(parents=True)
+        # A pick is ordered against the memory snapshot by its own log time, so
+        # the fixture needs real session times: the first line predates the
+        # snapshot, the second one is written "now", after it.
+        from datetime import datetime,timedelta
+        now=datetime.now();midnight=now.replace(hour=0,minute=0,second=0,microsecond=0)
+        earlier=max(midnight,now-timedelta(minutes=5)).strftime('%H:%M:%S')
+        current=(now+timedelta(seconds=1)).strftime('%H:%M:%S')
+        root=Path(self.tmp.name)/'game';session=root/'Logs'/f'Hearthstone_{now.strftime("%Y_%m_%d_%H_%M_%S")}';session.mkdir(parents=True)
         (session/'Power.log').write_text('')
-        arena=session/'Arena.log';arena.write_text('D 12:00:01.0000000 Client chooses: card (CARD_A)\n')
+        arena=session/'Arena.log';arena.write_text('D '+earlier+'.0000000 Client chooses: card (CARD_A)\n')
         await self.plugin.configure({'arena':True,'arena_memory':True,'game_dir':str(root),'visible':False})
         for _ in range(100):
             view=self.plugin._arena_view()
             if view['count']==3 and len(view.get('history_picks',[]))==2:break
             await asyncio.sleep(.02)
         self.assertEqual(view['count'],3);self.assertEqual(len(view['picks']),1)
-        with arena.open('a') as f:f.write('D 12:00:02.0000000 Client chooses: card (CARD_A)\n')
+        with arena.open('a') as f:f.write('D '+current+'.0000000 Client chooses: card (CARD_A)\n')
         for _ in range(100):
             if self.plugin._arena_view()['count']==4:break
             await asyncio.sleep(.02)

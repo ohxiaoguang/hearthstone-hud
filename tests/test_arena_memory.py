@@ -48,8 +48,8 @@ class MonoTests(unittest.TestCase):
     def test_scalar_deck_copy_count_is_accepted_and_reported(self):
         r=reader(hearthstone_heap(slots=[('CARD_A',2),('CARD_B',1)],count_field=m.T_I4));state,diag=r.poll()
         self.assertEqual(state.deck,('CARD_A','CARD_A','CARD_B'))
-        self.assertEqual(state.deck_reason,'int_count');self.assertEqual(state.deck_slots,2)
-        self.assertEqual(diag['deck_reason'],'int_count');r.close()
+        self.assertEqual(state.deck_reason,'');self.assertEqual(state.deck_note,'int_count')
+        self.assertEqual(state.deck_slots,2);self.assertEqual(diag['deck_note'],'int_count');r.close()
 
     def test_empty_deck_is_published_with_a_reason_not_a_failure(self):
         r=reader(hearthstone_heap(slots=[('CARD_A',[0,0])]));state,diag=r.poll()
@@ -78,6 +78,92 @@ class MonoTests(unittest.TestCase):
         offset,kind,_=h.layouts[klass][0]['m_slots'];h._store(deck.addr+offset,kind,0)
         state=r.draft_state()
         self.assertEqual((state.deck,state.deck_reason),((),'no_slots_null'));r.close()
+
+    def test_missing_slot_list_field_is_reported(self):
+        r=reader(hearthstone_heap(deck_slots='missing'));state,diag=r.poll()
+        self.assertEqual(diag['code'],'card_selection');self.assertEqual(len(state.choices),3)
+        self.assertEqual((state.deck,state.deck_reason,state.deck_slots),((),'no_slots_field',0));r.close()
+
+    def test_broken_slot_container_keeps_candidates(self):
+        h=hearthstone_heap();r=reader(h);self.assertTrue(r.connect())
+        slots=r._manager()['m_undergroundDraftDeck']['m_slots']
+        offset,kind,_=h.layouts[slots.klass][0]['_size'];h._store(slots.addr+offset,kind,9999)
+        state,diag=r.poll()
+        self.assertEqual(diag['code'],'card_selection');self.assertEqual(len(state.choices),3)
+        self.assertEqual((state.deck,state.deck_reason),((),'slot_layout'));r.close()
+
+    def test_slot_without_card_id_field_is_reported(self):
+        r=reader(hearthstone_heap(slot_fields=('m_count',)));state,diag=r.poll()
+        self.assertEqual(diag['code'],'card_selection');self.assertEqual(len(state.choices),3)
+        self.assertEqual((state.deck,state.deck_reason),((),'no_card_id_field'));r.close()
+
+    def test_slot_with_null_card_id_is_reported(self):
+        r=reader(hearthstone_heap(slots=[(None,[1])]));state,diag=r.poll()
+        self.assertEqual((state.deck,state.deck_reason,state.deck_slots),((),'slot_without_card_id',1))
+        self.assertEqual(len(state.choices),3);r.close()
+
+    def test_slot_without_count_field_is_reported(self):
+        r=reader(hearthstone_heap(slot_fields=('m_cardId',)));state,diag=r.poll()
+        self.assertEqual(diag['code'],'card_selection');self.assertEqual(len(state.choices),3)
+        self.assertEqual((state.deck,state.deck_reason),((),'no_count_field'));r.close()
+
+    def test_null_count_list_follows_upstream_zero_copies(self):
+        r=reader(hearthstone_heap(slots=[('CARD_A',None),('CARD_B',[2])]));state,diag=r.poll()
+        self.assertEqual(state.deck,('CARD_B','CARD_B'))
+        self.assertEqual((state.deck_reason,state.deck_note),('','null_count'))
+        self.assertEqual(diag['deck_note'],'null_count');r.close()
+
+    def test_all_null_counts_is_an_empty_deck_not_a_structure_error(self):
+        r=reader(hearthstone_heap(slots=[('CARD_A',None)]));state,diag=r.poll()
+        self.assertEqual((state.deck,state.deck_reason,state.deck_note),((),'empty','null_count'))
+        self.assertEqual(len(state.choices),3);r.close()
+
+    def test_invalid_card_in_later_slot_publishes_no_partial_deck(self):
+        r=reader(hearthstone_heap(slots=[('CARD_A',[2]),('bad id',[1])]));state,diag=r.poll()
+        self.assertEqual((state.deck,state.deck_reason),((),'slot_invalid_card_id'))
+        self.assertEqual(state.deck_slots,2);self.assertEqual(len(state.choices),3);r.close()
+
+    def test_verification_read_cannot_overwrite_published_deck_reason(self):
+        memory=reader(hearthstone_heap());real=memory._deck_cards;calls=[]
+        def tracking(deck):
+            calls.append(1)
+            cards=real(deck)
+            memory.deck_meta=dict(slots=2,reason='' if len(calls)==1 else 'slot_layout',notes=[])
+            return cards
+        with patch.object(memory,'_deck_cards',side_effect=tracking):
+            state,diag=memory.poll()
+        self.assertEqual(len(calls),2);self.assertEqual(state.deck,('CARD_A','CARD_A','CARD_B'))
+        self.assertEqual(state.deck_reason,'');self.assertEqual(diag['deck_reason'],'');memory.close()
+
+    def test_snapshot_time_is_stamped_after_the_last_verification_read(self):
+        h=hearthstone_heap();memory=reader(h);real=HearthstoneMemory._deck_cards
+        clock={'now':1000.0};marks=[]
+        def tracking(self,deck):
+            clock['now']+=10
+            marks.append(clock['now'])
+            return real(self,deck)
+        with patch('engine.arena_memory.wall_clock',lambda:clock['now']), patch.object(HearthstoneMemory,'_deck_cards',tracking):
+            state,diag=memory.poll()
+        self.assertEqual(len(marks),2)                       # published read + verification
+        self.assertEqual(diag['observed_wall'],clock['now'])
+        self.assertGreater(diag['observed_wall'],marks[0])   # not the first read
+        self.assertGreaterEqual(diag['observed_wall'],marks[1])
+        self.assertNotEqual(diag['observed_wall'],1000.0)    # not the start of the poll
+        self.assertEqual(memory.snapshot_wall,diag['observed_wall']);memory.close()
+
+    def test_memory_watch_takes_the_reader_snapshot_time(self):
+        class Reader:
+            def poll(self):return None,dict(code='reading',status='mock',pid=1,observed_wall=123.0,error='')
+            def close(self):pass
+        watch=MemoryWatch(lambda stop:Reader(),normal=.01)
+        watch.start()
+        try:
+            for _ in range(100):
+                if watch.snapshot()[1].get('observed_wall'):break
+                time.sleep(.01)
+            self.assertEqual(watch.snapshot()[1]['observed_wall'],123.0)
+        finally:
+            watch.request_stop();watch.join()
 
     def test_03_hero_selection_three_heroes_without_deck(self):
         h=hearthstone_heap(choices=('HERO_08','HERO_09','HERO_01'));r=reader(h);self.assertTrue(r.connect())

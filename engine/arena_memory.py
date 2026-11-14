@@ -2,6 +2,7 @@
 # Copyright (c) 2026 justfaked. MIT: licenses/hs-decktracker-linux-MIT.txt.
 """Bounded DraftDisplay/DraftManager snapshots; never confirms logged picks."""
 from dataclasses import dataclass, field
+import time
 from .mono_memory import T_CLASS,T_GENERICINST,T_OBJECT,T_VALUETYPE,T_I4,T_I8,T_BOOLEAN,Mono, Obj, Process, MemoryReadError, UnsupportedLayout, MonoMissing, NotReady, Cancelled, MissingField
 from .proton import discover_process
 from .images import valid_id
@@ -9,6 +10,16 @@ from .images import valid_id
 DRAFT_MODES=('INVALID','NO_ACTIVE_DRAFT','DRAFTING','ACTIVE_DRAFT_DECK','IN_REWARDS','REDRAFTING')
 SLOT_TYPES=('NONE','CARD','HERO','HERO_POWER')
 MAX_DECK_COPIES=40  # 30 picks plus room for a torn/duplicated read; never used as card data.
+# A deck read that produced no cards for one of these reasons must not be
+# mistaken for "the draft has no picks yet".
+DECK_UNREADABLE=('no_slots_field','no_slots_null','slot_layout','slot_without_card_id',
+                 'slot_invalid_card_id','no_card_id_field','no_count_field','count_layout',
+                 'count_range','deck_overflow','deck_id_invalid')
+
+
+def wall_clock():
+    """The single place the stable-snapshot timestamp comes from."""
+    return time.time()
 
 @dataclass(frozen=True)
 class DraftChoice:
@@ -32,6 +43,7 @@ class DraftState:
     deck_object: bool = True
     deck_slots: int = 0
     deck_reason: str = ''
+    deck_note: str = ''
 
 
 def card_id(value,empty=False):
@@ -50,6 +62,8 @@ class HearthstoneMemory:
         self.stop=stop;self.factory=process_factory or (lambda pid:Process(pid,stop=stop))
         self.finder=finder or discover_process;self.mono_factory=mono_factory
         self.process=None;self.mono=None;self.identity=None;self.pid=None;self.observed_identity=None
+        self.deck_meta=dict(slots=0,reason='no_deck_object',notes=[])
+        self.snapshot_wall=0
 
     def close(self):
         process,self.process=self.process,None
@@ -111,31 +125,49 @@ class HearthstoneMemory:
                 return manager
         raise NotReady('DraftManager service unavailable')
 
+    def _note(self,name):
+        notes=self.deck_meta.setdefault('notes',[])
+        if name not in notes:notes.append(name)
+
     def _deck_cards(self,deck):
         """Deck copies in slot order: List<m_slots>, each with m_cardId and m_count.
 
         m_count is the per-premium-variant copy list in the shipped layout
-        (upstream sums it); a plain int is accepted and reported. Nothing is
-        synthesised: an unreadable slot stops the read with a reason code.
+        (upstream sums it); a plain int is accepted and a null list means "no
+        copies from this slot", as upstream's ``if counts else []``. Nothing is
+        synthesised: any unreadable slot abandons the whole read with a reason,
+        so a partial deck can never be published.
         """
-        self.deck_meta=dict(slots=0,reason='')
+        self.deck_meta=dict(slots=0,reason='',notes=[])
         try:
             slots=deck['m_slots']
         except MissingField:
             self.deck_meta['reason']='no_slots_field';return []
         if slots is None:
             self.deck_meta['reason']='no_slots_null';return []
-        entries=slots.list_objects(100);self.deck_meta['slots']=len(entries)
-        cards=[];int_counts=0
+        try:
+            entries=slots.list_objects(100)
+        except UnsupportedLayout:
+            self.deck_meta['reason']='slot_layout';return []
+        self.deck_meta['slots']=len(entries)
+        cards=[]
         for entry in entries:
-            cid=entry.get('m_cardId')
+            try:
+                cid=entry['m_cardId']
+            except MissingField:
+                self.deck_meta['reason']='no_card_id_field';return []
             if cid is None:
                 self.deck_meta['reason']='slot_without_card_id';return []
             if not isinstance(cid,str) or not valid_id(cid):
                 self.deck_meta['reason']='slot_invalid_card_id';return []
-            counts=entry.get('m_count')
-            if counts is None:copies=[]
-            elif type(counts) is int:copies=[counts];int_counts+=1
+            try:
+                counts=entry['m_count']
+            except MissingField:
+                self.deck_meta['reason']='no_count_field';return []
+            if counts is None:
+                copies=[];self._note('null_count')
+            elif type(counts) is int:
+                copies=[counts];self._note('int_count')
             else:
                 try:copies=counts.list_ints(16)
                 except UnsupportedLayout:
@@ -146,8 +178,7 @@ class HearthstoneMemory:
             if len(cards)+total>MAX_DECK_COPIES:
                 self.deck_meta['reason']='deck_overflow';return []
             cards.extend([cid]*total)
-        if int_counts:self.deck_meta['reason']='int_count'
-        elif not cards:self.deck_meta['reason']='empty'
+        if not cards:self.deck_meta['reason']='empty'
         return cards
 
     def draft_state(self):
@@ -171,26 +202,48 @@ class HearthstoneMemory:
         losses=manager['m_undergroundLosses' if underground else 'm_losses']
         if type(wins) is not int or type(losses) is not int or not 0<=wins<=50 or not 0<=losses<=20:raise UnsupportedLayout('implausible arena record')
         deck=manager['m_undergroundDraftDeck' if underground else 'm_draftDeck']
-        deck_id='';hero='';cards=[];slots=0;reason='no_deck_object'
+        # The deck lives in its own object: a broken deck must not take the three
+        # candidates down with it. Only layout problems are contained here; a
+        # closed process, permission failure, cancellation or a low-level read
+        # error still propagates from the Mono reader.
+        deck_id='';hero='';cards=[];meta=dict(slots=0,reason='no_deck_object',notes=[]);number=None;deck_read=False
         if deck is not None:
-            number=deck.get('ID')
-            if type(number) is not int or not 0<=number<2**63:raise UnsupportedLayout('invalid deck ID')
-            deck_id=str(number) if number else '';hero=card_id(deck.get('<HeroCardID>k__BackingField'),True)
-            self.deck_meta=dict(slots=0,reason='')
-            cards=self._deck_cards(deck)
-            slots=self.deck_meta['slots'];reason=self.deck_meta['reason']
+            try:
+                number=deck.get('ID')
+                if type(number) is not int or not 0<=number<2**63:raise UnsupportedLayout('invalid deck ID')
+            except UnsupportedLayout:
+                deck_id='';hero='';cards=[];meta=dict(slots=0,reason='deck_id_invalid',notes=[])
+            else:
+                deck_id=str(number) if number else ''
+                try:hero=card_id(deck.get('<HeroCardID>k__BackingField'),True)
+                except UnsupportedLayout:hero=''
+                try:
+                    cards=self._deck_cards(deck);meta=self.deck_meta;deck_read=True
+                except UnsupportedLayout:
+                    cards=[];meta=dict(slots=0,reason='slot_layout',notes=[])
         # Re-read selection identity to reject concurrent mode/choice transitions.
         check_options=display['m_choices']
         if manager['m_undergroundActive']!=underground or display['m_currentMode']!=DRAFT_MODES.index(mode) or (check_options.addr if check_options else 0)!=(options.addr if options else 0) or manager[prefix+'SlotType']!=SLOT_TYPES.index(slot):
             raise NotReady('draft changed during snapshot')
         current_deck=manager['m_undergroundDraftDeck' if underground else 'm_draftDeck']
         if (current_deck.addr if current_deck else 0)!=(deck.addr if deck else 0):raise NotReady('arena deck changed during snapshot')
-        if deck is not None and (deck['ID']!=number or card_id(deck['<HeroCardID>k__BackingField'],True)!=hero):raise NotReady('arena identity changed during snapshot')
-        if deck is not None and self._deck_cards(deck)!=cards:raise NotReady('draft deck changed during snapshot')
+        if deck is not None and deck_read:
+            try:second_hero=card_id(deck.get('<HeroCardID>k__BackingField'),True)
+            except UnsupportedLayout:second_hero=hero
+            if deck.get('ID')!=number or second_hero!=hero:raise NotReady('arena identity changed during snapshot')
+            second=self._deck_cards(deck)
+            # The published read owns the diagnostics; the verification read
+            # must not replace its reason with its own.
+            self.deck_meta=meta
+            if second!=cards:raise NotReady('draft deck changed during snapshot')
         if options and choices:
             if [c['m_cardID'] for c in options.list_objects(3)]!=[c.card_id for c in choices]:raise NotReady('choices changed during snapshot')
+        # Everything above is verified, so this is the moment the snapshot is
+        # known to describe the game: a pick cannot be inside the deck and still
+        # be missing from `cards` after this point.
+        self.snapshot_wall=wall_clock()
         return DraftState(mode,slot,underground,tuple(choices),deck_id,hero,tuple(cards),wins,losses,
-                          deck is not None,slots,reason)
+                          deck is not None,meta['slots'],meta['reason'],','.join(meta.get('notes') or ()))
 
     def poll(self):
         try:
@@ -201,7 +254,8 @@ class HearthstoneMemory:
             message={'hero_selection':'英雄选择识别成功','card_selection':'卡牌选择识别成功','hero_power_selection':'英雄技能选择识别成功'}.get(code,'正在读取；当前无完整候选')
             return state,dict(code=code,status=message,pid=self.pid,error='',profile='Unity 6000.3 x64 / Assembly-CSharp',unity_version='.'.join(map(str,self.mono.version)),process_instance=str(self.identity),
                               deck_object=bool(state and state.deck_object),deck_slots=int(state.deck_slots) if state else 0,
-                              deck_parsed=len(state.deck) if state else 0,deck_reason=(state.deck_reason if state else ''))
+                              deck_parsed=len(state.deck) if state else 0,deck_reason=(state.deck_reason if state else ''),
+                              deck_note=(state.deck_note if state else ''),observed_wall=(self.snapshot_wall if state else 0))
         except Cancelled:
             self.close();return None,dict(code='disabled',status='内存读取未开启',pid=None,error='')
         except (OSError,MemoryReadError,UnicodeError,KeyError,TypeError,ValueError,AttributeError) as exc:
