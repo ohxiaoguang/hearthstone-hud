@@ -1,12 +1,13 @@
 # Hearthstone HUD
 
-## v0.5.0 修复：中途接入不再错过历史牌
+## v0.5.1：竞技场恢复修复（中途接入 / 时间边界 / 读取隔离）
 
 - 修复“候选识别成功、Association=matched，但 Recovered History 为 0”的路径：历史恢复此前被 Arena.log 的追平状态门控。日志未追平、文件陈旧或本轮没有新日志时，只读内存快照仍会按两次一致读取建立基线，日志随后到达只补差额（迟到的旧记录按时间戳并入历史，不重复计数）。
 - 内存牌组读取不再静默失败：`m_draftDeck` 是否存在、`m_slots` 槽位数量、`m_count` 解析（逐版本复制列表或单值）、成功解析的卡牌份数都会写入诊断；槽位异常只放弃牌组，不影响候选识别，也不猜测卡牌。
 - 内存读取会同时给出窗口下界（首个牌组读取开始）与上界（复读校验结束）。日志事件时间早于/等于下界 → 并入历史不重复计数；晚于上界 → 按新选牌计入（重复 Card ID 逐次计）；落在窗口内或没有时间戳 → 不猜，单独计数并标记 `Uncertain Picks`，此时 `count_exact` 为待确认。锚点不再使用“第二次读取之后”的时间，避免窗口内新选牌被当成历史。
 - 每个提前返回都有原因码：`no_state / mode / slot / no_deck / no_deck_id / deck_empty / deck_overflow / deck_invalid / id_mismatch / waiting_second_read / exact_deck / log_rewind / recovered`，与中文说明一起显示在“复制诊断 → Arena Recovery”。
 - 手工补录被日志确认（同轮同卡、来源变化）不再清空已恢复历史；重选、ID 冲突、日志重写仍按原规则重新核对。
+- 诊断新增 `Merge Executed` / `Recovery Executed` / `Snapshot Window` / `Uncertain Picks` / `Deck Reason`，`Recovery Executed` 只在真正建立快照并产出历史牌时为 yes。
 - 详见 [修复说明与 SteamOS 验收步骤](docs/V0.5.1_ARENA_RECOVERY_FIX.md)。
 
 ## v0.5.0：插件总开关与竞技场中途恢复
@@ -103,7 +104,7 @@ Linux 原生构建统一由 GitHub Actions 完成，本机不准备交叉编译�
 
 Decky 管理的 SteamOS 炉石游戏内记牌 HUD，目标设备 ROG Ally X。用户已确认 v0.1.x 的 Gamescope 外部 Overlay、中文、PNG、触控和 QAM 共存正常。v0.2.2 接入日志记牌；**新版真实记牌尚待 Ally X 实机验收，未用实机日志回放验证。**
 
-安装完整 Release ZIP，或将对应 Release 的 `hearthstone-hud-0.5.0.zip` 直链填入 Decky 的 Install Plugin from URL。设备不需要开发工具或额外窗口。源码根目录 engine/ 在 ZIP 中映射为 py_modules/engine/；Linux 渲染器位于 bin/，保留 0755 权限。
+安装完整 Release ZIP，或将对应 Release 的 `hearthstone-hud-0.5.1.zip` 直链填入 Decky 的 Install Plugin from URL。设备不需要开发工具或额外窗口。源码根目录 engine/ 在 ZIP 中映射为 py_modules/engine/；Linux 渲染器位于 bin/，保留 0755 权限。
 
 ## 使用
 
