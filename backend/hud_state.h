@@ -7,12 +7,22 @@ inline bool valid_arena_state(const nlohmann::json& a){
     for(const auto* k:{"visible","drafting","exact"})if(!a.contains(k)||!a[k].is_boolean())return false;
     for(const auto* k:{"mode","class_name"})if(!a.contains(k)||!a[k].is_string()||a[k].get_ref<const std::string&>().size()>256)return false;
     if(a.contains("count_exact")&&!a["count_exact"].is_boolean())return false;
+    if(a.contains("show_count")&&!a["show_count"].is_boolean())return false;
+    if(a.contains("stage")&&(!a["stage"].is_string() || (a["stage"]!="none" && a["stage"]!="hero_selection" && a["stage"]!="card_selection" && a["stage"]!="hero_power_selection" && a["stage"]!="drafting" && a["stage"]!="redrafting")))return false;
     if(!a.contains("count")||!a["count"].is_number_integer())return false;
     for(const auto* k:{"candidates","picks","redraft_picks"}){
         if(!a.contains(k)||!a[k].is_array()||a[k].size()>(std::string(k)=="candidates"?3:100))return false;
         for(const auto& r:a[k]){
             if(!r.is_object())return false;
             for(const auto* field:{"id","name","image","rating_label","tier"})if(!r.contains(field)||!r[field].is_string()||r[field].get_ref<const std::string&>().size()>4096)return false;
+            if(r.contains("hero_row")&&!r["hero_row"].is_boolean())return false;
+            if(r.contains("class_name")&&(!r["class_name"].is_string()||r["class_name"].get_ref<const std::string&>().size()>256))return false;
+            if(r.contains("hero_stats")&&!r["hero_stats"].is_null()){
+                const auto& stats=r["hero_stats"];
+                if(!stats.is_object()||!stats.contains("winrate")||!stats["winrate"].is_number()||!std::isfinite(stats["winrate"].get<double>())||stats["winrate"].get<double>()<0||stats["winrate"].get<double>()>1)return false;
+                for(const auto* key:{"games","rank","of"})if(!stats.contains(key)||!stats[key].is_number_integer()||stats[key].get<long long>()<1)return false;
+                if(stats["rank"].get<long long>()>stats["of"].get<long long>())return false;
+            }
             if(!r.contains("best")||!r["best"].is_boolean())return false;
             if(!r.contains("score")||(!r["score"].is_null()&&(!r["score"].is_number()||!std::isfinite(r["score"].get<double>()))))return false;
         }

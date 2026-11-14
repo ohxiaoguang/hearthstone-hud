@@ -140,3 +140,59 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
             if self.plugin.parser.game and self.plugin.parser.game.game_type=='GT_ARENA':break
             await asyncio.sleep(.05)
         self.assertEqual(self.plugin.arena.definition_for_game(self.plugin.parser.game.start),{1:30})
+
+    async def test_memory_default_off_opt_in_hero_without_logs_and_disable(self):
+        import json,threading
+        from engine.memory_watch import MemoryWatch
+        from engine.arena_memory import DraftState,DraftChoice
+        self.assertFalse(self.plugin.settings['arena_memory']);self.assertIsNone(self.plugin.memory_watch.thread)
+        closed=threading.Event()
+        class Reader:
+            def poll(self):return DraftState('DRAFTING','HERO',False,tuple(DraftChoice(c) for c in ('HERO_08','HERO_09','HERO_01'))),dict(code='hero_selection',status='mock hero',pid=100,error='')
+            def close(self):closed.set()
+        self.plugin.memory_watch=MemoryWatch(lambda stop:Reader(),normal=.01)
+        await self.plugin.configure({'arena_memory':True,'arena':True})
+        for _ in range(100):
+            if self.plugin.memory_watch.snapshot()[0]:break
+            await asyncio.sleep(.005)
+        self.plugin._publish();state=json.loads((self.plugin.runtime/'state.json').read_text())
+        self.assertFalse(self.plugin.arena_caught_up);self.assertTrue(state['arena_state']['visible']);self.assertEqual(state['arena_state']['stage'],'hero_selection')
+        self.assertEqual(self.plugin.arena.view()['count'],0);self.assertFalse(state['arena_state']['show_count'])
+        await self.plugin.configure({'arena_memory':False})
+        self.assertTrue(closed.is_set());self.assertIsNone(self.plugin.memory_watch.thread)
+        self.assertEqual((await self.plugin.status())['arena']['memory']['code'],'disabled')
+
+    async def test_memory_does_not_override_normal_match_or_block_event_loop(self):
+        import time,threading,json
+        from engine.memory_watch import MemoryWatch
+        from engine.arena_memory import DraftState,DraftChoice
+        class Reader:
+            def __init__(self,stop):self.stop=stop
+            def poll(self):self.stop.wait(.2);return DraftState('DRAFTING','CARD',False,tuple(DraftChoice(c) for c in ('CARD_A','CARD_B','CARD_C'))),dict(code='card_selection',status='mock cards',pid=100,error='')
+            def close(self):pass
+        self.plugin.memory_watch=MemoryWatch(lambda stop:Reader(stop),normal=.01)
+        await self.plugin.configure({'arena_memory':True})
+        start=time.monotonic();await asyncio.sleep(.01)
+        self.assertLess(time.monotonic()-start,.15)
+        for _ in range(100):
+            if self.plugin.memory_watch.snapshot()[0]:break
+            await asyncio.sleep(.005)
+        from test_tracking import TrackingTests
+        fixture=TrackingTests();fixture.setUp()
+        try:
+            self.plugin.parser=fixture.p;self.plugin.cards=fixture.cards
+            self.plugin.active=True;self.plugin.caught_up=True;self.plugin.settings['arena']=True
+            before=fixture.p.view(fixture.cards)
+            self.plugin._publish();state=json.loads((self.plugin.runtime/'state.json').read_text())
+            self.assertEqual(state['tracking']['status'],'playing');self.assertFalse(state['arena_state']['visible'])
+            self.assertEqual(fixture.p.view(fixture.cards)['own'],before['own'])
+            self.assertEqual(fixture.p.initial_dbf,{1001:2})
+            await self.plugin.configure({'arena_memory':False})
+        finally:fixture.doCleanups()
+
+    async def test_invalid_saved_memory_flag_is_not_an_opt_in(self):
+        import json
+        await self.plugin._unload()
+        (self.plugin.settings_dir/'settings.json').write_text(json.dumps(dict(arena_memory='true')))
+        await self.plugin._main()
+        self.assertFalse(self.plugin.settings['arena_memory']);self.assertIsNone(self.plugin.memory_watch.thread)

@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { FaLayerGroup } from 'react-icons/fa';
 import { copyText } from './clipboard';
 import { ArenaEditor, type ArenaView } from './arena';
-type Settings = {game_dir:string;proton_prefix:string;log_dir:string;display:string;x:number;y:number;scale:number;opacity:number;visible:boolean;own_deck:boolean;opponent_deck:boolean;opponent_hand:boolean;arena:boolean;right_x:number;right_y:number;card_images:boolean;image_tls_verify:boolean;database_tls_verify:boolean;own_played:boolean;opponent_played:boolean;show_summary:boolean;panel_width:number;hide_exhausted:boolean;chinese_names:boolean};
+type Settings = {game_dir:string;proton_prefix:string;log_dir:string;display:string;x:number;y:number;scale:number;opacity:number;visible:boolean;own_deck:boolean;opponent_deck:boolean;opponent_hand:boolean;arena:boolean;arena_memory:boolean;right_x:number;right_y:number;card_images:boolean;image_tls_verify:boolean;database_tls_verify:boolean;own_played:boolean;opponent_played:boolean;show_summary:boolean;panel_width:number;hide_exhausted:boolean;chinese_names:boolean};
 type ImportResult = {found:number;imported:number;skipped:number;format_errors:number;invalid_ids:number;other_failures:number;errors:string[]};
 type Status = {arena:ArenaView;arena_log_status:string;arena_config:{enabled?:boolean;restart_required?:boolean};storage:{runtime:string;database:string;images:string;manual_images:string;retained_on_uninstall:boolean};version:string;settings:Settings;running:boolean;error:string;log_path:string;parse_errors:number;gamescope_status:string;
   cards:{count:number;state:string;download_state:string;source:string;updated:number;error:string;image_error:string;images_pending:number;image_cache:{manual:number;automatic:number};image_batch:{status:string;total:number;success:number;failed:number;skipped:number};image_import:ImportResult|null};
@@ -72,6 +72,12 @@ function Content(){
  <ButtonItem disabled={data.decks_config.enabled} onClick={()=>run(enableDecks)}>备份并启用 Decks 日志</ButtonItem>
  </Fold>
  <Fold title="竞技场选牌与静态评分">
+ <ToggleField label="只读内存自动识别候选（默认关闭）" checked={data.settings.arena_memory} onChange={arena_memory=>change({arena_memory})}/>
+ <div style={box}>仅以当前用户权限只读访问游戏内存；不会写入、注入或修改系统权限。关闭后停止轮询并释放连接。自动候选仍只是预览，不等于实际选择。</div>
+ <Datum label="内存状态">{data.arena.memory?.status||'内存读取未开启'}</Datum>
+ <Datum label="内存进程">{data.arena.memory?.found?`PID ${data.arena.memory.pid}`:'未发现／尚未读取'}</Datum>
+ <Datum label="识别阶段">{data.arena.stage||'none'} · 候选 {data.arena.memory?.candidate_count??0}</Datum>
+ {data.arena.memory?.last_error&&<div role="alert">最后读取错误：{data.arena.memory.last_error}</div>}
  <ToggleField label="显示竞技场 HUD（仅选牌时）" checked={data.settings.arena} onChange={arena=>change({arena})}/>
  <Datum label="Arena.log">{data.arena_log_status}</Datum><Datum label="Arena 配置">{data.arena_config.enabled?'已启用':'未启用'}</Datum>
  <ButtonItem disabled={data.arena_config.enabled} onClick={()=>run(enableArena)}>备份并启用 Arena 日志</ButtonItem>

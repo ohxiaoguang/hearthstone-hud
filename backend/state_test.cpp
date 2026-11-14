@@ -42,5 +42,10 @@ int main(){
     bad=good;bad["arena_state"]["visible"]="yes";if(valid_hud_state(bad))return 25;
     arena["picks"].push_back(rated);arena["redraft_picks"].push_back(rated);
     if(arena_rows(arena,false).size()!=4 || arena["count"]!=0)return 26; // Display never mutates counts.
+    arena["stage"]="hero_selection";arena["show_count"]=false;good["arena_state"]=arena;
+    if(!valid_hud_state(good))return 27;
+    bad=good;bad["arena_state"]["stage"]="invented";if(valid_hud_state(bad))return 28;
+    bad=good;bad["arena_state"]["candidates"][0]["hero_stats"]={{"winrate",2},{"games",10},{"rank",1},{"of",11}};if(valid_hud_state(bad))return 29;
+    bad=good;bad["arena_state"]["show_count"]="no";if(valid_hud_state(bad))return 30;
     std::cout<<"Native HUD state validation: passed\n";
 }

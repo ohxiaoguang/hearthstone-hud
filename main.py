@@ -14,6 +14,9 @@ from engine.io import Tail, atomic_json
 from engine.tracker import Tracker, DeckLog, LINE
 from engine.cards import Cards
 from engine.arena import Arena
+from engine.memory_watch import MemoryWatch
+from engine.arena_class_ratings import ClassRatings
+from engine.arena_memory_view import ArenaPreview
 from engine.discovery import discover, gamescope_status, LogClock
 from engine.proton import discover_process
 from engine.diagnostics import format_diagnostics
@@ -24,7 +27,7 @@ VERSION = json.loads((ROOT/'package.json').read_text())['version']
 DEFAULTS = dict(game_dir='/home/deck/Games/battlegame/Hearthstone',
     proton_prefix='',
     log_dir='', display=':0', x=40, y=80, scale=1.0, opacity=0.85,
-    visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=False, right_x=1540, right_y=80, card_images=True, chinese_names=True, image_tls_verify=False, database_tls_verify=False, own_played=True, opponent_played=True, show_summary=True, panel_width=320, hide_exhausted=False)
+    visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=False, right_x=1540, right_y=80, card_images=True, chinese_names=True, image_tls_verify=False, database_tls_verify=False, own_played=True, opponent_played=True, show_summary=True, panel_width=320, hide_exhausted=False, arena_memory=False)
 
 
 class Plugin:
@@ -39,9 +42,12 @@ class Plugin:
             self.settings.update(json.loads((self.settings_dir / 'settings.json').read_text()))
         except (OSError, ValueError):
             pass
+        # Only an explicit boolean opt-in can enable process memory access.
+        if type(self.settings.get('arena_memory')) is not bool:self.settings['arena_memory']=False
         self.proc = None
         self.lock = asyncio.Lock()
         self.config_lock = asyncio.Lock()
+        self.memory_lock = asyncio.Lock()
         self.error = ''
         self.recent_errors = deque(maxlen=10)
         self.decks = DeckLog()
@@ -56,6 +62,9 @@ class Plugin:
         except (OSError,ValueError):manual=[]
         self.arena = Arena(self.cards,manual=manual if isinstance(manual,list) else [])
         self.parser.arena = self.arena
+        self.memory_watch = MemoryWatch()
+        self.memory_identity = None
+        self.arena_preview = ArenaPreview(ClassRatings())
         self.arena_tail = Tail();self.arena_clock = None;self.side_session = None
         self.arena_caught_up = False;self.arena_config = {};self.arena_receipt = {}
         try:
@@ -85,6 +94,7 @@ class Plugin:
         self.log_path = None
         self.parse_errors = 0
         self.task = asyncio.create_task(self._loop())
+        if self.settings['arena_memory']:self.memory_watch.start()
 
     async def configure(self, values: dict):
         checked = {}
@@ -101,7 +111,14 @@ class Plugin:
             elif type(value) is not expected:
                 raise ValueError('配置类型不正确')
             checked[key] = value
-        self.settings.update(checked)
+        async with self.memory_lock:
+            if 'arena_memory' in checked:
+                if checked['arena_memory']!=self.settings['arena_memory']:self.arena.clear_offer()
+                if checked['arena_memory']:self.memory_watch.start()
+                else:
+                    self.memory_watch.request_stop()
+                    await asyncio.to_thread(self.memory_watch.join)
+            self.settings.update(checked)
         if 'database_tls_verify' in checked:
             self.cards.database_verify_tls = checked['database_tls_verify']
         if 'image_tls_verify' in checked:
@@ -137,8 +154,23 @@ class Plugin:
         self.last_scan=float('-inf')
         return await self.status()
 
+    def _arena_view(self):
+        state,diagnostic=self.memory_watch.snapshot()
+        if diagnostic.get('enabled'):
+            identity=(diagnostic.get('pid'),diagnostic.get('process_instance'))
+            if diagnostic.get('code')=='not_running':
+                if self.memory_identity is not None:self.arena.clear_offer()
+                self.memory_identity=None
+            elif identity[0] is not None:
+                if self.memory_identity is not None and identity!=self.memory_identity:self.arena.clear_offer()
+                self.memory_identity=identity
+        diagnostic['candidate_count']=len(state.choices) if state else 0
+        diagnostic['stage']=state.slot if state else ''
+        diagnostic['found']=diagnostic.get('pid') is not None and diagnostic.get('code')!='not_running'
+        return self.arena_preview.view(self.arena,state,diagnostic)
+
     def _arena_ui(self):
-        view=self.arena.view()
+        view=self._arena_view()
         # QAM cannot read a native cache path. Only the three validated tile PNGs
         # are exposed as data URIs; IPC to the renderer keeps native paths only.
         for row in view['candidates']:
@@ -275,8 +307,9 @@ class Plugin:
         tracking = self.parser.view(self.cards) if self.active and self.caught_up else dict(status='waiting',turn=0,own=[],opponent=[],own_label='等待活动日志',opponent_hand=None,opponent_deck=None)
         if self.settings['card_images']:
             self.cards.request_images(r['id'] for key in ('own','own_added','own_played','opponent_seen','opponent_played') for r in tracking.get(key,[]))
-        arena=self.arena.view()
-        arena['visible']=bool(self.settings['arena'] and self.arena_caught_up and arena['drafting'] and tracking['status'] not in ('playing','identifying'))
+        arena=self._arena_view()
+        memory_offer=arena['source']=='memory' and len(arena['candidates'])==3
+        arena['visible']=bool(self.settings['arena'] and (memory_offer or (self.arena_caught_up and arena['drafting'])) and tracking['status']!='playing')
         if self.settings['card_images'] and arena['visible']:
             self.cards.request_images(r['id'] for key in ('picks','redraft_picks','candidates') for r in arena[key])
         atomic_json(self.runtime / 'state.json', dict(updated=time.time(), **self.settings,
@@ -385,6 +418,8 @@ class Plugin:
             await asyncio.sleep(.25)
 
     async def _unload(self):
+        self.memory_watch.request_stop()
+        await asyncio.to_thread(self.memory_watch.join)
         self.task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await self.task

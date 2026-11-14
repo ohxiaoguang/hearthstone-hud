@@ -90,8 +90,8 @@ static void panel(const char* id,const std::string& title,const json& rows,bool 
         if(event){detail="回合 "+number(row.value("turn",json()))+" · "+detail;if(row.value("returned",false))detail+=" · 回手";}
         else if(row.contains("origin_label"))detail="在库 · "+detail;
         const ImVec4 clip(pos.x+28*scale,pos.y,pos.x+width-count_width-2*scale,pos.y+row_height);
-        draw->AddText(ImGui::GetFont(),16*scale,{pos.x+3*scale,pos.y+6*scale},white,number(row.value("cost",json())).c_str());
-        draw->AddText(ImGui::GetFont(),16*scale,{pos.x+28*scale,pos.y+(detail.empty()?6:0)*scale},white,row.value(chinese?"name":"id","").c_str(),nullptr,0,&clip);
+        if(!row.value("hero_row",false))draw->AddText(ImGui::GetFont(),16*scale,{pos.x+3*scale,pos.y+6*scale},white,number(row.value("cost",json())).c_str());
+        draw->AddText(ImGui::GetFont(),16*scale,{pos.x+28*scale,pos.y+(detail.empty()?6:0)*scale},white,(row.value("hero_row",false)&&chinese?row.value("class_name",row.value("name","")):row.value(chinese?"name":"id","")).c_str(),nullptr,0,&clip);
         if(!detail.empty())draw->AddText(ImGui::GetFont(),10*scale,{pos.x+28*scale,pos.y+19*scale},white,detail.c_str(),nullptr,0,&clip);
         if(arena&&row.value("best",false))draw->AddRect(pos,{pos.x+width,pos.y+row_height},IM_COL32(255,215,90,255),0,0,2*scale);
         const auto label=arena?row.value("rating_label","暂无评分"):event?"#"+number(row.value("order",json())):card_count_label(row,deck);
@@ -163,10 +163,13 @@ int main(int argc,char** argv){
         if(state.contains("arena_state")&&state["arena_state"].value("visible",false)){
             const auto& arena=state["arena_state"];
             const std::string count=number(arena.value("count",json()))+"/30";
-            const std::string title="竞技场 · "+arena.value("class_name","")+" · "+count;
+            const auto stage=arena.value("stage","");
+            const bool hero=stage=="hero_selection",power=stage=="hero_power_selection";
+            const bool show_count=arena.value("show_count",true)&&!hero&&!power;
+            const std::string title=hero?"竞技场 · 英雄选择":power?"竞技场 · 英雄技能选择":"竞技场 · 卡牌选择"+(show_count?" · "+count:" · 等待日志确认");
             const float available=std::max(80.f,sh-ly-16*scale);
-            panel("arena-offer",title+(arena.value("count_exact",false)?"":"（份数待确认）"),arena_rows(arena,true),false,lx,ly,scale,opacity,state.value("card_images",true),state.value("chinese_names",true),textures,frames,width,std::min(available,230*scale));
-            panel("arena-picked",arena.value("mode","")=="REDRAFTING"?"重选中 · 旧牌组不追加":"已选牌 · "+count,arena_rows(arena,false),false,rx,ry,scale,opacity,state.value("card_images",true),state.value("chinese_names",true),textures,frames,width,std::max(80.f,sh-ry-16*scale));
+            panel("arena-offer",title+(show_count&&!arena.value("count_exact",false)?"（份数待确认）":""),arena_rows(arena,true),false,lx,ly,scale,opacity,state.value("card_images",true),state.value("chinese_names",true),textures,frames,width,std::min(available,230*scale));
+            if(show_count)panel("arena-picked",arena.value("mode","")=="REDRAFTING"?"重选中 · 旧牌组不追加":"已选牌 · "+count,arena_rows(arena,false),false,rx,ry,scale,opacity,state.value("card_images",true),state.value("chinese_names",true),textures,frames,width,std::max(80.f,sh-ry-16*scale));
         }else{
         if(state.value("show_summary",true)){
         ImGui::SetNextWindowPos({sw*.5f,8},ImGuiCond_Always,{.5f,0});ImGui::SetNextWindowBgAlpha(opacity);

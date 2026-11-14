@@ -1,6 +1,19 @@
 # Hearthstone HUD
 
-## v0.3.0：竞技场第一版（Pre-release）
+## v0.4.0：可选只读内存自动候选（Pre-release）
+
+新增默认关闭的 `arena_memory=false`。在 Decky 的竞技场分组显式开启“只读内存自动识别候选”，并开启“显示竞技场 HUD”后，后台独立线程按约 500ms 读取当前 Hearthstone 进程的只读快照；游戏不存在或失败时按 3 秒重试。关闭会停止线程、释放描述符、清理候选；日志记牌和手动录入继续保留。
+
+- 英雄选择无需等待 Arena.log 或竞技场 ID：显示三个英雄对应职业的中文名、静态胜率、场次、排名与推荐，不显示 0/30。
+- 卡牌选择自动预览三张卡、费用、现有评分/等级及包牌；同分同时推荐，缺失显示暂无评分。英雄技能单独标为技能阶段，不按卡牌或职业胜率打分。
+- 内存只负责当前阶段/候选/模式；**不把内存候选或内存牌组写进 Arena 的选择账本，不改 count**。实际选牌、顺序、最终 Decks 定义仍按日志/明确手动补录。正式职业冲突时保留日志，候选先独立预览，ID 匹配后才展示对应已选列表。
+- 普通竞技场和地下竞技场使用各自的 Firestone 职业统计静态文件 `engine/arena_class_ratings.json`，按职业累加 totalGames / totalsWins，再按胜率排名。运行时不下载职业统计；来源、抓取时间、上游更新时间、两种 SHA256 和校验信息均在文件与报告中。
+- 仅通过 `os.O_RDONLY` 和 `os.pread` 读取 `/proc/PID/mem`。没有写入、注入、Hook、sudo、ptrace 设置更改或 root 插件标志；默认系统权限不允许时，只报告权限不足并保留手动功能。
+- 仅支持上游 Unity 6000.3 x64 偏移档案，先验证 UnityPlayer 版本资源、Mono PE/导出代码、Assembly-CSharp、必要字段类型、映射和对象/数组边界。不支持的版本、未就绪或坏指针会停止本次解析并清空自动候选，绝不套用其他版本偏移。
+
+v0.4.0 首次提供此开关，安装资产为 `hearthstone-hud-0.4.0.zip`；v0.3.0 不包含它。Mock 验证不代表实际 Mono 读取成功，尚未经过 Ally X 实机验收。Linux 原生编译、依赖和真实 ZIP 检查以本版本对应的 Actions 结果为准，发布前必须全部通过。[完整报告及实机步骤](docs/ARENA_MEMORY_IMPLEMENTATION.md)
+
+## v0.3.0：竞技场第一版（已发布基线，仅手动候选）
 
 v0.3.0 为首个竞技场功能测试版本，尚未经过 Ally X 竞技场实机验收。安装资产为 `hearthstone-hud-0.3.0.zip`；v0.2.6 安装包不包含这些竞技场功能。Linux 原生编译与打包检查由对应提交的 GitHub Actions 执行。
 
@@ -13,7 +26,7 @@ v0.3.0 为首个竞技场功能测试版本，尚未经过 Ally X 竞技场实�
 
 静态评分文件是 `engine/arena_ratings.json`，来自 [HearthArena 官方 tier list](https://www.heartharena.com/tierlist) 的开发时快照，内含来源、UTC 抓取时间、原 HTML SHA256 和按职业/中立分类的真实数值。运行时不抓取评分服务；职业表优先，中立表回退，缺失显示“暂无评分”。CORE 前缀仅在同卡重印回退时去除。没有曲线、联动、胜率或动态算法。快照不保证覆盖所有卡牌或代表当前竞技场环境。
 
-本版无内存读取、注入、模拟点击或 OCR；原生 Overlay 只展示，所有录入在 QAM 完成。`Client chooses` 没有显式序号，使用日志顺序和补录时间区分迟到确认与下一轮；设备时钟跳变、缺失多轮日志等异常需人工核对。Linux 原生编译以包含本功能的提交对应的 Actions 结果为准，未宣称 Ally X 实机通过。[实施与验收报告](docs/ARENA_V1_IMPLEMENTATION.md)
+已发布 v0.3.0 基线没有内存读取、注入、模拟点击或 OCR；原生 Overlay 只展示，所有录入在 QAM 完成。`Client chooses` 没有显式序号，使用日志顺序和补录时间区分迟到确认与下一轮；设备时钟跳变、缺失多轮日志等异常需人工核对。Linux 原生编译以包含本功能的提交对应的 Actions 结果为准，未宣称 Ally X 实机通过。[实施与验收报告](docs/ARENA_V1_IMPLEMENTATION.md)
 
 ## v0.2.6：批量初始化修复与左右布局
 
@@ -47,7 +60,7 @@ Linux 原生构建统一由 GitHub Actions 完成，本机不准备交叉编译�
 
 Decky 管理的 SteamOS 炉石游戏内记牌 HUD，目标设备 ROG Ally X。用户已确认 v0.1.x 的 Gamescope 外部 Overlay、中文、PNG、触控和 QAM 共存正常。v0.2.2 接入日志记牌；**新版真实记牌尚待 Ally X 实机验收，未用实机日志回放验证。**
 
-安装完整 Release ZIP，或将对应 Release 的 `hearthstone-hud-0.3.0.zip` 直链填入 Decky 的 Install Plugin from URL。设备不需要开发工具或额外窗口。源码根目录 engine/ 在 ZIP 中映射为 py_modules/engine/；Linux 渲染器位于 bin/，保留 0755 权限。
+安装完整 Release ZIP，或将对应 Release 的 `hearthstone-hud-0.4.0.zip` 直链填入 Decky 的 Install Plugin from URL。设备不需要开发工具或额外窗口。源码根目录 engine/ 在 ZIP 中映射为 py_modules/engine/；Linux 渲染器位于 bin/，保留 0755 权限。
 
 ## 使用
 
@@ -56,7 +69,7 @@ Decky 管理的 SteamOS 炉石游戏内记牌 HUD，目标设备 ROG Ally X。�
 3. 新对局后顶部显示状态、回合、对手手牌与牌库数量。左侧显示初始牌组和剩余数量，右侧显示对手公开身份。找不到 Decks.log 完整牌组时显示“部分已知”；`>=n` 表示仅能确认 n 张在牌库，不能当成完整剩余数量。`?` 是未知。未知对手卡不猜身份。
 4. 卡牌数据库/卡图在 HUD 启动后异步获取，失败继续显示 ID/占位符；可在诊断查看来源、更新时间、错误和缓存数量。左右位置、显示开关、中文、卡图、缩放及透明度即时更新。长列表会自动翻页。
 
-支持普通对局和上述竞技场日志；不读取内存、注入、模拟操作、修改 Steam Overlay/MangoApp/SteamOS。竞技场选牌见上方第一版说明；不自动识别候选卡面。
+普通记牌只读日志；自动竞技场候选可选只读内存，默认关闭。没有注入、模拟操作或修改 Steam Overlay/MangoApp/SteamOS，也不做 OCR。竞技场功能以对应版本说明为准。
 
 ## 日志发现与只读诊断
 
