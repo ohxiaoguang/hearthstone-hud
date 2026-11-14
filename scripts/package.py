@@ -11,7 +11,7 @@ tmp = out.with_suffix('.zip.tmp')
 # A failed attempt must not leave a stale or partially written install ZIP.
 out.unlink(missing_ok=True)
 tmp.unlink(missing_ok=True)
-required = ['plugin.json','package.json','main.py','dist/index.js','bin/hearthstone-hud-renderer','assets/fonts/NotoSansCJKsc-Regular.otf','assets/test.png','LICENSE','licenses/Noto-OFL.txt']
+required = ['plugin.json','package.json','main.py','dist/index.js','bin/hearthstone-hud-renderer','assets/fonts/NotoSansCJKsc-Regular.otf','assets/test.png','LICENSE','licenses/Noto-OFL.txt','engine/__init__.py','engine/io.py','engine/power.py']
 for name in required:
     if not (root/name).is_file():
         raise SystemExit('缺少发布文件：'+name)
@@ -24,7 +24,10 @@ for folder in ['engine','dist','bin','assets','licenses','docs']:
     paths += [p for p in (root/folder).rglob('*') if p.is_file() and '__pycache__' not in str(p) and p.name != '.gitkeep']
 with zipfile.ZipFile(tmp,'w',zipfile.ZIP_DEFLATED) as z:
     for p in sorted(paths):
-        info = zipfile.ZipInfo('hearthstone-hud/'+p.relative_to(root).as_posix(), (2026,1,1,0,0,0))
+        relative = p.relative_to(root)
+        if relative.parts[0] == 'engine':
+            relative = Path('py_modules') / relative
+        info = zipfile.ZipInfo('hearthstone-hud/'+relative.as_posix(), (2026,1,1,0,0,0))
         info.external_attr = (0o100755 if p==binary else 0o100644)<<16
         info.compress_type = zipfile.ZIP_DEFLATED
         z.writestr(info,p.read_bytes())

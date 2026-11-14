@@ -32,3 +32,7 @@ GLFW/ImGui/json/stb 静态构建，libstdc++/libgcc 静态链接；X11、Xext、
 ## 当前交付边界
 
 见 [技术审计](docs/AUDIT.md)、[测试报告](docs/TEST_REPORT.md)。第一阶段实现源码已就绪，但 Linux 构建和实机验收未完成。日志解析只提供基础实时数量，未完成完整牌库、已出牌列表、奥秘、卡牌图、竞技场查询或稳定性实机矩阵。游戏启动/退出探测尚未实现，不把找到旧日志文件视为游戏正在运行。未读取进程内存、注入、修改游戏资源或系统设置。
+
+## v0.1.1：修复 Decky 后台导入
+
+v0.1.0 实机报告 engine 模块无法导入。v0.1.1 将安装包内模块移至 `py_modules/engine/`，保持 main.py 的导入不变，并在 CI 对最终 ZIP 解压后的独立 Python 搜索路径进行验收。详情见 [v0.1.1 测试报告](docs/V0.1.1_TEST_REPORT.md)。源码仍使用 engine/ 目录；打包器负责映射。v0.1.1 安装包名为 hearthstone-hud-0.1.1.zip。仍需重新安装后进行 Ally X 实机验证。
