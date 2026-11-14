@@ -47,6 +47,7 @@ def format_diagnostics(data,version,recent=(),renderer_tail=''):
     section('Deck Tracker');field('Initial Deck',data.get('deck_status','unknown'))
     field('Rows',len(rows));field('Exact Rows',sum(r.get('count_confidence')=='exact' for r in rows))
     field('Lower Bound Rows',sum(r.get('count_confidence')=='lower_bound' for r in rows));field('Unknown Rows',sum(r.get('remaining') is None and not r.get('remaining_lower_bound') for r in rows))
+    for key in ('own_added','own_played','opponent_seen','opponent_played'):field(key+' Rows',len(tracking.get(key,[])))
     for key,value in tracking.get('count_evidence',{}).items():field('Evidence '+key,value)
     reasons={}
     for row in rows:
@@ -55,7 +56,7 @@ def format_diagnostics(data,version,recent=(),renderer_tail=''):
     for reason,count in reasons.items():field('Unknown Reason',str(count)+' rows: '+reason)
     section('TLS')
     field('Image Verification','enabled' if cards.get('image_tls_verify',True) else 'DISABLED: image-only testing mode')
-    field('Database Verification','enabled')
+    field('Database Verification','enabled' if cards.get('database_tls_verify',True) else 'DISABLED: database testing mode')
     tls=cards.get('tls',{})
     field('CA Status',tls.get('state','not initialized'));field('Trusted CA Count',tls.get('ca_count','unknown'))
     for source in tls.get('sources',[]):field('CA Source',source)

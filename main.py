@@ -22,7 +22,7 @@ VERSION = json.loads((ROOT/'package.json').read_text())['version']
 DEFAULTS = dict(game_dir='/home/deck/Games/battlegame/Hearthstone',
     proton_prefix='',
     log_dir='', display=':0', x=40, y=80, scale=1.0, opacity=0.85,
-    visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=False, right_x=1540, right_y=80, card_images=True, chinese_names=True, image_tls_verify=False)
+    visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=False, right_x=1540, right_y=80, card_images=True, chinese_names=True, image_tls_verify=False, database_tls_verify=False)
 
 
 class Plugin:
@@ -47,6 +47,7 @@ class Plugin:
         self.deck_tail = Tail()
         self.cards = Cards(self.runtime/'cache')
         self.cards.image_verify_tls = self.settings['image_tls_verify']
+        self.cards.database_verify_tls = self.settings['database_tls_verify']
         self.media_task = None
         self.discovery = {}
         self.process = {}
@@ -89,6 +90,8 @@ class Plugin:
                 raise ValueError('配置类型不正确')
             checked[key] = value
         self.settings.update(checked)
+        if 'database_tls_verify' in checked:
+            self.cards.database_verify_tls = checked['database_tls_verify']
         if 'image_tls_verify' in checked:
             self.cards.image_verify_tls = checked['image_tls_verify']
         if any(k in checked for k in ('game_dir','log_dir')):
@@ -127,7 +130,7 @@ class Plugin:
 
     async def download_missing_images(self):
         tracking = self.parser.view(self.cards)
-        ids={r['id'] for key in ('own','opponent') for r in tracking.get(key,[])}
+        ids={r['id'] for key in ('own','own_added','own_played','opponent_seen','opponent_played') for r in tracking.get(key,[])}
         ids.update(self.cards.id_for_dbf(dbf) for dbf in self.parser.initial_dbf)
         game=self.parser.game
         if game:
@@ -216,7 +219,7 @@ class Plugin:
     def _publish(self):
         tracking = self.parser.view(self.cards) if self.active and self.caught_up else dict(status='waiting',turn=0,own=[],opponent=[],own_label='等待活动日志',opponent_hand=None,opponent_deck=None)
         if self.settings['card_images']:
-            self.cards.request_images(r['id'] for key in ('own','opponent') for r in tracking[key])
+            self.cards.request_images(r['id'] for key in ('own','own_added','own_played','opponent_seen','opponent_played') for r in tracking.get(key,[]))
         atomic_json(self.runtime / 'state.json', dict(updated=time.time(), **self.settings,
             schema=2, tracking=tracking))
 

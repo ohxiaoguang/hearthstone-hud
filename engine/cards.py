@@ -71,6 +71,7 @@ class Cards:
         self.batch_remaining=set();self.image_errors=deque(maxlen=10)
         self.image_totals=dict(success=0,failed=0,skipped=0)
         self.image_verify_tls=True
+        self.database_verify_tls=True
         self.import_result=None
         self.by_id={};self.by_dbf={};self.updated=0;self.error='';self.source='HearthstoneJSON zhCN'
         self.generation=0;self.cache_lock=threading.Lock();self.image_error='';self.download_state='尚未尝试'
@@ -154,7 +155,7 @@ class Cards:
         for attempt in range(2):
             self.download_state='正在下载（第 %d/2 次）'%(attempt+1)
             try:
-                rows=validate_dataset(json.loads(fetch(DATA_URL,MAX_JSON)))
+                rows=validate_dataset(json.loads(fetch(DATA_URL,MAX_JSON,verify=self.database_verify_tls)))
                 record=self._commit(rows,'HearthstoneJSON zhCN HTTPS',expected)
                 self.download_state='下载校验通过' if record else '已有较新缓存，跳过旧下载'
                 return record
@@ -209,7 +210,7 @@ class Cards:
                 self.request_images(sorted(self.batch_remaining))
 
     def diagnostic(self):
-        return dict(image_tls_verify=self.image_verify_tls,tls=tls_diagnostic(),source=self.source,updated=self.updated,count=len(self.by_id),error=self.error,
+        return dict(database_tls_verify=self.database_verify_tls,image_tls_verify=self.image_verify_tls,tls=tls_diagnostic(),source=self.source,updated=self.updated,count=len(self.by_id),error=self.error,
                     state='卡牌数据库可用' if self.by_id else '卡牌数据库不可用；显示卡牌 ID',download_state=self.download_state,
                     image_error=self.image_error,images_pending=len(self.pending),image_cache=self.tiles.counts(),
                     image_batch=dict(self.image_batch),image_totals=dict(self.image_totals),image_import=self.import_result,

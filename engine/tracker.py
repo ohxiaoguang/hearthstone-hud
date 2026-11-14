@@ -65,12 +65,51 @@ class Tracker(PowerParser):
 
     def _set_tag(self, ent, tag, value):
         old = ent.zone
-        # Capture the actual card at play time, not its identity after a transform.
+        # Snapshot event evidence before later reveals/transforms/controller changes.
         if tag == 'ZONE' and old == 'HAND' and value in ('PLAY','SECRET') and self._reset_depth is None and not (self.game.resumed_from and self.game.setup):
-            self.used.append((ent.id,ent.card_id,ent.controller))
+            self.used.append(dict(entity_id=ent.id, card_id=ent.card_id,
+                player_id=ent.controller, turn=(self.game.turn+1)//2,
+                game_turn=self.game.turn, order=len(self.used)+1,
+                **self._provenance(ent, ent.controller)))
         if tag == 'ZONE' and old == 'DECK' and value == 'HAND':
             self.drawn.add(ent.id)
         super()._set_tag(ent,tag,value)
+
+    def _provenance(self, ent, player_id):
+        """Only evidence identifies a generator. False starting != generated."""
+        original = bool(ent.in_starting_deck and ent.owner == player_id)
+        foreign = bool(ent.owner and ent.owner != player_id)
+        source_id = ent.creation_source
+        for tag in ('CREATOR', 'DISPLAYED_CREATOR', 'COPIED_FROM_ENTITY_ID'):
+            value = ent.tags.get(tag, '')
+            if value.isdigit() and int(value):
+                source_id = int(value)
+                break
+        source = self.game.entities.get(source_id)
+        generated = bool(not original and not foreign and source_id)
+        transformed = bool(original and ent.card_id and ent.card_id != ent.known_id)
+        copied = bool(ent.tags.get('COPIED_FROM_ENTITY_ID','').isdigit() and int(ent.tags['COPIED_FROM_ENTITY_ID']))
+        origin = ('opponent' if foreign else 'transformed' if transformed else 'starting' if original else 'copied' if copied else
+                  'generated' if generated else 'non_initial' if ent.in_starting_deck is False else 'unknown')
+        label = dict(opponent='对手获得', starting='原始牌', transformed='变形原牌', copied='复制', generated='效果生成',
+                     non_initial='非初始牌组', unknown='来源未知')[origin]
+        returned = bool(ent.arrival and ent.arrival.origin in ('PLAY', 'SECRET', 'GRAVEYARD'))
+        return dict(in_starting_deck=original, starting_card_id=ent.known_id if original else '',
+                    transformed=transformed, generated=generated, foreign=foreign,
+                    origin=origin, origin_label=label, returned=returned,
+                    shuffled_in=bool(ent.entered_deck and not original),
+                    source_entity_id=source_id, source_card_id=(ent.creation_source_card_id if source_id == ent.creation_source else source.card_id if source else ''),
+                    source_known=bool(source_id))
+
+    def _played(self, cards, player_id):
+        rows = []
+        for event in self.used:
+            if event['player_id'] != player_id:
+                continue
+            cid = event['card_id']
+            rows.append(dict(cards.info(cid), **event, count=1,
+                             source_name=cards.info(event['source_card_id'])['name'] if event['source_card_id'] else ''))
+        return rows
 
     def feed_line(self, raw, day=None):
         match = LINE.match(raw)
@@ -89,6 +128,16 @@ class Tracker(PowerParser):
             if payload.startswith(('GameState.DebugPrintPower()', 'GameState.DebugPrintGame()')):
                 self.feed(ts,payload)
                 self.accepted += 1
+                if self.game and 'CHANGE_ENTITY' not in payload:
+                    for event in self.used:
+                        ent = self.game.entities.get(event['entity_id'])
+                        if not event['card_id'] and not event.get('identity_lost') and ent and ent.card_id:
+                            event['card_id'] = ent.card_id
+                elif self.game:
+                    for event in self.used:
+                        ent = self.game.entities.get(event['entity_id'])
+                        if not event['card_id'] and ent and ent.card_id:
+                            event['identity_lost'] = True
                 if self.game and self.game.opponent:
                     for e in self.game.entities.values():
                         if e.controller==self.game.opponent.player_id and e.card_id and e.tags.get('CARDTYPE') not in ('HERO','HERO_POWER','PLAYER','GAME') and not e.card_id.startswith('HERO_'):
@@ -102,16 +151,16 @@ class Tracker(PowerParser):
     def view(self, cards):
         game = self.game
         if game is None or game.complete:
-            return dict(status='waiting',turn=0,own=[],opponent=[],own_label='等待新对局',opponent_hand=None,opponent_deck=None)
+            return dict(status='waiting',turn=0,own=[],own_added=[],own_played=[],opponent=[],opponent_seen=[],opponent_played=[],own_label='等待新对局',opponent_hand=None,opponent_deck=None)
         if game.game_type.startswith(('GT_BATTLEGROUNDS','GT_MERCENARIES')):
-            return dict(status='unsupported',turn=0,own=[],opponent=[],own_label='不支持的游戏模式',opponent_hand=None,opponent_deck=None)
+            return dict(status='unsupported',turn=0,own=[],own_added=[],own_played=[],opponent=[],opponent_seen=[],opponent_played=[],own_label='不支持的游戏模式',opponent_hand=None,opponent_deck=None)
         # Cross-file buffers can expose a queue-time deck block after CREATE_GAME.
         # Bind only a deck timestamped before this game, after the previous one.
         if not self.initial_dbf:
             self.initial_dbf = self.decks.for_game(game.start,self.previous_start)
         me,opp = game.friendly,game.opponent
         result = dict(status='playing' if me and opp else 'identifying',turn=(game.turn+1)//2,
-                      own=[],opponent=[],own_label='牌组未知',opponent_hand=None,opponent_deck=None,
+                      own=[],own_added=[],own_played=[],opponent=[],opponent_seen=[],opponent_played=[],own_label='牌组未知',opponent_hand=None,opponent_deck=None,
                       own_class=game.hero_class(me) if me else '',opponent_class=game.hero_class(opp) if opp else '')
         if not me or not opp:
             return result
@@ -121,7 +170,10 @@ class Tracker(PowerParser):
             if e.controller==opp.player_id and e.card_id and e.tags.get('CARDTYPE') not in ('HERO','HERO_POWER','PLAYER','GAME') and not e.card_id.startswith('HERO_'):
                 self.public.add((e.id,e.card_id))
         revealed = Counter(card_id for _,card_id in self.public)
-        result['opponent']=[dict(cards.info(c),count=n) for c,n in revealed.items()]
+        result['opponent_seen']=[dict(cards.info(c),count=n) for c,n in revealed.items()]
+        result['opponent']=result['opponent_seen']  # Backwards-compatible public view.
+        result['own_played']=self._played(cards,me.player_id)
+        result['opponent_played']=self._played(cards,opp.player_id)
         result['opponent_hand']=game.count_zone(opp,'HAND')
         # Zone counts are entity counts from the log, not inferred card identities.
         result['opponent_deck']=game.count_zone(opp,'DECK') if any(e.in_starting_deck and e.owner==opp.player_id for e in entities) else None
@@ -135,27 +187,22 @@ class Tracker(PowerParser):
         unidentified_departures=sum(1 for e in mine if not e.known_id and (e.zone!='DECK' or e.controller!=me.player_id))
         unknown_extras=sum(1 for e in entities if e.controller==me.player_id and e.zone=='DECK' and not e.in_starting_deck and not e.card_id)
         known_current=Counter(e.card_id for e in entities if e.controller==me.player_id and e.zone=='DECK' and e.card_id)
-        extras=Counter(e.card_id for e in entities if e.controller==me.player_id and e.zone=='DECK' and e.card_id and not e.in_starting_deck)
-        transformed=Counter(e.known_id for e in mine if e.zone=='DECK' and e.card_id and e.card_id!=e.known_id)
+        transformed=Counter(e.known_id for e in mine if e.zone=='DECK' and e.controller==me.player_id and e.card_id and e.card_id!=e.known_id)
         drawn=Counter(e.known_id for e in mine if e.id in self.drawn and e.known_id)
-        used=Counter(c or game.entities[eid].card_id for eid,c,pid in self.used if pid==me.player_id and eid in game.entities)
-        result['own_label']='完整初始牌组（Decks.log）' if starting else '部分已知；完整牌组未知'
-        visible_own={e.card_id for e in entities if e.controller==me.player_id and e.card_id and not e.card_id.startswith('HERO_') and e.tags.get('CARDTYPE') not in ('HERO','HERO_POWER','PLAYER','GAME')}
-        for cid in starting.keys()|known_current.keys()|departed.keys()|used.keys()|visible_own:
+        used=Counter(e['card_id'] for e in self.used if e['player_id']==me.player_id and e['in_starting_deck'])
+        result['own_label']='原始牌库（Decks.log）' if starting else '部分原始牌；完整牌组未知'
+        # Without a deck definition, show only confirmed starting entities. Never
+        # use arbitrary visible cards or plays to manufacture a deck definition.
+        original_ids = starting.keys() if starting else accounted.keys()
+        for cid in original_ids:
             initial=starting.get(cid) if starting and cid in starting else None
             uncertain_slots=min(max(0,(initial or 0)-accounted[cid]),missing+unidentified_departures)
-            exact=initial is not None and not cid.startswith('dbf:') and not uncertain_slots and not unknown_extras and accounted[cid]<=initial
-            target_transforms=sum(1 for e in mine if e.zone=='DECK' and e.controller==me.player_id and e.card_id==cid and e.card_id!=e.known_id)
-            # Known generated cards/transform targets have no implicit initial copies.
-            if initial is None and starting and cid not in {e.known_id for e in mine} and not missing and not unidentified_departures and not unknown_extras:
-                initial=0
-                exact=True
-            remaining=max(0,(initial or 0)-departed[cid]-transformed[cid])+extras[cid]+target_transforms if exact else None
-            lower=known_current[cid]
+            exact=initial is not None and not cid.startswith('dbf:') and not uncertain_slots and accounted[cid]<=initial
+            remaining=max(0,(initial or 0)-departed[cid]-transformed[cid]) if exact else None
+            lower=sum(1 for e in mine if e.zone=='DECK' and e.controller==me.player_id and e.card_id==cid and e.known_id==cid)
             reason=('初始牌组与实体证据一致' if exact else
                     '初始牌组未知' if not starting else
                     '该牌 dbfId 尚未映射' if cid.startswith('dbf:') else
-                    '存在身份未知的非初始在库实体' if unknown_extras else
                     '可能属于该牌的原始实体缺失或离库身份未知' if uncertain_slots else
                     '原始实体数超过该牌初始数量' if accounted[cid]>(initial or 0) else
                     '该牌不在已识别初始牌组中')
@@ -164,7 +211,29 @@ class Tracker(PowerParser):
                 count_confidence='exact' if exact else 'lower_bound' if lower>0 else 'unknown',count_reason=reason,
                 drawn=drawn[cid],used=used[cid],count=remaining if remaining is not None else lower)
             result['own'].append(self_row)
-        for key in ('own','opponent'):
+        # A separate current-zone projection, grouped by provenance, not CardID
+        # alone. Transformed starting entities no longer represent their original
+        # slot's identity, so the replacement lives here too.
+        added = {}
+        for ent in entities:
+            if ent.controller != me.player_id or ent.zone != 'DECK':
+                continue
+            original = ent.in_starting_deck and ent.owner == me.player_id
+            if original and (not ent.card_id or ent.card_id == ent.known_id):
+                continue
+            provenance = self._provenance(ent, me.player_id)
+            if original:
+                provenance.update(origin='transformed',origin_label='变形原牌')
+            key = (ent.card_id, provenance['origin'], provenance['source_entity_id'])
+            if key not in added:
+                added[key] = dict(cards.info(ent.card_id), **provenance,
+                    initial=None, remaining=0, count=0, count_confidence='exact',
+                    known_in_deck=0, count_reason='当前 DECK 区域的非原始身份实体')
+            added[key]['remaining'] += 1
+            added[key]['count'] += 1
+            added[key]['known_in_deck'] += 1
+        result['own_added'] = list(added.values())
+        for key in ('own','own_added','opponent'):
             result[key].sort(key=lambda r:(r['cost'] if isinstance(r['cost'],int) else 99,r['name']))
             result[key]=result[key][:256]
         result['count_evidence']=dict(
@@ -175,8 +244,5 @@ class Tracker(PowerParser):
             unmapped_initial_rows=sum(c.startswith('dbf:') for c in starting),
             controller_unset=sum(e.controller==0 for e in entities))
         result['own_deck']=game.count_zone(me,'DECK')
-        unknown_used={eid for eid,c,pid in self.used if pid==opp.player_id and not c and eid in game.entities and not game.entities[eid].card_id}
-        result['opponent_unknown']=len(unknown_used)
-        if unknown_used:
-            result['opponent'].append(dict(id='',name='未知卡牌（已使用）',cost=None,image='',count=len(unknown_used)))
+        result['opponent_unknown']=sum(not e['card_id'] for e in result['opponent_played'])
         return result

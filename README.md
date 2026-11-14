@@ -1,6 +1,16 @@
 # Hearthstone HUD
 
-## v0.2.3 补丁
+## v0.2.5：牌库与出牌事件分离
+
+- 左侧分为原始牌库、后加入/变形且当前在库、我方实际打出三个区域，共用现有定时分页。原牌抽出后减少，打出不再扣减，耗尽行淡化保留。生成到手牌或场上的牌不进入牌库；相同 CardID 的生成实体独立计数。
+- 右侧分别展示对手公开卡牌与实际出牌。双方出牌保留逐次事件、回合、顺序、原牌/复制/效果生成/对手获得/来源未知，回手重打不去重。发现来源无充分证据时不猜测。
+- 卡图铺满每一行作为底图，叠加中文名称、费用、数量及来源说明；深色渐变保证可读性，无图片时文字仍显示。
+- 按用户授权，数据库与卡图分别提供 SSL 测试开关，本测试版本默认跳过证书校验；可分别恢复。作用仅限对应 HTTPS 请求，不修改系统 SSL。JSON 内容/数量、PNG 校验和原子缓存替换保持启用。
+- Linux 原生编译只在 GitHub Actions 执行。本机不安装工具链。安装包：`hearthstone-hud-0.2.5.zip`。
+
+[逐项测试与来源规则](docs/V0.2.5_TEST_REPORT.md)。用户已确认上一版卡图可下载；本版模型和底图布局尚未通过 Ally X 实机验收。
+
+## v0.2.3 补丁（历史）
 
 - 逐卡判断剩余数量可信度，区分初始数量、当前剩余和已知在库。准确数量直接显示，只有正数下限才显示 `>=n`，否则显示 `?`。不再因全局 uncertain 把整套牌组变为 `>=0`。
 - “复制诊断”生成有长度上限的分组纯文本并脱敏。浏览器剪贴板与传统复制均失败时，显示错误和可选择文本。没有 TXT 导出。
@@ -15,7 +25,7 @@ Linux 原生构建统一由 GitHub Actions 完成，本机不准备交叉编译�
 
 Decky 管理的 SteamOS 炉石游戏内记牌 HUD，目标设备 ROG Ally X。用户已确认 v0.1.x 的 Gamescope 外部 Overlay、中文、PNG、触控和 QAM 共存正常。v0.2.2 接入日志记牌；**新版真实记牌尚待 Ally X 实机验收，未用实机日志回放验证。**
 
-安装完整 Release ZIP，或将对应 Release 的 `hearthstone-hud-0.2.2.zip` 直链填入 Decky 的 Install Plugin from URL。设备不需要开发工具或额外窗口。源码根目录 engine/ 在 ZIP 中映射为 py_modules/engine/；Linux 渲染器位于 bin/，保留 0755 权限。
+安装完整 Release ZIP，或将对应 Release 的 `hearthstone-hud-0.2.5.zip` 直链填入 Decky 的 Install Plugin from URL。设备不需要开发工具或额外窗口。源码根目录 engine/ 在 ZIP 中映射为 py_modules/engine/；Linux 渲染器位于 bin/，保留 0755 权限。
 
 ## 使用
 
@@ -66,7 +76,7 @@ Actions 在 Ubuntu x86_64 / Ubuntu 20.04 容器编译，执行原生 JSON 验收
 
 Decks.log 的日志节必须单独启用。点“备份并启用 Decks 日志”，完全退出并重启炉石，再选择卡组排队。参考实现中只有 Finding Game With Deck / Starting Arena Game With Deck 等牌组打印事件携带 deck code；出现 Decks.log 文件也不保证已有可用代码。文件只与同目录 Power.log 关联，迟到的、时间不晚于当前开局且晚于上一局开始的代码可以补绑定；后续选中的卡组不能覆盖已开局牌组。
 
-数据库默认仍使用带正常证书验证的 HearthstoneJSON zhCN HTTPS 下载；单次刷新最多尝试两次，无缓存时后台定期重试，也可按“重试下载卡牌数据库”。没有关闭 SSL 或降低证书验证。遇到 SteamOS 网络 SSL EOF，可在另一台能正常联网的设备下载 [官方 zhCN cards.json](https://api.hearthstonejson.com/v1/latest/zhCN/cards.json)，将文件传到 Ally X（例如 /home/deck/Downloads/cards-zhCN.json），在 Decky 输入该绝对路径并点“校验并导入离线数据库”。不需要安装开发工具或重启 HUD。
+严格校验开关开启时，数据库使用带证书验证的 HearthstoneJSON zhCN HTTPS 下载；单次刷新最多尝试两次，无缓存时后台定期重试，也可按“重试下载卡牌数据库”。v0.2.5 测试版本可按上述独立开关跳过证书验证。遇到 SteamOS 网络 SSL EOF，可在另一台能正常联网的设备下载 [官方 zhCN cards.json](https://api.hearthstonejson.com/v1/latest/zhCN/cards.json)，将文件传到 Ally X（例如 /home/deck/Downloads/cards-zhCN.json），在 Decky 输入该绝对路径并点“校验并导入离线数据库”。不需要安装开发工具或重启 HUD。
 
 导入接受官方数组 JSON，或包含 locale=zhCN 与 cards 数组的缓存对象。文件上限 64MiB；校验 ID、重复项、dbfId、名称、法力值，并要求至少 100 条有效记录，通过后原子替换缓存。失败保留旧缓存；成功显示来源、数量和导入时间。离线导入是网络故障备用方式，不自动请求未经核实的第三方镜像。
 

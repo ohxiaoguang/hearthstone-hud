@@ -3,7 +3,7 @@ import { callable, definePlugin } from '@decky/api';
 import { useEffect, useState, type ReactNode } from 'react';
 import { FaLayerGroup } from 'react-icons/fa';
 import { copyText } from './clipboard';
-type Settings = {game_dir:string;proton_prefix:string;log_dir:string;display:string;x:number;y:number;scale:number;opacity:number;visible:boolean;own_deck:boolean;opponent_deck:boolean;opponent_hand:boolean;arena:boolean;right_x:number;right_y:number;card_images:boolean;image_tls_verify:boolean;chinese_names:boolean};
+type Settings = {game_dir:string;proton_prefix:string;log_dir:string;display:string;x:number;y:number;scale:number;opacity:number;visible:boolean;own_deck:boolean;opponent_deck:boolean;opponent_hand:boolean;arena:boolean;right_x:number;right_y:number;card_images:boolean;image_tls_verify:boolean;database_tls_verify:boolean;chinese_names:boolean};
 type ImportResult = {found:number;imported:number;skipped:number;format_errors:number;invalid_ids:number;other_failures:number;errors:string[]};
 type Status = {version:string;settings:Settings;running:boolean;error:string;log_path:string;parse_errors:number;gamescope_status:string;
   cards:{count:number;state:string;download_state:string;source:string;updated:number;error:string;image_error:string;images_pending:number;image_cache:{manual:number;automatic:number};image_batch:{status:string;total:number;success:number;failed:number;skipped:number};image_import:ImportResult|null};
@@ -72,13 +72,15 @@ function Content(){
  <Fold title="数据库更新与离线导入">
  <Datum label="来源">{data.cards.source}</Datum><Datum label="更新时间">{data.cards.updated?new Date(data.cards.updated*1000).toLocaleString():'尚无'}</Datum>
  <Datum label="下载状态">{data.cards.download_state}</Datum>{data.cards.error&&<div role="alert">{data.cards.error.slice(0,300)}</div>}
+ <ToggleField label="数据库 SSL 证书校验" checked={data.settings.database_tls_verify} onChange={database_tls_verify=>change({database_tls_verify})}/>
+ {!data.settings.database_tls_verify&&<div style={box}>测试模式：数据库下载跳过证书校验，仍校验 JSON 内容和数量。可打开开关恢复证书校验。</div>}
  <ButtonItem disabled={busy} onClick={()=>background(retryDatabase)}>重试下载卡牌数据库</ButtonItem>
  <TextField label="离线 zhCN JSON 路径" value={importPath} onChange={e=>setImportPath(e.target.value)}/>
  <ButtonItem disabled={busy} onClick={()=>background(()=>importDatabase(importPath))}>校验并导入离线数据库</ButtonItem>
  </Fold>
  <Fold title="卡图下载与手动导入">
  <ToggleField label="卡图 SSL 证书校验" checked={data.settings.image_tls_verify} onChange={image_tls_verify=>change({image_tls_verify})}/>
- {!data.settings.image_tls_verify&&<div style={box}>测试模式：仅卡图下载跳过证书校验，数据库下载仍验证。可随时打开上方开关恢复。</div>}
+ {!data.settings.image_tls_verify&&<div style={box}>测试模式：卡图下载跳过证书校验。可随时打开上方开关恢复。</div>}
  <Datum label="缓存">手动 {data.cards.image_cache.manual} / 自动 {data.cards.image_cache.automatic}</Datum>
  <Datum label="下载进度">{batch?.status==='running'?'后台下载中':batch?.status==='complete'?'本批已完成':'尚未开始'} · {(batch?.success??0)+(batch?.failed??0)+(batch?.skipped??0)}/{batch?.total??0}</Datum>
  <Datum label="结果">成功 {batch?.success??0} · 失败 {batch?.failed??0} · 跳过 {batch?.skipped??0}</Datum>
@@ -93,7 +95,7 @@ function Content(){
  <Fold title="HUD 布局与显示设置">
  {(['game_dir','log_dir','display'] as const).map((key,i)=><PathField key={key} label={['游戏目录（自动发现备用）','日志目录或 Power.log','X11 DISPLAY（重启 HUD 生效）'][i]} value={data.settings[key]} save={value=>change({[key]:value})}/>)}
  {(['x','y','scale','opacity','right_x','right_y'] as const).map((key,i)=><SliderField key={key} label={['左侧横向位置','左侧纵向位置','缩放','面板不透明度','右侧横向位置','右侧纵向位置'][i]} value={data.settings[key]} min={[0,0,.5,.1,0,0][i]} max={[1920,1080,3,1,1920,1080][i]} step={[10,10,.1,.05,10,10][i]} onChange={v=>change({[key]:v})}/>)}
- {(['own_deck','opponent_deck','opponent_hand','card_images','chinese_names'] as const).map((key,i)=><ToggleField key={key} label={['左侧己方牌库','右侧对手公开卡牌','对手手牌数量','卡牌缩略图','简体中文名称'][i]} checked={data.settings[key]} onChange={v=>change({[key]:v})}/>)}
+ {(['own_deck','opponent_deck','opponent_hand','card_images','chinese_names'] as const).map((key,i)=><ToggleField key={key} label={['左侧己方牌库','右侧对手公开卡牌','对手手牌数量','卡图背景','简体中文名称'][i]} checked={data.settings[key]} onChange={v=>change({[key]:v})}/>)}
  </Fold>
  </>}
  </PanelSection>;

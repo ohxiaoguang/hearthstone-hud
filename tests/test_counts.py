@@ -35,11 +35,12 @@ class CountTests(unittest.TestCase):
         row=self.row('A');self.assertEqual((row['initial'],row['remaining'],row['drawn'],row['used']),(2,1,1,1))
         self.feed('TAG_CHANGE Entity=5 tag=ZONE value=HAND');self.assertEqual(self.row('A')['remaining'],0)
     def test_incomplete_deck_definition_and_missing_mapping_are_local(self):
-        self.p.initial_dbf={1:2};self.assertEqual(self.row('A')['remaining'],2);self.assertIsNone(self.row('B')['remaining'])
+        self.p.initial_dbf={1:2};self.assertEqual(self.row('A')['remaining'],2);self.assertNotIn('B',{r['id'] for r in self.p.view(self.cards)['own']})
         self.p.initial_dbf={1:2,999:2};self.assertEqual(self.row('A')['remaining'],2);self.assertIsNone(self.row('dbf:999')['remaining'])
     def test_unknown_generated_deck_card_has_real_ambiguity(self):
         self.entity(8,'','DECK')
-        self.assertIsNone(self.row('A')['remaining']);self.assertEqual(self.row('A')['remaining_lower_bound'],2)
+        self.assertEqual(self.row('A')['remaining'],2)
+        self.assertEqual(self.p.view(self.cards)['own_added'][0]['remaining'],1)
     def test_generated_transform_shuffle(self):
         self.entity(8,'A','HAND');self.feed('TAG_CHANGE Entity=8 tag=ZONE value=PLAY');self.assertEqual(self.row('A')['remaining'],2)
         self.feed('TAG_CHANGE Entity=4 tag=ZONE value=HAND');self.feed('CHANGE_ENTITY - Updating Entity=4 CardID=B')
@@ -51,5 +52,5 @@ class CountTests(unittest.TestCase):
         view=self.p.view(self.cards)
         self.assertEqual(view['count_evidence']['unknown_generated_deck'],1)
         self.assertEqual(view['count_evidence']['expected_initial'],4)
-        self.assertIsNone(self.row('A')['remaining'])
-        self.assertIn('身份未知',self.row('A')['count_reason'])
+        self.assertEqual(self.row('A')['remaining'],2)
+        self.assertEqual(view['own_added'][0]['id'],'')

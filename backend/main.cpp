@@ -66,21 +66,32 @@ static void panel(const char* id,const std::string& title,const json& rows,bool 
     ImGui::Begin(id,nullptr,flags);ImGui::SetWindowFontScale(scale*.8f);
     ImGui::TextUnformatted(title.c_str());if(pages>1)ImGui::Text("%d / %d",page+1,pages);
     if(rows.empty())ImGui::TextUnformatted(own?"牌组未知，等待日志证据":"尚无公开卡牌");
-    if(ImGui::BeginTable("cards",4,ImGuiTableFlags_SizingFixedFit)){
-        ImGui::TableSetupColumn("art",ImGuiTableColumnFlags_WidthFixed,images?64*scale:1);
-        ImGui::TableSetupColumn("cost",ImGuiTableColumnFlags_WidthFixed,24*scale);
-        ImGui::TableSetupColumn("name",ImGuiTableColumnFlags_WidthFixed,180*scale);
-        ImGui::TableSetupColumn("count",ImGuiTableColumnFlags_WidthFixed,46*scale);
-        for(size_t i=page*per_page;i<rows.size() && i<size_t((page+1)*per_page);++i){
-            const auto& row=rows[i];ImGui::TableNextRow(0,32*scale);ImGui::TableSetColumnIndex(0);
-            if(images){auto texture=textures.get(row.value("image",""),frame);if(texture)ImGui::Image(reinterpret_cast<void*>(static_cast<intptr_t>(texture)),{64*scale,25*scale});else ImGui::TextUnformatted("[--]");}
-            ImGui::TableSetColumnIndex(1);ImGui::TextUnformatted(number(row.value("cost",json())).c_str());
-            ImGui::TableSetColumnIndex(2);ImGui::TextUnformatted(row.value(chinese?"name":"id","").c_str());
-            ImGui::TableSetColumnIndex(3);
-            std::string label=card_count_label(row,own);
-            ImGui::TextUnformatted(label.c_str());
+    auto* draw=ImGui::GetWindowDrawList();
+    for(size_t i=page*per_page;i<rows.size() && i<size_t((page+1)*per_page);++i){
+        const auto& row=rows[i];
+        const auto pos=ImGui::GetCursorScreenPos();const float width=320*scale,height=30*scale;
+        ImGui::Dummy({width,height});
+        if(row.value("section",false)){
+            draw->AddText(pos,IM_COL32(255,215,135,255),row.value("name","").c_str());continue;
         }
-        ImGui::EndTable();
+        const bool event=row.value("event",false),deck=row.value("deck_row",false);
+        const bool exhausted=deck && row.value("remaining",json())==json(0);
+        const auto white=exhausted?IM_COL32(170,170,170,200):IM_COL32(255,255,255,255);
+        draw->AddRectFilled(pos,{pos.x+width,pos.y+height},IM_COL32(24,30,39,230));
+        if(images){auto texture=textures.get(row.value("image",""),frame);if(texture)
+            draw->AddImage(reinterpret_cast<void*>(static_cast<intptr_t>(texture)),pos,{pos.x+width,pos.y+height},{0,.29f},{1,.71f},exhausted?IM_COL32(170,170,170,110):IM_COL32_WHITE);}
+        draw->AddRectFilledMultiColor(pos,{pos.x+width,pos.y+height},IM_COL32(0,0,0,210),IM_COL32(0,0,0,70),IM_COL32(0,0,0,70),IM_COL32(0,0,0,210));
+        draw->AddRectFilled({pos.x+width-36*scale,pos.y},{pos.x+width,pos.y+height},IM_COL32(0,0,0,190));
+        std::string detail=row.value("origin_label","");
+        if(event){detail="回合 "+number(row.value("turn",json()))+" · "+detail;if(row.value("returned",false))detail+=" · 回手";}
+        else if(row.contains("origin_label"))detail="在库 · "+detail;
+        const ImVec4 clip(pos.x+28*scale,pos.y,pos.x+width-38*scale,pos.y+height);
+        draw->AddText(ImGui::GetFont(),16*scale,{pos.x+3*scale,pos.y+6*scale},white,number(row.value("cost",json())).c_str());
+        draw->AddText(ImGui::GetFont(),16*scale,{pos.x+28*scale,pos.y+(detail.empty()?6:0)*scale},white,row.value(chinese?"name":"id","").c_str(),nullptr,0,&clip);
+        if(!detail.empty())draw->AddText(ImGui::GetFont(),10*scale,{pos.x+28*scale,pos.y+19*scale},white,detail.c_str(),nullptr,0,&clip);
+        const auto label=event?"#"+number(row.value("order",json())):card_count_label(row,deck);
+        const ImVec4 count_clip(pos.x+width-35*scale,pos.y,pos.x+width,pos.y+height);
+        draw->AddText(ImGui::GetFont(),14*scale,{pos.x+width-34*scale,pos.y+7*scale},white,label.c_str(),nullptr,0,&count_clip);
     }
     ImGui::End();
 }
@@ -148,8 +159,8 @@ int main(int argc,char** argv){
         summary+=" · 对手牌库 "+number(tracking.value("opponent_deck",json()));
         ImGui::TextUnformatted(summary.c_str());ImGui::End();
         float maxx=std::max(0.f,sw-340*scale),maxy=std::max(0.f,sh-180*scale);
-        if(state.value("own_deck",true))panel("own",tracking.value("own_label","牌组未知"),tracking["own"],true,std::clamp(state.value("x",40.f),0.f,maxx),std::clamp(state.value("y",80.f),0.f,maxy),scale,opacity,state.value("card_images",true),state.value("chinese_names",true),textures,frames,sh);
-        if(state.value("opponent_deck",true))panel("opponent","对手公开卡牌 · 未知 "+number(tracking.value("opponent_unknown",json())),tracking["opponent"],false,std::clamp(state.value("right_x",1540.f),0.f,maxx),std::clamp(state.value("right_y",80.f),0.f,maxy),scale,opacity,state.value("card_images",true),state.value("chinese_names",true),textures,frames,sh);
+        if(state.value("own_deck",true))panel("own",tracking.value("own_label","牌组未知"),hud_sections(tracking,true),true,std::clamp(state.value("x",40.f),0.f,maxx),std::clamp(state.value("y",80.f),0.f,maxy),scale,opacity,state.value("card_images",true),state.value("chinese_names",true),textures,frames,sh);
+        if(state.value("opponent_deck",true))panel("opponent","对手公开卡牌 · 未知 "+number(tracking.value("opponent_unknown",json())),hud_sections(tracking,false),false,std::clamp(state.value("right_x",1540.f),0.f,maxx),std::clamp(state.value("right_y",80.f),0.f,maxy),scale,opacity,state.value("card_images",true),state.value("chinese_names",true),textures,frames,sh);
         ImGui::Render();int fw,fh;glfwGetFramebufferSize(w,&fw,&fh);glViewport(0,0,fw,fh);glClearColor(0,0,0,0);glClear(GL_COLOR_BUFFER_BIT);ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());glfwSwapBuffers(w);
         if(++frames%30==0)write_json(argv[3],{{"display",getenv("DISPLAY")?getenv("DISPLAY"):""},{"window",x},{"external_overlay",atom_ok},{"xshape_input_empty",shape},{"transparent_framebuffer",glfwGetWindowAttrib(w,GLFW_TRANSPARENT_FRAMEBUFFER)==GLFW_TRUE},{"mapped",shown},{"frames",frames},{"compositor_visibility","unverified"},{"touch_passthrough","unverified"},{"state_schema",2}});
         std::this_thread::sleep_for(std::chrono::milliseconds(shown?16:100));

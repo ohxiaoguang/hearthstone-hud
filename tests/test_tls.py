@@ -36,3 +36,19 @@ class TrustTests(unittest.TestCase):
                 data_context=request.call_args.kwargs['context']
                 self.assertEqual(data_context.verify_mode,ssl.CERT_REQUIRED)
                 self.assertTrue(data_context.check_hostname)
+
+    def test_database_testing_switch_is_scoped_and_keeps_dataset_validation(self):
+        from engine.cards import Cards
+        import json
+        rows=[dict(id='CARD_'+str(i),dbfId=i+1,name='卡牌') for i in range(100)]
+        with tempfile.TemporaryDirectory() as folder:
+            cards=Cards(folder)
+            for verify in (True,False):
+                cards.database_verify_tls=verify
+                with patch('engine.cards.fetch',return_value=json.dumps(rows).encode()) as request:
+                    record=cards.refresh();self.assertIsNotNone(record);cards.apply(record)
+                    self.assertEqual(request.call_args.kwargs,dict(verify=verify))
+            with patch('engine.cards.fetch',return_value=b'[]'),patch('engine.cards.time.sleep'):
+                self.assertIsNone(cards.refresh())
+            self.assertEqual(len(cards.by_id),100)
+            self.assertTrue(cards.image_verify_tls)

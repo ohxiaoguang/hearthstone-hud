@@ -54,6 +54,10 @@ class Entity:
     in_starting_deck: bool | None = False  # None until ZONE/CONTROLLER are known
     owner: int = 0  # controller when created
     arrival: Arrival | None = None
+    creation_source_card_id: str = ""
+    creation_source: int | None = None
+    creation_zone: str = ""
+    entered_deck: bool = False
 
     @property
     def zone(self) -> str:
@@ -290,12 +294,19 @@ class PowerParser:
     def _create_entity(self, eid: int, card_id: str) -> Entity:
         ent = Entity(id=eid)
         ent.reveal(card_id)
+        ent.creation_source = self._source(ent)
+        source = self.game.entities.get(ent.creation_source)
+        ent.creation_source_card_id = source.card_id if source else ""
         old = self.game.resumed_from.entities.get(eid) if self.game.resumed_from else None
         if old is not None:
             ent.first_card_id = old.first_card_id or ent.first_card_id
             ent.in_starting_deck = old.in_starting_deck
             ent.owner = old.owner
             ent.arrival = old.arrival
+            ent.creation_source_card_id = old.creation_source_card_id
+            ent.creation_source = old.creation_source
+            ent.creation_zone = old.creation_zone
+            ent.entered_deck = old.entered_deck
         else:
             ent.in_starting_deck = None  # decided once its ZONE/CONTROLLER tags arrive
         self.game.entities[eid] = ent
@@ -305,6 +316,10 @@ class PowerParser:
         game = self.game
         old = ent.tags.get(tag)
         ent.tags[tag] = value
+        if tag == "ZONE" and not ent.creation_zone:
+            ent.creation_zone = value
+        if tag == "ZONE" and value == "DECK":
+            ent.entered_deck = True
 
         if ent.in_starting_deck is None and tag in ("ZONE", "CONTROLLER"):
             if "ZONE" in ent.tags and "CONTROLLER" in ent.tags:

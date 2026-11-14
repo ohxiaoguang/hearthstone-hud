@@ -68,9 +68,9 @@ class TrackingTests(unittest.TestCase):
 
     def test_shuffle_and_draw_generated_card(self):
         self.entity(8,'TEST_B','HAND',1);self.feed('TAG_CHANGE Entity=8 tag=ZONE value=DECK')
-        self.assertEqual(self.row('TEST_B')['remaining'],1)
+        self.assertEqual(self.p.view(self.cards)['own_added'][0]['remaining'],1)
         self.feed('TAG_CHANGE Entity=8 tag=ZONE value=HAND')
-        self.assertEqual(self.row('TEST_B')['remaining'],0)
+        self.assertEqual(self.p.view(self.cards)['own_added'],[])
         self.assertEqual(self.row('TEST_A')['remaining'],2)
 
     def test_transform_and_return_to_deck(self):
@@ -78,10 +78,11 @@ class TrackingTests(unittest.TestCase):
         self.feed('CHANGE_ENTITY - Updating Entity=4 CardID=TEST_B')
         self.feed('TAG_CHANGE Entity=4 tag=ZONE value=DECK')
         self.assertEqual(self.row('TEST_A')['remaining'],1)
-        self.assertEqual(self.row('TEST_B')['remaining'],1)
+        self.assertEqual(self.p.view(self.cards)['own_added'][0]['remaining'],1)
         self.feed('TAG_CHANGE Entity=4 tag=ZONE value=HAND')
         self.feed('TAG_CHANGE Entity=4 tag=ZONE value=PLAY')
-        self.assertEqual(self.row('TEST_B')['used'],1)
+        self.assertEqual(self.p.view(self.cards)['own_added'],[])
+        self.assertEqual(self.p.view(self.cards)['own_played'][-1]['card_id'],'TEST_B')
 
     def test_original_shuffle_back(self):
         self.feed('TAG_CHANGE Entity=4 tag=ZONE value=HAND');self.feed('TAG_CHANGE Entity=4 tag=ZONE value=DECK')

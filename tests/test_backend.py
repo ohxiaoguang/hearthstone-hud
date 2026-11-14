@@ -62,3 +62,12 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Hearthstone HUD Diagnostic',text)
         self.assertNotIn('private-secret',text);self.assertNotIn('real-user',text)
         self.assertEqual(before,set(self.plugin.runtime.rglob('*.txt')))
+
+    async def test_database_and_image_tls_settings_are_independent(self):
+        self.assertFalse(self.plugin.cards.database_verify_tls)
+        await self.plugin.configure({'database_tls_verify':True,'image_tls_verify':False})
+        self.assertTrue(self.plugin.cards.database_verify_tls)
+        self.assertFalse(self.plugin.cards.image_verify_tls)
+        status=await self.plugin.status()
+        self.assertTrue(status['cards']['database_tls_verify'])
+        self.assertIn('Database Verification: enabled',await self.plugin.diagnostic_text())
