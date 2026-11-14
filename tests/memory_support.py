@@ -43,4 +43,3 @@ def hearthstone_heap(display: bool = True, choices=("CARD_A", "CARD_B", "CARD_C"
         h.set_static(display_cls, "s_instance", instance)
     h.finish()
     return h
-
