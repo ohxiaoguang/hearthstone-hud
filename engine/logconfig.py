@@ -7,10 +7,12 @@ import tempfile
 
 POWER = dict(LogLevel='1',FilePrinting='True',ConsolePrinting='False',ScreenPrinting='False',Verbose='True')
 DECKS = dict(POWER,Verbose='False')
+ARENA = dict(POWER)
+SECTIONS = {'Power':POWER,'Decks':DECKS,'Arena':ARENA}
 
 
 def inspect_config(user_dir, section_name='Power'):
-    required = POWER if section_name == 'Power' else DECKS
+    required = SECTIONS[section_name]
     if not user_dir:
         return dict(path='',exists=False,enabled=False,state='Hearthstone 用户目录未发现')
     path = Path(user_dir)/'log.config'
@@ -37,10 +39,14 @@ def ensure_decks(process):
     return ensure_section(process, 'Decks')
 
 
+def ensure_arena(process):
+    return ensure_section(process, 'Arena')
+
+
 def ensure_section(process, section_name):
-    if section_name not in ('Power','Decks'):
+    if section_name not in SECTIONS:
         raise ValueError('不支持的日志节')
-    required = POWER if section_name == 'Power' else DECKS
+    required = SECTIONS[section_name]
     if not process.get('found') or not process.get('prefix') or not process.get('user_dir'):
         return dict(path='',exists=False,enabled=False,success=False,changed=False,restart_required=False,
                     state=process.get('error') or 'Proton 前缀未发现')

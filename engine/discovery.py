@@ -11,7 +11,7 @@ def discover(game_dir, manual='', now=None, max_age=300):
     visited = 0
     for root in roots:
         if root.is_file():
-            candidates = [p for p in root.parent.iterdir() if p.name.lower() in ('power.log','decks.log')]
+            candidates = [p for p in root.parent.iterdir() if p.name.lower() in ('power.log','decks.log','arena.log')]
         else:
             candidates = []
             if not root.exists():
@@ -24,7 +24,7 @@ def discover(game_dir, manual='', now=None, max_age=300):
                 depth = len(Path(folder).relative_to(root).parts)
                 dirs[:] = sorted(d for d in dirs if not d.startswith('.') and not (Path(folder)/d).is_symlink()) if depth < 6 and visited < 1024 else []
                 for name in files:
-                    if name.lower() in ('power.log', 'decks.log'):
+                    if name.lower() in ('power.log', 'decks.log','arena.log'):
                         candidates.append(Path(folder)/name)
                 if visited >= 1024:
                     errors.append('扫描达到 1024 目录上限')
@@ -40,7 +40,8 @@ def discover(game_dir, manual='', now=None, max_age=300):
     powers = [f for f in found if f['kind']=='power.log']
     selected = max(powers, key=lambda f:f['mtime'], default=None)
     decks = next((f for f in found if selected and f['kind']=='decks.log' and Path(f['path']).parent==Path(selected['path']).parent),None)
-    return dict(roots=[str(r) for r in roots], power=selected, decks=decks,
+    arena = next((f for f in found if selected and f['kind']=='arena.log' and Path(f['path']).parent==Path(selected['path']).parent),None)
+    return dict(roots=[str(r) for r in roots], power=selected, decks=decks, arena=arena,
                 files=sorted(found,key=lambda f:f['mtime'],reverse=True)[:12], errors=errors,
                 visited=visited, read_state='可读取' if selected and selected['active'] else '等待新日志（旧文件不回放）' if selected else '未发现 Power.log')
 

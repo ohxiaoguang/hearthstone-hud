@@ -2,12 +2,30 @@
 #include <nlohmann/json.hpp>
 #include <cmath>
 #include <algorithm>
+inline bool valid_arena_state(const nlohmann::json& a){
+    if(!a.is_object())return false;
+    for(const auto* k:{"visible","drafting","exact"})if(!a.contains(k)||!a[k].is_boolean())return false;
+    for(const auto* k:{"mode","class_name"})if(!a.contains(k)||!a[k].is_string()||a[k].get_ref<const std::string&>().size()>256)return false;
+    if(a.contains("count_exact")&&!a["count_exact"].is_boolean())return false;
+    if(!a.contains("count")||!a["count"].is_number_integer())return false;
+    for(const auto* k:{"candidates","picks","redraft_picks"}){
+        if(!a.contains(k)||!a[k].is_array()||a[k].size()>(std::string(k)=="candidates"?3:100))return false;
+        for(const auto& r:a[k]){
+            if(!r.is_object())return false;
+            for(const auto* field:{"id","name","image","rating_label","tier"})if(!r.contains(field)||!r[field].is_string()||r[field].get_ref<const std::string&>().size()>4096)return false;
+            if(!r.contains("best")||!r["best"].is_boolean())return false;
+            if(!r.contains("score")||(!r["score"].is_null()&&(!r["score"].is_number()||!std::isfinite(r["score"].get<double>()))))return false;
+        }
+    }
+    return true;
+}
 inline bool valid_hud_state(const nlohmann::json& s) {
     if(!s.is_object() || !s.contains("updated") || !s["updated"].is_number())return false;
     for(const auto* k:{"scale","opacity","x","y","right_x","right_y","panel_width"})
         if(s.contains(k) && (!s[k].is_number() || !std::isfinite(s[k].get<double>())))return false;
     for(const auto* k:{"visible","own_deck","opponent_deck","opponent_hand","card_images","chinese_names","own_played","opponent_played","show_summary","hide_exhausted"})
         if(s.contains(k) && !s[k].is_boolean())return false;
+    if(s.contains("arena_state")&&!valid_arena_state(s["arena_state"]))return false;
     if(!s.contains("tracking") || !s["tracking"].is_object())return false;
     const auto& t=s["tracking"];
     if(!t.contains("status") || !t["status"].is_string() || !t.contains("turn") || !t["turn"].is_number_integer())return false;
@@ -66,4 +84,18 @@ inline LeftRegions left_regions(bool opponent,bool own,float y,float height,floa
     if(opponent)return {{y,height,true},{}};
     if(own)return {{},{y,height,true}};
     return {};
+}
+
+inline nlohmann::json arena_rows(const nlohmann::json& a,bool candidates){
+    using nlohmann::json;auto rows=json::array();
+    const auto append=[&](const char* key){for(const auto& r:a[key]){auto row=r;row["arena_row"]=true;rows.push_back(row);}};
+    if(candidates)append("candidates");
+    else {
+        rows.push_back({{"section",true},{"name",a.value("exact",false)?"最终牌组（Decks.log）":"已选牌（实际选择顺序）"}});
+        append("picks");
+        if(!a["redraft_picks"].empty()){
+            rows.push_back({{"section",true},{"name","重选操作（等待最终牌组，不合并）"}});append("redraft_picks");
+        }
+    }
+    return rows;
 }

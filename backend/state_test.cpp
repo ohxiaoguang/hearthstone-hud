@@ -33,5 +33,14 @@ int main(){
     bad=good;bad["show_summary"]="yes";if(valid_hud_state(bad))return 20;
     bad=good;bad["tracking"]["own_played"][0]["turn"]="bad";if(valid_hud_state(bad))return 10;
     bad=good;bad["tracking"]["own_added"][0]["generated"]="bad";if(valid_hud_state(bad))return 11;
+    auto rated=json{{"id","A"},{"name","甲"},{"image",""},{"rating_label","80"},{"tier","Good"},{"score",80},{"best",true}};
+    auto arena=json{{"visible",true},{"drafting",true},{"exact",false},{"mode","DRAFTING"},{"class_name","法师"},{"count",0},{"candidates",json::array({rated,rated,rated})},{"picks",json::array()},{"redraft_picks",json::array()}};
+    good["arena_state"]=arena;if(!valid_hud_state(good))return 21;
+    if(arena_rows(arena,true).size()!=3 || !arena_rows(arena,true)[0].value("arena_row",false))return 22;
+    bad=good;bad["arena_state"]["candidates"].push_back(rated);if(valid_hud_state(bad))return 23;
+    bad=good;bad["arena_state"]["candidates"][0]["score"]="fake";if(valid_hud_state(bad))return 24;
+    bad=good;bad["arena_state"]["visible"]="yes";if(valid_hud_state(bad))return 25;
+    arena["picks"].push_back(rated);arena["redraft_picks"].push_back(rated);
+    if(arena_rows(arena,false).size()!=4 || arena["count"]!=0)return 26; // Display never mutates counts.
     std::cout<<"Native HUD state validation: passed\n";
 }

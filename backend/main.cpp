@@ -76,24 +76,27 @@ static void panel(const char* id,const std::string& title,const json& rows,bool 
         if(row.value("section",false)){
             draw->AddText(pos,IM_COL32(255,215,135,255),row.value("name","").c_str());continue;
         }
-        const bool event=row.value("event",false),deck=row.value("deck_row",false);
+        const bool event=row.value("event",false),deck=row.value("deck_row",false),arena=row.value("arena_row",false);
+        const float count_width=(arena?76:36)*scale;
         const bool exhausted=deck && row.value("remaining",json())==json(0);
         const auto white=exhausted?IM_COL32(170,170,170,200):IM_COL32(255,255,255,255);
         draw->AddRectFilled(pos,{pos.x+width,pos.y+row_height},IM_COL32(24,30,39,230));
         if(images){auto texture=textures.get(row.value("image",""),frame);if(texture)
             draw->AddImage(reinterpret_cast<void*>(static_cast<intptr_t>(texture)),pos,{pos.x+width,pos.y+row_height},{0,.29f},{1,.71f},exhausted?IM_COL32(170,170,170,110):IM_COL32_WHITE);}
         draw->AddRectFilledMultiColor(pos,{pos.x+width,pos.y+row_height},IM_COL32(0,0,0,210),IM_COL32(0,0,0,70),IM_COL32(0,0,0,70),IM_COL32(0,0,0,210));
-        draw->AddRectFilled({pos.x+width-36*scale,pos.y},{pos.x+width,pos.y+row_height},IM_COL32(0,0,0,190));
+        draw->AddRectFilled({pos.x+width-count_width,pos.y},{pos.x+width,pos.y+row_height},IM_COL32(0,0,0,190));
         std::string detail=row.value("origin_label","");
+        if(arena)detail=(row.value("best",false)?"★ 推荐 · ":"")+row.value("tier","");
         if(event){detail="回合 "+number(row.value("turn",json()))+" · "+detail;if(row.value("returned",false))detail+=" · 回手";}
         else if(row.contains("origin_label"))detail="在库 · "+detail;
-        const ImVec4 clip(pos.x+28*scale,pos.y,pos.x+width-38*scale,pos.y+row_height);
+        const ImVec4 clip(pos.x+28*scale,pos.y,pos.x+width-count_width-2*scale,pos.y+row_height);
         draw->AddText(ImGui::GetFont(),16*scale,{pos.x+3*scale,pos.y+6*scale},white,number(row.value("cost",json())).c_str());
         draw->AddText(ImGui::GetFont(),16*scale,{pos.x+28*scale,pos.y+(detail.empty()?6:0)*scale},white,row.value(chinese?"name":"id","").c_str(),nullptr,0,&clip);
         if(!detail.empty())draw->AddText(ImGui::GetFont(),10*scale,{pos.x+28*scale,pos.y+19*scale},white,detail.c_str(),nullptr,0,&clip);
-        const auto label=event?"#"+number(row.value("order",json())):card_count_label(row,deck);
-        const ImVec4 count_clip(pos.x+width-35*scale,pos.y,pos.x+width,pos.y+row_height);
-        draw->AddText(ImGui::GetFont(),14*scale,{pos.x+width-34*scale,pos.y+7*scale},white,label.c_str(),nullptr,0,&count_clip);
+        if(arena&&row.value("best",false))draw->AddRect(pos,{pos.x+width,pos.y+row_height},IM_COL32(255,215,90,255),0,0,2*scale);
+        const auto label=arena?row.value("rating_label","暂无评分"):event?"#"+number(row.value("order",json())):card_count_label(row,deck);
+        const ImVec4 count_clip(pos.x+width-count_width+scale,pos.y,pos.x+width,pos.y+row_height);
+        draw->AddText(ImGui::GetFont(),14*scale,{pos.x+width-count_width+2*scale,pos.y+7*scale},white,label.c_str(),nullptr,0,&count_clip);
     }
     ImGui::PopStyleVar();ImGui::End();
 }
@@ -153,6 +156,18 @@ int main(int argc,char** argv){
         float opacity=std::clamp(state.value("opacity",.85f),.1f,1.f);
         int sw,sh;glfwGetWindowSize(w,&sw,&sh);
         const auto& tracking=state["tracking"];
+        const float width=std::min(std::max(1.f,sw-20.f),std::clamp(state.value("panel_width",320.f),180.f,640.f)*scale);
+        const float maxx=std::max(0.f,sw-width-20),maxy=std::max(0.f,sh-180*scale);
+        const float lx=std::clamp(state.value("x",40.f),0.f,maxx),ly=std::clamp(state.value("y",80.f),0.f,maxy);
+        const float rx=std::clamp(state.value("right_x",1540.f),0.f,maxx),ry=std::clamp(state.value("right_y",80.f),0.f,maxy);
+        if(state.contains("arena_state")&&state["arena_state"].value("visible",false)){
+            const auto& arena=state["arena_state"];
+            const std::string count=number(arena.value("count",json()))+"/30";
+            const std::string title="竞技场 · "+arena.value("class_name","")+" · "+count;
+            const float available=std::max(80.f,sh-ly-16*scale);
+            panel("arena-offer",title+(arena.value("count_exact",false)?"":"（份数待确认）"),arena_rows(arena,true),false,lx,ly,scale,opacity,state.value("card_images",true),state.value("chinese_names",true),textures,frames,width,std::min(available,230*scale));
+            panel("arena-picked",arena.value("mode","")=="REDRAFTING"?"重选中 · 旧牌组不追加":"已选牌 · "+count,arena_rows(arena,false),false,rx,ry,scale,opacity,state.value("card_images",true),state.value("chinese_names",true),textures,frames,width,std::max(80.f,sh-ry-16*scale));
+        }else{
         if(state.value("show_summary",true)){
         ImGui::SetNextWindowPos({sw*.5f,8},ImGuiCond_Always,{.5f,0});ImGui::SetNextWindowBgAlpha(opacity);
         ImGui::Begin("match",nullptr,flags);ImGui::SetWindowFontScale(scale*.8f);
@@ -162,10 +177,6 @@ int main(int argc,char** argv){
         summary+=" · 对手牌库 "+number(tracking.value("opponent_deck",json()));
         ImGui::TextUnformatted(summary.c_str());ImGui::End();
         }
-        const float width=std::min(std::max(1.f,sw-20.f),std::clamp(state.value("panel_width",320.f),180.f,640.f)*scale);
-        const float maxx=std::max(0.f,sw-width-20),maxy=std::max(0.f,sh-180*scale);
-        const float lx=std::clamp(state.value("x",40.f),0.f,maxx),ly=std::clamp(state.value("y",80.f),0.f,maxy);
-        const float rx=std::clamp(state.value("right_x",1540.f),0.f,maxx),ry=std::clamp(state.value("right_y",80.f),0.f,maxy);
         const auto left=left_regions(state.value("opponent_played",true),state.value("own_played",true),ly,std::max(80.f,sh-ly-16*scale),8*scale);
         const auto render=[&](const char* id,const std::string& title,const json& rows,bool deck,float x,float y,float height){
             panel(id,title,rows,deck,x,y,scale,opacity,state.value("card_images",true),state.value("chinese_names",true),textures,frames,width,height);
@@ -173,6 +184,7 @@ int main(int argc,char** argv){
         if(left.opponent.visible)render("opponent-played","对手已打出 · 最近在前",played_rows(tracking,"opponent_played"),false,lx,left.opponent.y,left.opponent.height);
         if(left.own.visible)render("own-played","我方已打出 · 最近在前",played_rows(tracking,"own_played"),false,lx,left.own.y,left.own.height);
         if(state.value("own_deck",true))render("remaining","我方剩余牌库 · "+number(tracking.value("own_remaining",json())),deck_rows(tracking,state.value("hide_exhausted",false)),true,rx,ry,std::max(80.f,sh-ry-16*scale));
+        }
         ImGui::Render();int fw,fh;glfwGetFramebufferSize(w,&fw,&fh);glViewport(0,0,fw,fh);glClearColor(0,0,0,0);glClear(GL_COLOR_BUFFER_BIT);ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());glfwSwapBuffers(w);
         if(++frames%30==0)write_json(argv[3],{{"display",getenv("DISPLAY")?getenv("DISPLAY"):""},{"window",x},{"external_overlay",atom_ok},{"xshape_input_empty",shape},{"transparent_framebuffer",glfwGetWindowAttrib(w,GLFW_TRANSPARENT_FRAMEBUFFER)==GLFW_TRUE},{"mapped",shown},{"frames",frames},{"compositor_visibility","unverified"},{"touch_passthrough","unverified"},{"state_schema",2}});
         std::this_thread::sleep_for(std::chrono::milliseconds(shown?16:100));

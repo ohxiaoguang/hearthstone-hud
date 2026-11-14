@@ -18,6 +18,7 @@ from engine.proton import discover_process
 from engine.logconfig import inspect_config, diagnostic_state
 process=discover_process()
 config=inspect_config(process.get('user_dir'))
+arena_config=inspect_config(process.get('user_dir'),'Arena')
 decks_config=inspect_config(process.get('user_dir'),'Decks')
 config.update(success=None,changed=False,restart_required=None,
               auto_config_state='本脚本只读；未发现自动配置记录')
@@ -30,7 +31,7 @@ try:
 except (OSError,ValueError):
     pass
 result=discover(process.get('game_dir') or a.game_dir,a.log_path)
-result.update(process=process,log_config=config,decks_config=decks_config,
+result.update(process=process,log_config=config,decks_config=decks_config,arena_config=arena_config,
               decks_note='启用 Decks 后需重启，并选择卡组排队；存在文件不代表存在有效牌组代码',gamescope=gamescope_status(),
               log_status=diagnostic_state(process,config,result))
 print(json.dumps(result,ensure_ascii=False,indent=2))

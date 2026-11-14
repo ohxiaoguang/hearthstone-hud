@@ -36,12 +36,12 @@ def format_diagnostics(data,version,recent=(),renderer_tail=''):
     field('Prefix',process.get('prefix','unknown'));field('Game Status',data.get('match_status','unknown'))
     field('Players',data.get('identity_status','unknown'));field('Current Turn',tracking.get('turn','unknown'))
     section('Logs');field('Read Status',data.get('log_status','unknown'))
-    for key,label in [('power','Power.log'),('decks','Decks.log')]:
+    for key,label in [('power','Power.log'),('decks','Decks.log'),('arena','Arena.log')]:
         item=logs.get(key) or {};field(label,item.get('path','not found'))
         field(label+' Size/Modified',str(item.get('size','unknown'))+' bytes / '+stamp(item.get('mtime')))
     field('Offset/Accepted/Errors',f"{logs.get('offset','unknown')} / {logs.get('accepted',0)} / {data.get('parse_errors',0)}")
     field('Decks Candidates/Errors',f"{logs.get('deck_candidates',0)} / {logs.get('deck_parse_errors',0)}")
-    for key in ('power_config','decks_config'):
+    for key in ('power_config','decks_config','arena_config'):
         cfg=data.get(key,{})
         field(key,cfg.get('state','unknown'));field(key+' Restart',cfg.get('restart_required','unknown'))
     section('Deck Tracker');field('Initial Deck',data.get('deck_status','unknown'))
@@ -54,6 +54,12 @@ def format_diagnostics(data,version,recent=(),renderer_tail=''):
         if row.get('remaining') is None:
             reason=row.get('count_reason','unknown');reasons[reason]=reasons.get(reason,0)+1
     for reason,count in reasons.items():field('Unknown Reason',str(count)+' rows: '+reason)
+    arena=data.get('arena',{})
+    section('Arena')
+    for key in ('deck_id','phase','mode','count','exact','unresolved_choices','conflicts','error'):field(key,arena.get(key,'unknown'))
+    field('Candidates','manual preview only; not counted as picks')
+    field('Ratings',arena.get('ratings',{}).get('source','unknown'))
+    field('Snapshot',arena.get('ratings',{}).get('captured_at','unknown'))
     section('TLS')
     field('Image Verification','enabled' if cards.get('image_tls_verify',True) else 'DISABLED: image-only testing mode')
     field('Database Verification','enabled' if cards.get('database_tls_verify',True) else 'DISABLED: database testing mode')

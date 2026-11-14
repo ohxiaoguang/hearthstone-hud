@@ -13,7 +13,7 @@ def verify(archive):
         names = set(z.namelist())
         required = ['main.py', 'plugin.json', 'dist/index.js',
                     'py_modules/engine/__init__.py', 'py_modules/engine/io.py',
-                    'py_modules/engine/power.py', 'assets/certs/cacert.pem', 'licenses/certifi-MPL-2.0.txt', 'py_modules/engine/cards.py', 'py_modules/engine/tls.py', 'py_modules/engine/images.py', 'py_modules/engine/diagnostics.py', 'py_modules/engine/tracker.py', 'py_modules/engine/discovery.py', 'py_modules/engine/proton.py', 'py_modules/engine/logconfig.py', 'py_modules/engine/deckstring.py', 'scripts/diagnose-logs.py', 'bin/hearthstone-hud-renderer']
+                    'py_modules/engine/power.py', 'assets/certs/cacert.pem', 'licenses/certifi-MPL-2.0.txt', 'py_modules/engine/cards.py', 'py_modules/engine/tls.py', 'py_modules/engine/images.py', 'py_modules/engine/diagnostics.py', 'py_modules/engine/tracker.py', 'py_modules/engine/discovery.py', 'py_modules/engine/proton.py', 'py_modules/engine/logconfig.py', 'py_modules/engine/deckstring.py','py_modules/engine/arena.py','py_modules/engine/arena_ratings.py','py_modules/engine/arena_ratings.json', 'scripts/diagnose-logs.py', 'bin/hearthstone-hud-renderer']
         for name in required:
             assert 'hearthstone-hud/' + name in names, 'Missing: ' + name
         assert not any(n.startswith('hearthstone-hud/engine/') for n in names), 'Old root engine layout'
@@ -30,7 +30,8 @@ import importlib.util, pathlib, sys, types
 plugin = pathlib.Path(sys.argv[1])
 sys.path.append(str(plugin / 'py_modules'))
 sys.modules['decky'] = types.ModuleType('decky')
-import engine.io, engine.power
+import engine.io, engine.power, engine.arena, engine.arena_ratings
+assert engine.arena_ratings.ArenaRatings().metadata()["entries"] > 0
 for module in (engine.io, engine.power):
     assert plugin / 'py_modules' in pathlib.Path(module.__file__).parents
 spec = importlib.util.spec_from_file_location('_', plugin / 'main.py')

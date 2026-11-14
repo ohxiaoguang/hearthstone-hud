@@ -1,5 +1,6 @@
 """Decky backend. No network listeners or privileged game access."""
 import asyncio
+import base64
 from collections import deque
 import contextlib
 import json
@@ -12,10 +13,11 @@ import decky
 from engine.io import Tail, atomic_json
 from engine.tracker import Tracker, DeckLog, LINE
 from engine.cards import Cards
+from engine.arena import Arena
 from engine.discovery import discover, gamescope_status, LogClock
 from engine.proton import discover_process
 from engine.diagnostics import format_diagnostics
-from engine.logconfig import ensure_power, ensure_decks, inspect_config, diagnostic_state
+from engine.logconfig import ensure_power, ensure_decks, ensure_arena, inspect_config, diagnostic_state
 
 ROOT = Path(__file__).resolve().parent
 VERSION = json.loads((ROOT/'package.json').read_text())['version']
@@ -49,6 +51,16 @@ class Plugin:
         self.cards.image_verify_tls = self.settings['image_tls_verify']
         self.cards.database_verify_tls = self.settings['database_tls_verify']
         self.media_task = None
+        try:
+            manual=json.loads((self.settings_dir/'arena-manual.json').read_text())
+        except (OSError,ValueError):manual=[]
+        self.arena = Arena(self.cards,manual=manual if isinstance(manual,list) else [])
+        self.parser.arena = self.arena
+        self.arena_tail = Tail();self.arena_clock = None;self.side_session = None
+        self.arena_caught_up = False;self.arena_config = {};self.arena_receipt = {}
+        try:
+            self.arena_receipt=json.loads((self.settings_dir/'arena-config-receipt.json').read_text())
+        except (OSError,ValueError):pass
         self.discovery = {}
         self.process = {}
         self.power_config = {}
@@ -95,6 +107,7 @@ class Plugin:
         if 'image_tls_verify' in checked:
             self.cards.image_verify_tls = checked['image_tls_verify']
         if any(k in checked for k in ('game_dir','log_dir')):
+            self.arena_caught_up=False
             self.last_scan = float('-inf')
         atomic_json(self.settings_dir / 'settings.json', self.settings)
         return await self.status()
@@ -111,6 +124,48 @@ class Plugin:
             self.decks_config = result
         self.last_scan = float('-inf')
         return await self.status()
+
+    async def enable_arena_logging(self):
+        async with self.config_lock:
+            process=await asyncio.to_thread(discover_process)
+            result=await asyncio.to_thread(ensure_arena,process)
+            if not result.get('success'):raise RuntimeError(result.get('state','Arena 配置失败'))
+            if result.get('changed'):
+                self.arena_receipt=dict(instance=process.get('instance'),path=result['path'],backup=result.get('backup',''))
+                atomic_json(self.settings_dir/'arena-config-receipt.json',self.arena_receipt)
+            self.arena_config=result
+        self.last_scan=float('-inf')
+        return await self.status()
+
+    def _arena_ui(self):
+        view=self.arena.view()
+        # QAM cannot read a native cache path. Only the three validated tile PNGs
+        # are exposed as data URIs; IPC to the renderer keeps native paths only.
+        for row in view['candidates']:
+            row['image_data']=''
+            path=self.cards.tiles.path(row['id'])
+            try:
+                if path and path.stat().st_size<=128*1024:
+                    row['image_data']='data:image/png;base64,'+base64.b64encode(path.read_bytes()).decode()
+            except OSError:pass
+        return view
+
+    async def arena_search(self, query: str):
+        return self.arena.search(query)
+
+    async def arena_set_offer(self, deck_id: str, phase: str, ordinal: int, ids: list):
+        self.arena.set_offer(deck_id,phase,ordinal,ids)
+        self.cards.request_images(ids);self._ensure_media_worker();self._publish()
+        return self._arena_ui()
+
+    async def arena_clear_offer(self):
+        self.arena.clear_offer();self._publish();return self._arena_ui()
+
+    async def arena_manual_pick(self, deck_id: str, phase: str, ordinal: int, cid: str):
+        if not self.arena_caught_up:raise ValueError('请等待同会话 Arena 日志读取完成后再补录')
+        self.arena.manual_pick(deck_id,phase,ordinal,cid)
+        atomic_json(self.settings_dir/'arena-manual.json',self.arena.export_manual())
+        self._publish();return self._arena_ui()
 
     async def import_card_database(self, path: str):
         record = await asyncio.to_thread(self.cards.import_file,path)
@@ -208,20 +263,24 @@ class Plugin:
                     error=self.error, diagnostic=diag, log_path=str(self.log_path or ''),
                     parse_errors=self.parser.failures, gamescope_running=self.gamescope.startswith('检测到'),
                     gamescope_status=self.gamescope, logs=self.discovery, cards=self.cards.diagnostic(),
-                    process=self.process, power_config=self.power_config, decks_config=self.decks_config,
+                    process=self.process, power_config=self.power_config, decks_config=self.decks_config,arena_config=self.arena_config,
                     match_status=stage, identity_status=identities, deck_status=deck_stage,
                     decks_log_status='已找到同会话 Decks.log' if self.discovery.get('decks') else '未找到同会话 Decks.log；启用后重启并选定卡组排队',
                     log_status=diagnostic_state(self.process,self.power_config,self.discovery),
                     tracking=tracking,
                     visibility='v0.1.x 显示和触控已由用户实测；本版记牌仍待实机验收',
-                    arena='尚未加载评分；不支持自动识别候选牌')
+                    arena=self._arena_ui(),arena_log_status='已找到同会话 Arena.log' if self.discovery.get('arena') else '同会话 Arena.log 未发现')
 
     def _publish(self):
         tracking = self.parser.view(self.cards) if self.active and self.caught_up else dict(status='waiting',turn=0,own=[],opponent=[],own_label='等待活动日志',opponent_hand=None,opponent_deck=None)
         if self.settings['card_images']:
             self.cards.request_images(r['id'] for key in ('own','own_added','own_played','opponent_seen','opponent_played') for r in tracking.get(key,[]))
+        arena=self.arena.view()
+        arena['visible']=bool(self.settings['arena'] and self.arena_caught_up and arena['drafting'] and tracking['status'] not in ('playing','identifying'))
+        if self.settings['card_images'] and arena['visible']:
+            self.cards.request_images(r['id'] for key in ('picks','redraft_picks','candidates') for r in arena[key])
         atomic_json(self.runtime / 'state.json', dict(updated=time.time(), **self.settings,
-            schema=2, tracking=tracking))
+            schema=2, tracking=tracking,arena_state=arena))
 
     async def _loop(self):
         while True:
@@ -232,6 +291,10 @@ class Plugin:
                     async with self.config_lock:
                         config = await asyncio.to_thread(ensure_power,process)
                         decks_config = await asyncio.to_thread(inspect_config,process.get('user_dir'),'Decks')
+                        arena_config = await asyncio.to_thread(inspect_config,process.get('user_dir'),'Arena')
+                        if arena_config.get('enabled') and self.arena_receipt.get('path')==arena_config.get('path'):
+                            arena_config['restart_required']=self.arena_receipt.get('instance')==process.get('instance')
+                            arena_config['backup']=self.arena_receipt.get('backup','')
                         if decks_config.get('enabled') and self.decks_receipt.get('path')==decks_config.get('path'):
                             decks_config['restart_required'] = self.decks_receipt.get('instance')==process.get('instance')
                             decks_config['backup'] = self.decks_receipt.get('backup','')
@@ -247,35 +310,56 @@ class Plugin:
                     self.process = process
                     self.power_config = config
                     self.decks_config = decks_config
+                    self.arena_config = arena_config
                     self.discovery = result
                     self.last_scan = time.monotonic()
                     self.gamescope = gamescope_status()
                 power = self.discovery.get('power')
                 self.active = bool(power and power['active'])
                 self.log_path = Path(power['path']) if power else None
+                arena_file=self.discovery.get('arena')
+                side_active=bool(power and (self.active or (arena_file and arena_file['active'])))
+                if side_active:
+                    session=str(self.log_path.parent)
+                    if session!=self.side_session:
+                        self.arena.set_session(session);self.arena_tail=Tail();self.deck_tail=Tail()
+                        self.decks=DeckLog();self.parser.decks=self.decks;self.side_session=session
+                    side_ready=True
+                    # Process Arena before Decks (ID proof), and both before Power.
+                    for kind in ('arena','decks'):
+                        item=self.discovery.get(kind)
+                        if not item:continue
+                        tail=self.arena_tail if kind=='arena' else self.deck_tail
+                        old_generation=tail.generation;side_lines=tail.read(item['path'])
+                        if old_generation!=tail.generation:
+                            clock=LogClock(item['path'],item['mtime'])
+                            if kind=='arena':
+                                self.arena_clock=clock;self.arena.reset_stream()
+                                # Re-apply final Decks definitions after an Arena rewind.
+                                self.deck_tail=Tail();self.decks=DeckLog();self.parser.decks=self.decks
+                            else:
+                                self.deck_clock=clock;self.decks=DeckLog();self.parser.decks=self.decks;self.arena.reset_decks()
+                        clock=self.arena_clock if kind=='arena' else self.deck_clock
+                        for line in side_lines:
+                            m=LINE.match(line)
+                            if not m:continue
+                            stamp=clock.timestamp(m[1])
+                            if kind=='arena':self.arena.feed(stamp,m[2])
+                            else:
+                                self.decks.feed(stamp,m[2]);self.arena.feed_decks(stamp,m[2])
+                        side_ready=side_ready and tail.offset>=Path(item['path']).stat().st_size
+                        self.discovery[kind+'_offset']=tail.offset
+                        self.discovery[kind+'_generation']=tail.generation
+                        if not side_ready and kind=='arena':break
+                    self.arena_caught_up=side_ready and bool(arena_file)
+                    if not side_ready:
+                        self._publish();await asyncio.sleep(.25);continue
+                else:self.arena_caught_up=False
                 if self.active:
-                    if self.tail.path is not None and self.log_path != self.tail.path:
-                        self.decks = DeckLog()
-                        self.parser.decks = self.decks
-                        self.deck_tail = Tail()
-                    # Read matching Decks.log before Power; candidates bind by log timestamp.
-                    deck = self.discovery.get('decks')
-                    if deck:
-                        deck_generation = self.deck_tail.generation
-                        deck_lines = self.deck_tail.read(deck['path'])
-                        if self.deck_tail.generation != deck_generation:
-                            self.deck_clock = LogClock(deck['path'],deck['mtime'])
-                            self.decks = DeckLog()
-                            self.parser.decks = self.decks
-                        for line in deck_lines:
-                            m = LINE.match(line)
-                            if m:
-                                stamp = self.deck_clock.timestamp(m[1])
-                                self.decks.feed(stamp,m[2])
                     generation = self.tail.generation
                     lines = self.tail.read(self.log_path)
                     if self.tail.generation != generation:
-                        self.parser = Tracker(self.decks)
+                        self.parser = Tracker(self.decks,arena=self.arena)
                         self.power_clock = LogClock(self.log_path,power['mtime'])
                     for line in lines:
                         m = LINE.match(line)

@@ -41,9 +41,10 @@ class DeckLog:
 
 
 class Tracker(PowerParser):
-    def __init__(self, decks=None):
+    def __init__(self, decks=None, arena=None):
         super().__init__()
         self.decks = decks or DeckLog()
+        self.arena = arena
         self.initial_dbf = {}
         self.drawn = set()
         self.used = []
@@ -189,6 +190,8 @@ class Tracker(PowerParser):
         # Bind only a deck timestamped before this game, after the previous one.
         if not self.initial_dbf:
             self.initial_dbf = self.decks.for_game(game.start,self.previous_start)
+        if self.arena is not None and game.game_type in ('GT_ARENA','GT_UNDERGROUND_ARENA'):
+            self.initial_dbf = self.arena.definition_for_game(datetime.fromisoformat(game.key))
         me,opp = game.friendly,game.opponent
         result = dict(status='playing' if me and opp else 'identifying',turn=(game.turn+1)//2,
                       own=[],own_added=[],own_played=[],opponent=[],opponent_seen=[],opponent_played=[],own_label='牌组未知',opponent_hand=None,opponent_deck=None,

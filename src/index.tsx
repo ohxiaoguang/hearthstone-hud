@@ -3,15 +3,17 @@ import { callable, definePlugin } from '@decky/api';
 import { useEffect, useState, type ReactNode } from 'react';
 import { FaLayerGroup } from 'react-icons/fa';
 import { copyText } from './clipboard';
+import { ArenaEditor, type ArenaView } from './arena';
 type Settings = {game_dir:string;proton_prefix:string;log_dir:string;display:string;x:number;y:number;scale:number;opacity:number;visible:boolean;own_deck:boolean;opponent_deck:boolean;opponent_hand:boolean;arena:boolean;right_x:number;right_y:number;card_images:boolean;image_tls_verify:boolean;database_tls_verify:boolean;own_played:boolean;opponent_played:boolean;show_summary:boolean;panel_width:number;hide_exhausted:boolean;chinese_names:boolean};
 type ImportResult = {found:number;imported:number;skipped:number;format_errors:number;invalid_ids:number;other_failures:number;errors:string[]};
-type Status = {storage:{runtime:string;database:string;images:string;manual_images:string;retained_on_uninstall:boolean};version:string;settings:Settings;running:boolean;error:string;log_path:string;parse_errors:number;gamescope_status:string;
+type Status = {arena:ArenaView;arena_log_status:string;arena_config:{enabled?:boolean;restart_required?:boolean};storage:{runtime:string;database:string;images:string;manual_images:string;retained_on_uninstall:boolean};version:string;settings:Settings;running:boolean;error:string;log_path:string;parse_errors:number;gamescope_status:string;
   cards:{count:number;state:string;download_state:string;source:string;updated:number;error:string;image_error:string;images_pending:number;image_cache:{manual:number;automatic:number};image_batch:{status:string;total:number;success:number;failed:number;skipped:number};image_import:ImportResult|null};
   process:{found?:boolean;prefix?:string;pid?:number};power_config:{exists?:boolean;enabled?:boolean;restart_required?:boolean};log_status:string;decks_config:{enabled?:boolean;restart_required?:boolean};match_status:string;identity_status:string;deck_status:string;decks_log_status:string};
 const getStatus = callable<[],Status>('status');
 const configure = callable<[values:Partial<Settings>],Status>('configure');
 const start = callable<[],Status>('start_hud');
 const stop = callable<[],Status>('stop_hud');
+const enableArena = callable<[],Status>('enable_arena_logging');
 const enableDecks = callable<[],Status>('enable_decks_logging');
 const importDatabase = callable<[path:string],Status>('import_card_database');
 const retryDatabase = callable<[],Status>('retry_card_database');
@@ -57,7 +59,7 @@ function Content(){
  <div style={box}>
  <Datum label="日志">{data.log_status}</Datum><Datum label="对局">{data.match_status}</Datum><Datum label="双方身份">{data.identity_status}</Datum>
  <Datum label="初始牌组">{data.deck_status}</Datum><Datum label="中文数据库">{data.cards.state} · {data.cards.count} 张</Datum>
- {(data.power_config.restart_required||data.decks_config.restart_required)&&<div role="alert" style={{color:'#ffd38a'}}>配置已更新，请完全退出并重启炉石。</div>}
+ {(data.power_config.restart_required||data.decks_config.restart_required||data.arena_config.restart_required)&&<div role="alert" style={{color:'#ffd38a'}}>配置已更新，请完全退出并重启炉石。</div>}
  </div>
  <ButtonItem onClick={copyDiagnostic}>复制诊断</ButtonItem>
  {copyState&&<div role="status" style={box}>{copyState}</div>}
@@ -68,6 +70,13 @@ function Content(){
  <Datum label="Power.log">{data.log_path||'未生成'} · 解析错误 {data.parse_errors}</Datum>
  <Datum label="Decks.log">{data.decks_log_status}</Datum><Datum label="Decks 配置">{data.decks_config.enabled?'已启用':'未启用'}</Datum>
  <ButtonItem disabled={data.decks_config.enabled} onClick={()=>run(enableDecks)}>备份并启用 Decks 日志</ButtonItem>
+ </Fold>
+ <Fold title="竞技场选牌与静态评分">
+ <ToggleField label="显示竞技场 HUD（仅选牌时）" checked={data.settings.arena} onChange={arena=>change({arena})}/>
+ <Datum label="Arena.log">{data.arena_log_status}</Datum><Datum label="Arena 配置">{data.arena_config.enabled?'已启用':'未启用'}</Datum>
+ <ButtonItem disabled={data.arena_config.enabled} onClick={()=>run(enableArena)}>备份并启用 Arena 日志</ButtonItem>
+ <div style={box}>修改后请完全退出并重启炉石。不会自动修改 Arena 节。需先发现竞技场 ID，再录入本轮候选或补录实际选择。</div>
+ <ArenaEditor data={data.arena} onUpdate={arena=>setData(value=>value?{...value,arena}:value)}/>
  </Fold>
  <Fold title="数据库更新与离线导入">
  <Datum label="缓存文件">{data.storage.database}</Datum>
