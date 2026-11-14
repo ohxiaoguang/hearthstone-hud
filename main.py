@@ -22,7 +22,7 @@ VERSION = json.loads((ROOT/'package.json').read_text())['version']
 DEFAULTS = dict(game_dir='/home/deck/Games/battlegame/Hearthstone',
     proton_prefix='',
     log_dir='', display=':0', x=40, y=80, scale=1.0, opacity=0.85,
-    visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=False, right_x=1540, right_y=80, card_images=True, chinese_names=True)
+    visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=False, right_x=1540, right_y=80, card_images=True, chinese_names=True, image_tls_verify=False)
 
 
 class Plugin:
@@ -46,6 +46,7 @@ class Plugin:
         self.parser = Tracker(self.decks)
         self.deck_tail = Tail()
         self.cards = Cards(self.runtime/'cache')
+        self.cards.image_verify_tls = self.settings['image_tls_verify']
         self.media_task = None
         self.discovery = {}
         self.process = {}
@@ -88,6 +89,8 @@ class Plugin:
                 raise ValueError('配置类型不正确')
             checked[key] = value
         self.settings.update(checked)
+        if 'image_tls_verify' in checked:
+            self.cards.image_verify_tls = checked['image_tls_verify']
         if any(k in checked for k in ('game_dir','log_dir')):
             self.last_scan = float('-inf')
         atomic_json(self.settings_dir / 'settings.json', self.settings)

@@ -47,6 +47,19 @@ def format_diagnostics(data,version,recent=(),renderer_tail=''):
     section('Deck Tracker');field('Initial Deck',data.get('deck_status','unknown'))
     field('Rows',len(rows));field('Exact Rows',sum(r.get('count_confidence')=='exact' for r in rows))
     field('Lower Bound Rows',sum(r.get('count_confidence')=='lower_bound' for r in rows));field('Unknown Rows',sum(r.get('remaining') is None and not r.get('remaining_lower_bound') for r in rows))
+    for key,value in tracking.get('count_evidence',{}).items():field('Evidence '+key,value)
+    reasons={}
+    for row in rows:
+        if row.get('remaining') is None:
+            reason=row.get('count_reason','unknown');reasons[reason]=reasons.get(reason,0)+1
+    for reason,count in reasons.items():field('Unknown Reason',str(count)+' rows: '+reason)
+    section('TLS')
+    field('Image Verification','enabled' if cards.get('image_tls_verify',True) else 'DISABLED: image-only testing mode')
+    field('Database Verification','enabled')
+    tls=cards.get('tls',{})
+    field('CA Status',tls.get('state','not initialized'));field('Trusted CA Count',tls.get('ca_count','unknown'))
+    for source in tls.get('sources',[]):field('CA Source',source)
+    for error in tls.get('errors',[]):field('CA Error',error)
     section('Card Database');field('Source',cards.get('source','unknown'));field('Status',cards.get('state','unknown'))
     field('Card Count',cards.get('count',0));field('Last Updated',stamp(cards.get('updated')))
     field('Download',cards.get('download_state','unknown'));field('Last Error',cards.get('error',''))

@@ -15,6 +15,7 @@ import time
 import urllib.request
 from pathlib import Path
 from .io import atomic_json
+from .tls import verified_context, diagnostic as tls_diagnostic
 from .images import TileStore, valid_id, validate_png, atomic_image, MAX_IMAGE
 
 DATA_URL='https://api.hearthstonejson.com/v1/latest/zhCN/cards.json'
@@ -22,8 +23,15 @@ IMAGE_URL='https://art.hearthstonejson.com/v1/tiles/{card_id}.png'
 FIELDS=('id','dbfId','name','cost','cardClass','type')
 
 
-def fetch(url, limit):
-    with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'Hearthstone-HUD/0.2.2'}),timeout=12,context=ssl.create_default_context()) as r:
+def fetch(url, limit, verify=True):
+    if verify:
+        context=verified_context()
+    else:
+        # Explicit image-only testing option. Never modifies the verified context.
+        context=ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname=False
+        context.verify_mode=ssl.CERT_NONE
+    with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'Hearthstone-HUD/0.2.4'}),timeout=12,context=context) as r:
         data=r.read(limit+1)
         if len(data)>limit:raise ValueError('下载超出大小限制')
         return data
@@ -62,6 +70,7 @@ class Cards:
         self.image_batch=dict(status='idle',total=0,success=0,failed=0,skipped=0)
         self.batch_remaining=set();self.image_errors=deque(maxlen=10)
         self.image_totals=dict(success=0,failed=0,skipped=0)
+        self.image_verify_tls=True
         self.import_result=None
         self.by_id={};self.by_dbf={};self.updated=0;self.error='';self.source='HearthstoneJSON zhCN'
         self.generation=0;self.cache_lock=threading.Lock();self.image_error='';self.download_state='尚未尝试'
@@ -158,7 +167,7 @@ class Cards:
     def download_image(self,cid):
         p=self.image_path(cid)
         if p is None:raise ValueError('非法 Card ID')
-        data=fetch(IMAGE_URL.format(card_id=cid),MAX_IMAGE)
+        data=fetch(IMAGE_URL.format(card_id=cid),MAX_IMAGE,verify=self.image_verify_tls)
         validate_png(data)
         atomic_image(p,data)
         self.prune_images()
@@ -200,7 +209,7 @@ class Cards:
                 self.request_images(sorted(self.batch_remaining))
 
     def diagnostic(self):
-        return dict(source=self.source,updated=self.updated,count=len(self.by_id),error=self.error,
+        return dict(image_tls_verify=self.image_verify_tls,tls=tls_diagnostic(),source=self.source,updated=self.updated,count=len(self.by_id),error=self.error,
                     state='卡牌数据库可用' if self.by_id else '卡牌数据库不可用；显示卡牌 ID',download_state=self.download_state,
                     image_error=self.image_error,images_pending=len(self.pending),image_cache=self.tiles.counts(),
                     image_batch=dict(self.image_batch),image_totals=dict(self.image_totals),image_import=self.import_result,

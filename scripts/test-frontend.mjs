@@ -19,3 +19,8 @@ const ui=readFileSync(new URL('../src/index.tsx',import.meta.url),'utf8');
 assert.match(ui,/textarea aria-label="手动复制诊断文本"/);
 assert.doesNotMatch(ui,/导出 TXT|\.txt['"]|createObjectURL/);
 console.log('Clipboard tests: 4 paths passed; selectable fallback and no TXT export verified');
+
+assert.doesNotMatch(ui, /<details|<summary/);
+assert.match(ui, /ButtonItem layout="below" onClick=\{\(\)=>setOpen\(value=>!value\)\}/);
+assert.match(ui, /open&&<div/);
+console.log('Fold controls use Decky ButtonItem and React state; no native details/summary');

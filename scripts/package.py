@@ -11,7 +11,7 @@ tmp = out.with_suffix('.zip.tmp')
 # A failed attempt must not leave a stale or partially written install ZIP.
 out.unlink(missing_ok=True)
 tmp.unlink(missing_ok=True)
-required = ['plugin.json','package.json','main.py','dist/index.js','bin/hearthstone-hud-renderer','assets/fonts/NotoSansCJKsc-Regular.otf','assets/test.png','LICENSE','licenses/Noto-OFL.txt','engine/__init__.py','engine/io.py','engine/power.py','engine/tracker.py','engine/discovery.py','engine/proton.py','engine/logconfig.py','engine/cards.py','engine/images.py','engine/diagnostics.py','engine/deckstring.py','scripts/diagnose-logs.py']
+required = ['plugin.json','package.json','main.py','dist/index.js','bin/hearthstone-hud-renderer','assets/fonts/NotoSansCJKsc-Regular.otf','assets/test.png','assets/certs/cacert.pem','licenses/certifi-MPL-2.0.txt','LICENSE','licenses/Noto-OFL.txt','engine/__init__.py','engine/io.py','engine/power.py','engine/tracker.py','engine/discovery.py','engine/proton.py','engine/logconfig.py','engine/cards.py','engine/tls.py','engine/images.py','engine/diagnostics.py','engine/deckstring.py','scripts/diagnose-logs.py']
 for name in required:
     if not (root/name).is_file():
         raise SystemExit('缺少发布文件：'+name)

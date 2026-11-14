@@ -46,3 +46,10 @@ class CountTests(unittest.TestCase):
         self.feed('TAG_CHANGE Entity=4 tag=ZONE value=DECK');self.assertEqual(self.row('A')['remaining'],1)
         self.feed('TAG_CHANGE Entity=4 tag=ZONE value=HAND');self.feed('TAG_CHANGE Entity=4 tag=ZONE value=PLAY')
         self.assertEqual(self.row('A')['remaining'],1)
+    def test_unknown_reason_evidence_is_reported_without_guessing(self):
+        self.entity(8,'','DECK')
+        view=self.p.view(self.cards)
+        self.assertEqual(view['count_evidence']['unknown_generated_deck'],1)
+        self.assertEqual(view['count_evidence']['expected_initial'],4)
+        self.assertIsNone(self.row('A')['remaining'])
+        self.assertIn('身份未知',self.row('A')['count_reason'])

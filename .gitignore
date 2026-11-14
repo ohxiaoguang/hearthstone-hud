@@ -35,6 +35,7 @@ config.local.*
 .env.*
 !.env.example
 *.pem
+!assets/certs/cacert.pem
 *.key
 
 # Personal recordings and test data (synthetic tests stay tracked)

@@ -3,7 +3,7 @@ import { callable, definePlugin } from '@decky/api';
 import { useEffect, useState, type ReactNode } from 'react';
 import { FaLayerGroup } from 'react-icons/fa';
 import { copyText } from './clipboard';
-type Settings = {game_dir:string;proton_prefix:string;log_dir:string;display:string;x:number;y:number;scale:number;opacity:number;visible:boolean;own_deck:boolean;opponent_deck:boolean;opponent_hand:boolean;arena:boolean;right_x:number;right_y:number;card_images:boolean;chinese_names:boolean};
+type Settings = {game_dir:string;proton_prefix:string;log_dir:string;display:string;x:number;y:number;scale:number;opacity:number;visible:boolean;own_deck:boolean;opponent_deck:boolean;opponent_hand:boolean;arena:boolean;right_x:number;right_y:number;card_images:boolean;image_tls_verify:boolean;chinese_names:boolean};
 type ImportResult = {found:number;imported:number;skipped:number;format_errors:number;invalid_ids:number;other_failures:number;errors:string[]};
 type Status = {version:string;settings:Settings;running:boolean;error:string;log_path:string;parse_errors:number;gamescope_status:string;
   cards:{count:number;state:string;download_state:string;source:string;updated:number;error:string;image_error:string;images_pending:number;image_cache:{manual:number;automatic:number};image_batch:{status:string;total:number;success:number;failed:number;skipped:number};image_import:ImportResult|null};
@@ -20,7 +20,13 @@ const importImages = callable<[path:string],Status>('import_card_images');
 const diagnosticText = callable<[],string>('diagnostic_text');
 const box = {fontSize:13,lineHeight:1.45,padding:'4px 2px',overflowWrap:'anywhere' as const};
 function Datum({label,children}:{label:string;children:ReactNode}) {return <div style={{display:'flex',gap:8,marginBottom:3}}><span style={{opacity:.65,minWidth:76}}>{label}</span><span style={{minWidth:0,flex:1}}>{children}</span></div>;}
-function Fold({title,children}:{title:string;children:ReactNode}) {return <details style={{margin:'8px 0'}}><summary style={{cursor:'pointer',fontSize:14}}>{title}</summary><div style={box}>{children}</div></details>;}
+function Fold({title,children}:{title:string;children:ReactNode}) {
+ const [open,setOpen]=useState(false);
+ return <div style={{margin:'6px 0'}}>
+  <ButtonItem layout="below" onClick={()=>setOpen(value=>!value)}>{open?'收起':'展开'} · {title}</ButtonItem>
+  {open&&<div style={box}>{children}</div>}
+ </div>;
+}
 function PathField({label,value,save}:{label:string;value:string;save:(value:string)=>void}){
  const [draft,setDraft]=useState(value);
  return <TextField label={label} value={draft} onChange={e=>setDraft(e.target.value)} onBlur={()=>{if(draft!==value)save(draft);}}/>;
@@ -71,6 +77,8 @@ function Content(){
  <ButtonItem disabled={busy} onClick={()=>background(()=>importDatabase(importPath))}>校验并导入离线数据库</ButtonItem>
  </Fold>
  <Fold title="卡图下载与手动导入">
+ <ToggleField label="卡图 SSL 证书校验" checked={data.settings.image_tls_verify} onChange={image_tls_verify=>change({image_tls_verify})}/>
+ {!data.settings.image_tls_verify&&<div style={box}>测试模式：仅卡图下载跳过证书校验，数据库下载仍验证。可随时打开上方开关恢复。</div>}
  <Datum label="缓存">手动 {data.cards.image_cache.manual} / 自动 {data.cards.image_cache.automatic}</Datum>
  <Datum label="下载进度">{batch?.status==='running'?'后台下载中':batch?.status==='complete'?'本批已完成':'尚未开始'} · {(batch?.success??0)+(batch?.failed??0)+(batch?.skipped??0)}/{batch?.total??0}</Datum>
  <Datum label="结果">成功 {batch?.success??0} · 失败 {batch?.failed??0} · 跳过 {batch?.skipped??0}</Datum>

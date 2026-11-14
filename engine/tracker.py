@@ -152,7 +152,13 @@ class Tracker(PowerParser):
                 exact=True
             remaining=max(0,(initial or 0)-departed[cid]-transformed[cid])+extras[cid]+target_transforms if exact else None
             lower=known_current[cid]
-            reason='初始牌组与实体证据一致' if exact else '初始牌组未知' if not starting else '该卡仍有未确定的实体或身份'
+            reason=('初始牌组与实体证据一致' if exact else
+                    '初始牌组未知' if not starting else
+                    '该牌 dbfId 尚未映射' if cid.startswith('dbf:') else
+                    '存在身份未知的非初始在库实体' if unknown_extras else
+                    '可能属于该牌的原始实体缺失或离库身份未知' if uncertain_slots else
+                    '原始实体数超过该牌初始数量' if accounted[cid]>(initial or 0) else
+                    '该牌不在已识别初始牌组中')
             self_row=dict(cards.info(cid),initial=initial,
                 remaining=remaining,known_in_deck=lower,remaining_lower_bound=lower if remaining is None and lower>0 else None,
                 count_confidence='exact' if exact else 'lower_bound' if lower>0 else 'unknown',count_reason=reason,
@@ -161,6 +167,13 @@ class Tracker(PowerParser):
         for key in ('own','opponent'):
             result[key].sort(key=lambda r:(r['cost'] if isinstance(r['cost'],int) else 99,r['name']))
             result[key]=result[key][:256]
+        result['count_evidence']=dict(
+            friendly_id=me.player_id,opponent_id=opp.player_id,entities_total=len(entities),
+            expected_initial=sum(starting.values()),starting_seen=len(mine),missing_initial=missing,
+            own_deck_entities=game.count_zone(me,'DECK'),known_own_deck=sum(known_current.values()),
+            unknown_generated_deck=unknown_extras,unknown_initial_departures=unidentified_departures,
+            unmapped_initial_rows=sum(c.startswith('dbf:') for c in starting),
+            controller_unset=sum(e.controller==0 for e in entities))
         result['own_deck']=game.count_zone(me,'DECK')
         unknown_used={eid for eid,c,pid in self.used if pid==opp.player_id and not c and eid in game.entities and not game.entities[eid].card_id}
         result['opponent_unknown']=len(unknown_used)
