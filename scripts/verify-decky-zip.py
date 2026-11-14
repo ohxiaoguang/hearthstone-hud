@@ -13,7 +13,7 @@ def verify(archive):
         names = set(z.namelist())
         required = ['main.py', 'plugin.json', 'dist/index.js',
                     'py_modules/engine/__init__.py', 'py_modules/engine/io.py',
-                    'py_modules/engine/power.py', 'py_modules/engine/cards.py', 'py_modules/engine/tracker.py', 'py_modules/engine/discovery.py', 'py_modules/engine/deckstring.py', 'scripts/diagnose-logs.py', 'bin/hearthstone-hud-renderer']
+                    'py_modules/engine/power.py', 'py_modules/engine/cards.py', 'py_modules/engine/tracker.py', 'py_modules/engine/discovery.py', 'py_modules/engine/proton.py', 'py_modules/engine/logconfig.py', 'py_modules/engine/deckstring.py', 'scripts/diagnose-logs.py', 'bin/hearthstone-hud-renderer']
         for name in required:
             assert 'hearthstone-hud/' + name in names, 'Missing: ' + name
         assert not any(n.startswith('hearthstone-hud/engine/') for n in names), 'Old root engine layout'

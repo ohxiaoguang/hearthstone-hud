@@ -12,10 +12,12 @@ from engine.io import Tail, atomic_json
 from engine.tracker import Tracker, DeckLog, LINE
 from engine.cards import Cards
 from engine.discovery import discover, gamescope_status, LogClock
+from engine.proton import discover_process
+from engine.logconfig import ensure_power, diagnostic_state
 
 ROOT = Path(__file__).resolve().parent
 DEFAULTS = dict(game_dir='/home/deck/Games/battlegame/Hearthstone',
-    proton_prefix='/home/deck/.local/share/Steam/steamapps/compatdata/3443960088/pfx',
+    proton_prefix='',
     log_dir='', display=':0', x=40, y=80, scale=1.0, opacity=0.85,
     visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=False, right_x=1540, right_y=80, card_images=True, chinese_names=True)
 
@@ -41,6 +43,13 @@ class Plugin:
         self.cards = Cards(self.runtime/'cache')
         self.media_task = None
         self.discovery = {}
+        self.process = {}
+        self.power_config = {}
+        self.restart_receipt = {}
+        try:
+            self.restart_receipt = json.loads((self.settings_dir/'power-config-receipt.json').read_text())
+        except (OSError,ValueError):
+            pass
         self.last_scan = float('-inf')
         self.gamescope = gamescope_status()
         self.active = False
@@ -118,6 +127,8 @@ class Plugin:
                     error=self.error, diagnostic=diag, log_path=str(self.log_path or ''),
                     parse_errors=self.parser.failures, gamescope_running=self.gamescope.startswith('检测到'),
                     gamescope_status=self.gamescope, logs=self.discovery, cards=self.cards.diagnostic(),
+                    process=self.process, power_config=self.power_config,
+                    log_status=diagnostic_state(self.process,self.power_config,self.discovery),
                     tracking=self.parser.view(self.cards) if self.active and self.caught_up else dict(status='waiting'),
                     visibility='v0.1.x 显示和触控已由用户实测；本版记牌仍待实机验收',
                     arena='尚未加载评分；不支持自动识别候选牌')
@@ -134,9 +145,19 @@ class Plugin:
             try:
                 if time.monotonic()-self.last_scan >= 3:
                     scan_key = (self.settings['game_dir'],self.settings['log_dir'])
-                    result = await asyncio.to_thread(discover,*scan_key)
+                    process = await asyncio.to_thread(discover_process)
+                    config = await asyncio.to_thread(ensure_power,process)
+                    if config.get('changed') and config.get('success'):
+                        self.restart_receipt = dict(instance=process.get('instance'),path=config['path'],backup=config.get('backup',''))
+                        atomic_json(self.settings_dir/'power-config-receipt.json',self.restart_receipt)
+                    if config.get('enabled') and self.restart_receipt.get('path')==config.get('path'):
+                        config['restart_required'] = self.restart_receipt.get('instance')==process.get('instance')
+                        config['backup'] = self.restart_receipt.get('backup','')
+                    result = await asyncio.to_thread(discover,process.get('game_dir') or scan_key[0],scan_key[1])
                     if scan_key != (self.settings['game_dir'],self.settings['log_dir']):
                         continue
+                    self.process = process
+                    self.power_config = config
                     self.discovery = result
                     self.last_scan = time.monotonic()
                     self.gamescope = gamescope_status()
@@ -196,5 +217,5 @@ class Plugin:
                 await self.media_task
 
     async def _uninstall(self):
-        # No game configuration is changed automatically.
+        # Preserve user configuration and backups on uninstall; never overwrite later edits.
         pass

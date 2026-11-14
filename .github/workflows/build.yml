@@ -37,11 +37,11 @@ jobs:
       - name: Package verified Decky ZIP
         run: python3 scripts/package.py
       - name: Verify packaged Decky Python imports
-        run: python3 scripts/verify-decky-zip.py release/hearthstone-hud-0.2.0.zip
+        run: python3 scripts/verify-decky-zip.py release/hearthstone-hud-0.2.1.zip
       - uses: actions/upload-artifact@v4
         with:
           name: hearthstone-hud-linux-x86_64
           path: |
-            release/hearthstone-hud-0.2.0.zip
+            release/hearthstone-hud-0.2.1.zip
             build/*.txt
           if-no-files-found: error
