@@ -1,8 +1,8 @@
-# Hearthstone HUD 竞技场第一版实施报告（源码交付，未发布安装包）
+# Hearthstone HUD v0.3.0 竞技场第一版实施报告（Pre-release）
 
 ## 基线、参考与范围
 
-基线提交为 `0ed68fc5eb6f00288a8663aebb0623f16c73cdbf`（v0.2.6）。源码版本号暂沿用基线，竞技场安装 Release 尚未发布；原生验证由包含本功能的提交对应的 GitHub Actions 执行。没有安装 Mac 原生依赖、交叉编译器或 SteamOS 工具。
+基线提交为 `0ed68fc5eb6f00288a8663aebb0623f16c73cdbf`（v0.2.6）。竞技场首个安装测试版本为 v0.3.0；原生验证由包含本功能的提交对应的 GitHub Actions 执行。没有安装 Mac 原生依赖、交叉编译器或 SteamOS 工具。
 
 已实际阅读参考项目 `justfaked/hs-decktracker-linux` 的本地源码快照 `649534be99f35cb499ed2fae371625bd04b95b1d`：
 
@@ -84,7 +84,7 @@
 
 ## SteamOS 实机验收步骤（不安装开发工具）
 
-1. 先确认包含本功能的提交通过现有 Actions 的 Linux 编译、C++ 测试、ELF/依赖检查和安装 ZIP 验证，再使用对应构建的安装包。当前尚无竞技场安装 Release。
+1. 先确认包含本功能的提交通过现有 Actions 的 Linux 编译、C++ 测试、ELF/依赖检查和安装 ZIP 验证，再使用对应构建的安装包。竞技场安装资产为 v0.3.0 Pre-release 的 `hearthstone-hud-0.3.0.zip`。
 2. Decky 中点击“备份并启用 Arena 日志”；核对备份路径和“需重启”，完全退出并重启炉石。确认其他 log.config 节不变，同会话 Arena.log 被发现。
 3. 新建竞技场，确认职业和技能选择仍是 0/30。选 1 张后只增加 1；下一轮再选同 Card ID 应增加到 2，顺序不丢失。
 4. 用中文和 ID 搜索，提交三张候选；确认计数不变，卡图、费用、分数和推荐显示；清空/重录仍不改变牌组。缺失分显示暂无评分。

@@ -1,8 +1,8 @@
 # Hearthstone HUD
 
-## 竞技场第一版（源码实现，尚未发布）
+## v0.3.0：竞技场第一版（Pre-release）
 
-竞技场功能尚未发布为安装 Release。源码版本号暂沿用当前基线；已发布的 v0.2.6 安装包不包含本节新功能。原生编译与打包检查由对应提交的 GitHub Actions 执行。
+v0.3.0 为首个竞技场功能测试版本，尚未经过 Ally X 竞技场实机验收。安装资产为 `hearthstone-hud-0.3.0.zip`；v0.2.6 安装包不包含这些竞技场功能。Linux 原生编译与打包检查由对应提交的 GitHub Actions 执行。
 
 1. 进入 Decky 的“竞技场选牌与静态评分”，点击“备份并启用 Arena 日志”，完全退出并重启炉石。只按按钮才修改 `[Arena]`，保留其他节、写前备份并原子替换；不会自动修改 Arena 配置。
 2. 开启“显示竞技场 HUD”。需找到与选中 Power.log 同一会话目录的 Arena.log。Power 暂无更新但同会话 Arena 正在更新时，仍能处理选牌。找不到同会话 Power 时不会猜测绑定其他 Arena 文件。
@@ -47,7 +47,7 @@ Linux 原生构建统一由 GitHub Actions 完成，本机不准备交叉编译�
 
 Decky 管理的 SteamOS 炉石游戏内记牌 HUD，目标设备 ROG Ally X。用户已确认 v0.1.x 的 Gamescope 外部 Overlay、中文、PNG、触控和 QAM 共存正常。v0.2.2 接入日志记牌；**新版真实记牌尚待 Ally X 实机验收，未用实机日志回放验证。**
 
-安装完整 Release ZIP，或将对应 Release 的 `hearthstone-hud-0.2.6.zip` 直链填入 Decky 的 Install Plugin from URL。设备不需要开发工具或额外窗口。源码根目录 engine/ 在 ZIP 中映射为 py_modules/engine/；Linux 渲染器位于 bin/，保留 0755 权限。
+安装完整 Release ZIP，或将对应 Release 的 `hearthstone-hud-0.3.0.zip` 直链填入 Decky 的 Install Plugin from URL。设备不需要开发工具或额外窗口。源码根目录 engine/ 在 ZIP 中映射为 py_modules/engine/；Linux 渲染器位于 bin/，保留 0755 权限。
 
 ## 使用
 
@@ -56,7 +56,7 @@ Decky 管理的 SteamOS 炉石游戏内记牌 HUD，目标设备 ROG Ally X。�
 3. 新对局后顶部显示状态、回合、对手手牌与牌库数量。左侧显示初始牌组和剩余数量，右侧显示对手公开身份。找不到 Decks.log 完整牌组时显示“部分已知”；`>=n` 表示仅能确认 n 张在牌库，不能当成完整剩余数量。`?` 是未知。未知对手卡不猜身份。
 4. 卡牌数据库/卡图在 HUD 启动后异步获取，失败继续显示 ID/占位符；可在诊断查看来源、更新时间、错误和缓存数量。左右位置、显示开关、中文、卡图、缩放及透明度即时更新。长列表会自动翻页。
 
-只支持普通对局日志；不读取内存、注入、模拟操作、修改 Steam Overlay/MangoApp/SteamOS。竞技场选牌见上方未发布第一版说明；不自动识别候选卡面。
+支持普通对局和上述竞技场日志；不读取内存、注入、模拟操作、修改 Steam Overlay/MangoApp/SteamOS。竞技场选牌见上方第一版说明；不自动识别候选卡面。
 
 ## 日志发现与只读诊断
 
