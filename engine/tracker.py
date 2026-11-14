@@ -50,11 +50,13 @@ class Tracker(PowerParser):
         self.recent = OrderedDict()
         self.accepted = 0
         self.failures = 0
+        self.previous_start = None
 
     def _create_game(self):
         previous = self.game
         super()._create_game()
         if not self.game.resumed_from:
+            self.previous_start = previous.start if previous else None
             self.initial_dbf = self.decks.for_game(self.game.start, previous.start if previous else None)
             self.drawn = set()
             self.used = []
@@ -101,6 +103,10 @@ class Tracker(PowerParser):
             return dict(status='waiting',turn=0,own=[],opponent=[],own_label='等待新对局',opponent_hand=None,opponent_deck=None)
         if game.game_type.startswith(('GT_BATTLEGROUNDS','GT_MERCENARIES')):
             return dict(status='unsupported',turn=0,own=[],opponent=[],own_label='不支持的游戏模式',opponent_hand=None,opponent_deck=None)
+        # Cross-file buffers can expose a queue-time deck block after CREATE_GAME.
+        # Bind only a deck timestamped before this game, after the previous one.
+        if not self.initial_dbf:
+            self.initial_dbf = self.decks.for_game(game.start,self.previous_start)
         me,opp = game.friendly,game.opponent
         result = dict(status='playing' if me and opp else 'identifying',turn=(game.turn+1)//2,
                       own=[],opponent=[],own_label='牌组未知',opponent_hand=None,opponent_deck=None,

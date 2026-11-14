@@ -8,6 +8,8 @@ import queue
 import json
 import re
 import struct
+import ssl
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -19,10 +21,34 @@ FIELDS=('id','dbfId','name','cost','cardClass','type')
 
 
 def fetch(url, limit):
-    with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'Hearthstone-HUD/0.2.0'}),timeout=12) as r:
+    with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'Hearthstone-HUD/0.2.2'}),timeout=12,context=ssl.create_default_context()) as r:
         data=r.read(limit+1)
         if len(data)>limit:raise ValueError('下载超出大小限制')
         return data
+
+
+MIN_CARDS=100
+MAX_JSON=64*1024*1024
+
+
+def validate_dataset(data):
+    if not isinstance(data,list):
+        raise ValueError('卡牌 JSON 顶层必须是数组')
+    rows=[];seen=set()
+    for c in data:
+        if not isinstance(c,dict) or not isinstance(c.get('id'),str) or not re.fullmatch(r'[A-Za-z0-9_]+',c['id']):
+            raise ValueError('卡牌记录缺少有效 ID')
+        if c['id'] in seen:raise ValueError('卡牌 ID 重复')
+        seen.add(c['id'])
+        if not isinstance(c.get('dbfId'),int) or isinstance(c['dbfId'],bool) or c['dbfId']<=0:
+            continue
+        if not isinstance(c.get('name'),str) or not c['name'].strip() or len(c['name'])>512:
+            continue
+        if c.get('cost') is not None and (not isinstance(c['cost'],int) or isinstance(c['cost'],bool)):
+            raise ValueError('卡牌法力值格式错误')
+        rows.append({k:c[k] for k in FIELDS if k in c})
+    if len(rows)<MIN_CARDS:raise ValueError('有效卡牌不足 %d 张，保留旧缓存'%MIN_CARDS)
+    return rows
 
 
 class Cards:
@@ -31,10 +57,11 @@ class Cards:
         self.images=self.directory/'images'
         self.images.mkdir(parents=True,exist_ok=True)
         self.by_id={};self.by_dbf={};self.updated=0;self.error='';self.source='HearthstoneJSON zhCN'
+        self.generation=0;self.cache_lock=threading.Lock();self.image_error='';self.download_state='尚未尝试'
         self.attempted=0;self.image_attempts={};self.queue=queue.Queue(maxsize=128);self.pending=set()
         try:
             data=json.loads((self.directory/'cards.json').read_text())
-            self.install(data['cards']);self.updated=data['updated']
+            self.install(validate_dataset(data['cards']));self.updated=float(data['updated']);self.source=data.get('source',self.source)
         except (OSError,ValueError,KeyError,TypeError):
             pass
 
@@ -65,18 +92,46 @@ class Cards:
             if self.queue.full():break
             self.pending.add(cid);self.queue.put_nowait(cid)
 
+    def _commit(self,rows,source,expected=None):
+        with self.cache_lock:
+            if expected is not None and expected!=self.generation:
+                return None  # A manual import/newer refresh won the race.
+            updated=time.time()
+            atomic_json(self.directory/'cards.json',dict(updated=updated,source=source,locale='zhCN',cards=rows))
+            self.generation+=1
+            return dict(rows=rows,updated=updated,source=source,generation=self.generation)
+
+    def apply(self,record):
+        with self.cache_lock:
+            if record and record['generation']==self.generation:
+                self.install(record['rows']);self.updated=record['updated'];self.source=record['source'];self.error=''
+
+    def import_file(self,path):
+        path=Path(path).expanduser()
+        if not path.is_absolute():raise ValueError('请输入离线 JSON 的绝对路径')
+        with path.open('rb') as f:data=f.read(MAX_JSON+1)
+        if len(data)>MAX_JSON:raise ValueError('离线 JSON 超出 64MiB')
+        value=json.loads(data)
+        if isinstance(value,dict):
+            if value.get('locale','zhCN')!='zhCN':raise ValueError('离线缓存语言必须为 zhCN')
+            value=value.get('cards')
+        rows=validate_dataset(value)
+        return self._commit(rows,'HearthstoneJSON zhCN 离线导入：'+path.name)
+
     def refresh(self):
-        self.attempted=time.time()
-        try:
-            rows=json.loads(fetch(DATA_URL,64*1024*1024))
-            if not isinstance(rows,list) or len(rows)<100:raise ValueError('卡牌数据库不完整')
-            # Validate before replacing a usable cache.
-            slim=[{k:c[k] for k in FIELDS if k in c} for c in rows if isinstance(c,dict) and 'id' in c]
-            atomic_json(self.directory/'cards.json',dict(updated=time.time(),cards=slim))
-            return slim
-        except (OSError,ValueError,TypeError) as exc:
-            self.error=str(exc)
-            return None
+        self.attempted=time.time();expected=self.generation
+        for attempt in range(2):
+            self.download_state='正在下载（第 %d/2 次）'%(attempt+1)
+            try:
+                rows=validate_dataset(json.loads(fetch(DATA_URL,MAX_JSON)))
+                record=self._commit(rows,'HearthstoneJSON zhCN HTTPS',expected)
+                self.download_state='下载校验通过' if record else '已有较新缓存，跳过旧下载'
+                return record
+            except (OSError,ValueError,TypeError) as exc:
+                self.error=str(exc)
+                if attempt==0:time.sleep(1)
+        self.download_state='自动下载失败；可重试或离线导入'
+        return None
 
     def download_image(self,cid):
         p=self.image_path(cid)
@@ -91,11 +146,10 @@ class Cards:
             if i>=256 or size>32*1024*1024:f.unlink(missing_ok=True)
 
     async def worker(self):
-        if time.time()-self.updated>7*86400 and time.time()-self.attempted>3600:
-            rows=await asyncio.to_thread(self.refresh)
-            if rows is not None:
-                self.install(rows);self.updated=time.time();self.error=''
         while True:
+            if time.time()-self.updated>7*86400 and time.time()-self.attempted>(60 if not self.by_id else 3600):
+                record=await asyncio.to_thread(self.refresh)
+                self.apply(record)
             try:
                 cid=self.queue.get_nowait()
             except queue.Empty:
@@ -107,10 +161,11 @@ class Cards:
             try:
                 await asyncio.to_thread(self.download_image,cid)
             except (OSError,ValueError) as exc:
-                self.error=str(exc)
+                self.image_error=str(exc)
             finally:
                 self.pending.discard(cid);self.queue.task_done()
 
     def diagnostic(self):
         return dict(source=self.source,updated=self.updated,count=len(self.by_id),error=self.error,
-                    state='缓存可用' if self.by_id else '尚无数据库；显示卡牌 ID',images_pending=len(self.pending))
+                    state='卡牌数据库可用' if self.by_id else '卡牌数据库不可用；显示卡牌 ID',download_state=self.download_state,
+                    image_error=self.image_error,images_pending=len(self.pending))

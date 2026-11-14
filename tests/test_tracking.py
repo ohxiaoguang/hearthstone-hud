@@ -108,6 +108,7 @@ class TrackingTests(unittest.TestCase):
 
     def test_missing_deck_is_partial_and_unknown_count_stays_unknown(self):
         self.p.initial_dbf={}
+        self.p.decks=DeckLog()  # No Decks evidence, including delayed candidates.
         self.assertIsNone(self.row('TEST_A')['remaining'])
         self.assertIsNone(self.row('TEST_A')['initial'])
         self.assertEqual(self.row('TEST_A')['known_in_deck'],2)
@@ -145,7 +146,7 @@ class CardTests(unittest.TestCase):
             with patch('engine.cards.fetch',side_effect=OSError('offline')):
                 self.assertIsNone(cards.refresh())
             self.assertIn('offline',cards.error)
-            (Path(folder)/'cards.json').write_text(json.dumps({'updated':10,'cards':[dict(id='A',dbfId=1,name='中文',cost=2)]}))
+            (Path(folder)/'cards.json').write_text(json.dumps({'updated':10,'cards':[dict(id='A',dbfId=1,name='中文',cost=2)]+[dict(id='CACHE_'+str(i),dbfId=i+2,name='样本'+str(i),cost=1) for i in range(100)]}))
             cached=Cards(folder);self.assertEqual(cached.info('A')['name'],'中文');self.assertEqual(cached.updated,10)
     def test_image_paths_and_queue_bounded(self):
         with tempfile.TemporaryDirectory() as folder:

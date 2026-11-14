@@ -1,8 +1,8 @@
 # Hearthstone HUD
 
-Decky 管理的 SteamOS 炉石游戏内记牌 HUD，目标设备 ROG Ally X。用户已确认 v0.1.x 的 Gamescope 外部 Overlay、中文、PNG、触控和 QAM 共存正常。v0.2.1 接入日志记牌；**新版真实记牌尚待 Ally X 实机验收，未用实机日志回放验证。**
+Decky 管理的 SteamOS 炉石游戏内记牌 HUD，目标设备 ROG Ally X。用户已确认 v0.1.x 的 Gamescope 外部 Overlay、中文、PNG、触控和 QAM 共存正常。v0.2.2 接入日志记牌；**新版真实记牌尚待 Ally X 实机验收，未用实机日志回放验证。**
 
-安装完整 Release ZIP，或将对应 Release 的 `hearthstone-hud-0.2.1.zip` 直链填入 Decky 的 Install Plugin from URL。设备不需要开发工具或额外窗口。源码根目录 engine/ 在 ZIP 中映射为 py_modules/engine/；Linux 渲染器位于 bin/，保留 0755 权限。
+安装完整 Release ZIP，或将对应 Release 的 `hearthstone-hud-0.2.2.zip` 直链填入 Decky 的 Install Plugin from URL。设备不需要开发工具或额外窗口。源码根目录 engine/ 在 ZIP 中映射为 py_modules/engine/；Linux 渲染器位于 bin/，保留 0755 权限。
 
 ## 使用
 
@@ -27,22 +27,34 @@ python3 /home/deck/homebrew/plugins/hearthstone-hud/scripts/diagnose-logs.py
 
 后台每次扫描先识别真正的 Hearthstone.exe，仅从其环境优先选择有效 WINEPREFIX，其次 STEAM_COMPAT_DATA_PATH/pfx，检查目录后寻找真实 Windows 用户的 AppData/Local/Blizzard/Hearthstone。不使用历史 log.config 推断前缀；多个用户目录或不同前缀存在歧义时不写入。
 
-本版已按用户授权**自动创建或安全更新 log.config 的 Power 节**：LogLevel=1、FilePrinting=True、ConsolePrinting=False、ScreenPrinting=False、Verbose=True。已有文件先保存原始字节备份 log.config.backup-*，保留其他节、注释和 Power 自定义键，随后用同目录临时文件原子替换，权限 0600。遇到解析错误、软链接或写入期间用户修改会停止并报告，不覆盖其他配置。不修改 Decks 节、options.txt 或 client.config，不动历史前缀。
+本版已按用户授权**自动创建或安全更新 log.config 的 Power 节**：LogLevel=1、FilePrinting=True、ConsolePrinting=False、ScreenPrinting=False、Verbose=True。已有文件先保存原始字节备份 log.config.backup-*，保留其他节、注释和 Power 自定义键，随后用同目录临时文件原子替换，权限 0600。遇到解析错误、软链接或写入期间用户修改会停止并报告，不覆盖其他配置。自动 Power 配置不修改 Decks；只有点击独立按钮才会写入 Decks 节。不修改 options.txt 或 client.config，不动历史前缀。
 
-**首次安装后先启动炉石，让插件发现真实前缀并写入配置；看到“请完全退出并重新启动炉石”后，完全退出并再次启动。** 插件不会强制重启游戏。若已有 Power 配置满足要求则不会重复写入。重启后等待游戏生成 Power.log；本次只启用 Power，Decks.log 若未启用仍可能缺失，v0.2.0 的牌组未知回退继续生效。
+**首次安装后先启动炉石，让插件发现真实前缀并写入配置；看到“请完全退出并重新启动炉石”后，完全退出并再次启动。** 插件不会强制重启游戏。若已有 Power 配置满足要求则不会重复写入。重启后等待游戏生成 Power.log；Decks 可通过独立按钮安全启用；未生成 Decks.log 或没有有效代码时，完整牌组未知回退继续生效。
 
 ## 构建与测试
 
-Mac：`npm ci --ignore-scripts`、`npm run typecheck`、`npm run build`、`npm test`。原生程序只在 Linux x86_64 编译：`bash scripts/build-native.sh`、`bash scripts/check-native.sh`，再 `python3 scripts/package.py`、`python3 scripts/verify-decky-zip.py release/hearthstone-hud-0.2.1.zip`。
+Mac：`npm ci --ignore-scripts`、`npm run typecheck`、`npm run build`、`npm test`。原生程序只在 Linux x86_64 编译：`bash scripts/build-native.sh`、`bash scripts/check-native.sh`，再 `python3 scripts/package.py`、`python3 scripts/verify-decky-zip.py release/hearthstone-hud-0.2.2.zip`。
 
-Actions 在 Ubuntu x86_64 / Ubuntu 20.04 容器编译，执行原生 JSON 验收、ELF/ldd/readelf/GLIBC 检查后打包；最终解压导入测试通过才上传 Artifact。下载后选择内层 release/hearthstone-hud-0.2.1.zip，不要安装外层 Artifact。X11/Xext/OpenGL/glibc 为系统依赖，GLFW/ImGui/json 等静态构建；系统依赖兼容性仍需设备确认。
+Actions 在 Ubuntu x86_64 / Ubuntu 20.04 容器编译，执行原生 JSON 验收、ELF/ldd/readelf/GLIBC 检查后打包；最终解压导入测试通过才上传 Artifact。下载后选择内层 release/hearthstone-hud-0.2.2.zip，不要安装外层 Artifact。X11/Xext/OpenGL/glibc 为系统依赖，GLFW/ImGui/json 等静态构建；系统依赖兼容性仍需设备确认。
 
-[v0.2.1 修复与验证](docs/V0.2.1_TEST_REPORT.md) · [记牌测试报告与限制](docs/V0.2.0_TEST_REPORT.md) · [v0.1.1 导入修复报告](docs/V0.1.1_TEST_REPORT.md) · [原始审计](docs/AUDIT.md) · [第三方来源/许可证](licenses/THIRD_PARTY.md)
+[v0.2.2 定向修复与验证](docs/V0.2.2_TEST_REPORT.md) · [记牌测试报告与限制](docs/V0.2.0_TEST_REPORT.md) · [v0.1.1 导入修复报告](docs/V0.1.1_TEST_REPORT.md) · [原始审计](docs/AUDIT.md) · [第三方来源/许可证](licenses/THIRD_PARTY.md)
 
 ## 实机验收与故障收集
 
-安装 v0.2.1 后开始普通对局，确认检测到活动日志、识别双方、抽牌/出牌/生成/洗回后的数量、结束回等待；确认左右面板、中文、卡图、QAM、触控和手柄仍正常。网络失败应继续显示卡牌 ID。
+安装 v0.2.2 后开始普通对局，确认检测到活动日志、识别双方、抽牌/出牌/生成/洗回后的数量、结束回等待；确认左右面板、中文、卡图、QAM、触控和手柄仍正常。网络失败应继续显示卡牌 ID。
 
 问题请收集 Decky 诊断中的 logs/cards/render、只读脚本输出、Decky 后台日志，以及 `DECKY_PLUGIN_RUNTIME_DIR` 下 state.json、diagnostic.json、renderer.log。先删除姓名、账号、本地隐私路径；真实日志样本需脱敏，勿提交进仓库。渲染进程正常退出、父进程死亡信号和状态过期退出延续 v0.1.x 行为；检测 Gamescope 进程不代表实际合成成功。
 
 卸载前点停止，再从 Decky 删除插件。卸载保留 Power 配置和备份，不自动覆盖用户后来修改的文件；如需恢复，由用户比较备份后决定。
+
+## v0.2.2：Decks 配置与卡牌数据库
+
+在 Decky 的“日志与卡牌数据”区域检查：日志已读取、对局/双方身份是否已识别、完整卡组是否未知、数据库是否可用。四项分别报告，读取了 Power 事件并不证明已经获得完整牌组或中文数据库。
+
+Decks.log 的日志节必须单独启用。点“备份并启用 Decks 日志”，完全退出并重启炉石，再选择卡组排队。参考实现中只有 Finding Game With Deck / Starting Arena Game With Deck 等牌组打印事件携带 deck code；出现 Decks.log 文件也不保证已有可用代码。文件只与同目录 Power.log 关联，迟到的、时间不晚于当前开局且晚于上一局开始的代码可以补绑定；后续选中的卡组不能覆盖已开局牌组。
+
+数据库默认仍使用带正常证书验证的 HearthstoneJSON zhCN HTTPS 下载；单次刷新最多尝试两次，无缓存时后台定期重试，也可按“重试下载卡牌数据库”。没有关闭 SSL 或降低证书验证。遇到 SteamOS 网络 SSL EOF，可在另一台能正常联网的设备下载 [官方 zhCN cards.json](https://api.hearthstonejson.com/v1/latest/zhCN/cards.json)，将文件传到 Ally X（例如 /home/deck/Downloads/cards-zhCN.json），在 Decky 输入该绝对路径并点“校验并导入离线数据库”。不需要安装开发工具或重启 HUD。
+
+导入接受官方数组 JSON，或包含 locale=zhCN 与 cards 数组的缓存对象。文件上限 64MiB；校验 ID、重复项、dbfId、名称、法力值，并要求至少 100 条有效记录，通过后原子替换缓存。失败保留旧缓存；成功显示来源、数量和导入时间。离线导入是网络故障备用方式，不自动请求未经核实的第三方镜像。
+
+本轮仍没有用户提供的实机脱敏日志文件；tests/fixtures/power-format.txt 是参考项目确认语法的无个人信息合成样本，不冒充真实设备回放。真实 Decks 生成、设备网络重试与导入后记牌效果均需用户确认。Overlay、显示协议与触控穿透实现未改动。

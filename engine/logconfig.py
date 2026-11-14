@@ -1,4 +1,4 @@
-"""Atomic, backed-up Power-only edits in the currently discovered live prefix."""
+"""Atomic, backed-up section-scoped edits in the currently discovered live prefix."""
 import configparser
 import os
 from pathlib import Path
@@ -6,9 +6,11 @@ import re
 import tempfile
 
 POWER = dict(LogLevel='1',FilePrinting='True',ConsolePrinting='False',ScreenPrinting='False',Verbose='True')
+DECKS = dict(POWER,Verbose='False')
 
 
-def inspect_config(user_dir):
+def inspect_config(user_dir, section_name='Power'):
+    required = POWER if section_name == 'Power' else DECKS
     if not user_dir:
         return dict(path='',exists=False,enabled=False,state='Hearthstone 用户目录未发现')
     path = Path(user_dir)/'log.config'
@@ -18,9 +20,9 @@ def inspect_config(user_dir):
     try:
         parser=configparser.ConfigParser(interpolation=None)
         parser.read_string(path.read_text(encoding='utf-8-sig'))
-        section=next((s for s in parser.sections() if s.lower()=='power'),None)
-        result['enabled']=bool(section and all(parser.get(section,k,fallback='').strip().lower()==v.lower() for k,v in POWER.items()))
-        result['state']='Power 配置已启用' if result['enabled'] else 'Power 配置未启用'
+        section=next((s for s in parser.sections() if s.lower()==section_name.lower()),None)
+        result['enabled']=bool(section and all(parser.get(section,k,fallback='').strip().lower()==v.lower() for k,v in required.items()))
+        result['state']=section_name+(' 配置已启用' if result['enabled'] else ' 配置未启用')
     except (OSError,ValueError,configparser.Error) as exc:
         result['state']='配置无法解析：'+str(exc)
         result['error']=str(exc)
@@ -28,6 +30,17 @@ def inspect_config(user_dir):
 
 
 def ensure_power(process):
+    return ensure_section(process, 'Power')
+
+
+def ensure_decks(process):
+    return ensure_section(process, 'Decks')
+
+
+def ensure_section(process, section_name):
+    if section_name not in ('Power','Decks'):
+        raise ValueError('不支持的日志节')
+    required = POWER if section_name == 'Power' else DECKS
     if not process.get('found') or not process.get('prefix') or not process.get('user_dir'):
         return dict(path='',exists=False,enabled=False,success=False,changed=False,restart_required=False,
                     state=process.get('error') or 'Proton 前缀未发现')
@@ -36,7 +49,7 @@ def ensure_power(process):
     prefix=Path(process['prefix']).resolve()
     if prefix not in directory.resolve().parents:
         return dict(success=False,changed=False,restart_required=False,state='用户目录超出当前前缀，未写入')
-    result=inspect_config(directory)
+    result=inspect_config(directory,section_name)
     result.update(success=False,changed=False,restart_required=False)
     if result.get('error'):
         return result
@@ -56,21 +69,21 @@ def ensure_power(process):
             header=re.match(r'^\s*\[([^]]+)\]\s*(?:[;#].*)?$',line.strip())
             if header:
                 if in_power:
-                    output.extend(k+'='+v+'\n' for k,v in POWER.items() if k.lower() not in seen)
-                in_power=header[1].lower()=='power'
+                    output.extend(k+'='+v+'\n' for k,v in required.items() if k.lower() not in seen)
+                in_power=header[1].lower()==section_name.lower()
                 if in_power:
-                    if found:raise ValueError('存在重复 Power 节，未写入')
+                    if found:raise ValueError('存在重复 '+section_name+' 节，未写入')
                     found=True
             if in_power and not header:
                 key=re.match(r'^\s*([^=:#;\s]+)\s*[=:]',line)
-                canonical=next((k for k in POWER if key and k.lower()==key[1].lower()),None)
+                canonical=next((k for k in required if key and k.lower()==key[1].lower()),None)
                 if canonical:
-                    output.append(canonical+'='+POWER[canonical]+'\n');seen.add(canonical.lower());continue
+                    output.append(canonical+'='+required[canonical]+'\n');seen.add(canonical.lower());continue
             output.append(line if line.endswith(('\n','\r')) else line+'\n')
         if in_power:
-            output.extend(k+'='+v+'\n' for k,v in POWER.items() if k.lower() not in seen)
+            output.extend(k+'='+v+'\n' for k,v in required.items() if k.lower() not in seen)
         if not found:
-            output.append('\n[Power]\n');output.extend(k+'='+v+'\n' for k,v in POWER.items())
+            output.append('\n['+section_name+']\n');output.extend(k+'='+v+'\n' for k,v in required.items())
         directory.mkdir(parents=True,exist_ok=True)
         backup=''
         if original is not None:
@@ -89,9 +102,9 @@ def ensure_power(process):
             os.replace(tmp,path)
         finally:
             Path(tmp).unlink(missing_ok=True)
-        result=inspect_config(directory)
+        result=inspect_config(directory,section_name)
         result.update(success=result['enabled'],changed=True,restart_required=True,backup=backup,
-                      state='Power 配置已写入；请完全退出并重新启动炉石')
+                      state=section_name+' 配置已写入；请完全退出并重新启动炉石')
     except (OSError,ValueError) as exc:
         result.update(success=False,state='配置写入失败：'+str(exc))
     return result
@@ -103,5 +116,7 @@ def diagnostic_state(process, config, logs):
     if not config.get('exists'):return 'log.config 不存在；'+config.get('state','')
     if not config.get('enabled'):return 'Power 配置未启用；'+config.get('state','')
     if not logs.get('power'):return 'Power.log 尚未生成' + ('；请完全退出并重启炉石' if config.get('restart_required') else '')
+    if str(logs.get('read_state','')).startswith('读取/解析失败'):
+        return logs['read_state']
     if not logs['power']['active']:return 'Power.log 已生成但暂未更新'
     return 'Power.log 正常读取' if 'offset' in logs else 'Power.log 已生成，等待读取'

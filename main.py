@@ -13,7 +13,7 @@ from engine.tracker import Tracker, DeckLog, LINE
 from engine.cards import Cards
 from engine.discovery import discover, gamescope_status, LogClock
 from engine.proton import discover_process
-from engine.logconfig import ensure_power, diagnostic_state
+from engine.logconfig import ensure_power, ensure_decks, inspect_config, diagnostic_state
 
 ROOT = Path(__file__).resolve().parent
 DEFAULTS = dict(game_dir='/home/deck/Games/battlegame/Hearthstone',
@@ -36,6 +36,7 @@ class Plugin:
             pass
         self.proc = None
         self.lock = asyncio.Lock()
+        self.config_lock = asyncio.Lock()
         self.error = ''
         self.decks = DeckLog()
         self.parser = Tracker(self.decks)
@@ -45,6 +46,12 @@ class Plugin:
         self.discovery = {}
         self.process = {}
         self.power_config = {}
+        self.decks_config = {}
+        self.decks_receipt = {}
+        try:
+            self.decks_receipt = json.loads((self.settings_dir/'decks-config-receipt.json').read_text())
+        except (OSError,ValueError):
+            pass
         self.restart_receipt = {}
         try:
             self.restart_receipt = json.loads((self.settings_dir/'power-config-receipt.json').read_text())
@@ -80,6 +87,31 @@ class Plugin:
         if any(k in checked for k in ('game_dir','log_dir')):
             self.last_scan = float('-inf')
         atomic_json(self.settings_dir / 'settings.json', self.settings)
+        return await self.status()
+
+    async def enable_decks_logging(self):
+        async with self.config_lock:
+            process = await asyncio.to_thread(discover_process)
+            result = await asyncio.to_thread(ensure_decks,process)
+            if not result.get('success'):
+                raise RuntimeError(result.get('state','Decks 配置失败'))
+            if result.get('changed'):
+                self.decks_receipt = dict(instance=process.get('instance'),path=result['path'],backup=result.get('backup',''))
+                atomic_json(self.settings_dir/'decks-config-receipt.json',self.decks_receipt)
+            self.decks_config = result
+        self.last_scan = float('-inf')
+        return await self.status()
+
+    async def import_card_database(self, path: str):
+        record = await asyncio.to_thread(self.cards.import_file,path)
+        self.cards.apply(record)
+        self._publish()
+        return await self.status()
+
+    async def retry_card_database(self):
+        record = await asyncio.to_thread(self.cards.refresh)
+        self.cards.apply(record)
+        self._publish()
         return await self.status()
 
     async def start_hud(self):
@@ -118,6 +150,11 @@ class Plugin:
         return await self.status()
 
     async def status(self):
+        game = self.parser.game
+        tracking = self.parser.view(self.cards) if self.active and self.caught_up else dict(status='waiting')
+        stage = '对局已识别' if game and not game.complete else '对局已结束' if game else '尚未识别对局'
+        identities = '双方身份已识别' if game and game.friendly and game.opponent else '双方身份尚未完整识别'
+        deck_stage = '已读取完整初始牌组' if game and self.parser.initial_dbf else '完整卡组未知；只显示 Power 确认的信息'
         diag = {}
         try:
             diag = json.loads((self.runtime / 'diagnostic.json').read_text())
@@ -127,9 +164,11 @@ class Plugin:
                     error=self.error, diagnostic=diag, log_path=str(self.log_path or ''),
                     parse_errors=self.parser.failures, gamescope_running=self.gamescope.startswith('检测到'),
                     gamescope_status=self.gamescope, logs=self.discovery, cards=self.cards.diagnostic(),
-                    process=self.process, power_config=self.power_config,
+                    process=self.process, power_config=self.power_config, decks_config=self.decks_config,
+                    match_status=stage, identity_status=identities, deck_status=deck_stage,
+                    decks_log_status='已找到同会话 Decks.log' if self.discovery.get('decks') else '未找到同会话 Decks.log；启用后重启并选定卡组排队',
                     log_status=diagnostic_state(self.process,self.power_config,self.discovery),
-                    tracking=self.parser.view(self.cards) if self.active and self.caught_up else dict(status='waiting'),
+                    tracking=tracking,
                     visibility='v0.1.x 显示和触控已由用户实测；本版记牌仍待实机验收',
                     arena='尚未加载评分；不支持自动识别候选牌')
 
@@ -146,7 +185,12 @@ class Plugin:
                 if time.monotonic()-self.last_scan >= 3:
                     scan_key = (self.settings['game_dir'],self.settings['log_dir'])
                     process = await asyncio.to_thread(discover_process)
-                    config = await asyncio.to_thread(ensure_power,process)
+                    async with self.config_lock:
+                        config = await asyncio.to_thread(ensure_power,process)
+                        decks_config = await asyncio.to_thread(inspect_config,process.get('user_dir'),'Decks')
+                        if decks_config.get('enabled') and self.decks_receipt.get('path')==decks_config.get('path'):
+                            decks_config['restart_required'] = self.decks_receipt.get('instance')==process.get('instance')
+                            decks_config['backup'] = self.decks_receipt.get('backup','')
                     if config.get('changed') and config.get('success'):
                         self.restart_receipt = dict(instance=process.get('instance'),path=config['path'],backup=config.get('backup',''))
                         atomic_json(self.settings_dir/'power-config-receipt.json',self.restart_receipt)
@@ -158,6 +202,7 @@ class Plugin:
                         continue
                     self.process = process
                     self.power_config = config
+                    self.decks_config = decks_config
                     self.discovery = result
                     self.last_scan = time.monotonic()
                     self.gamescope = gamescope_status()
@@ -168,6 +213,7 @@ class Plugin:
                     if self.tail.path is not None and self.log_path != self.tail.path:
                         self.decks = DeckLog()
                         self.parser.decks = self.decks
+                        self.deck_tail = Tail()
                     # Read matching Decks.log before Power; candidates bind by log timestamp.
                     deck = self.discovery.get('decks')
                     if deck:
@@ -197,6 +243,9 @@ class Plugin:
                     self.discovery['generation'] = self.tail.generation
                     self.discovery['accepted'] = self.parser.accepted
                     self.discovery['parse_errors'] = self.parser.failures
+                    self.discovery['deck_candidates'] = len(self.decks.candidates)
+                    self.discovery['deck_parse_errors'] = self.decks.errors
+                    self.discovery['read_state'] = '日志已读取'
                     self.discovery['parse_state'] = '对局已结束' if self.parser.game and self.parser.game.complete else '已识别对局' if self.parser.game else '等待 CREATE_GAME；可能需下一局'
                 if self.proc and self.proc.returncode is not None:
                     self.error = '渲染器已退出，代码 %s' % self.proc.returncode
