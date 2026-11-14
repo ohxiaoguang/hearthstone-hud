@@ -44,6 +44,8 @@ class Plugin:
             pass
         # Only an explicit boolean opt-in can enable process memory access.
         if type(self.settings.get('arena_memory')) is not bool:self.settings['arena_memory']=False
+        # Migrate the former pair to one switch without silently opting into memory.
+        self.settings['arena']=self.settings['arena_memory']=bool(self.settings['arena'] and self.settings['arena_memory'])
         # This testing build uses the user's requested download mode; no UI switch.
         self.settings.update(image_tls_verify=False,database_tls_verify=False)
         self.proc = None

@@ -49,7 +49,7 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_display_defaults_font_size_and_immediate_publication(self):
         self.assertTrue(self.plugin.settings['own_deck'])
-        self.assertTrue(self.plugin.settings['arena'])
+        self.assertFalse(self.plugin.settings['arena'])  # Merged memory feature is opt-in.
         self.assertFalse(self.plugin.settings['arena_memory'])
         self.assertEqual(self.plugin.settings['font_size'],22)
         await self.plugin.configure({'font_size':28,'visible':False})
@@ -111,6 +111,18 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((self.plugin.cards.tiles.manual/'manual.png').exists())
         self.assertEqual(self.plugin.settings['font_size'],26)
         self.assertEqual(game_log.read_text(),'private game data');self.assertEqual(source.read_text(),'user import')
+
+    async def test_merged_arena_setting_migrates_without_unrequested_memory_access(self):
+        from engine.memory_watch import MemoryWatch
+        for arena,memory in ((False,True),(True,False),(True,True)):
+            await self.plugin._unload()
+            (self.plugin.settings_dir/'settings.json').write_text(json.dumps(dict(arena=arena,arena_memory=memory)))
+            self.plugin=type(self.plugin)()
+            with patch.object(MemoryWatch,'start') as start:
+                await self.plugin._main()
+                self.assertEqual(self.plugin.settings['arena'],arena and memory)
+                self.assertEqual(self.plugin.settings['arena_memory'],arena and memory)
+                self.assertEqual(start.call_count,int(arena and memory))
 
     async def test_clear_waits_for_inflight_download_then_allows_fresh_download(self):
         import threading
