@@ -77,10 +77,13 @@ def format_diagnostics(data,version,recent=(),renderer_tail=''):
         deck_reason=str(recovery.get('deck_reason') or 'ok');deck_note=str(recovery.get('deck_note') or '')
         field('Deck Reason',deck_reason+(' ('+deck_note+')' if deck_note else ''))
         field('Snapshot','established' if recovery.get('snapshot') else 'not established')
+        if recovery.get('read_start'):
+            end=recovery.get('read_settled') or recovery['read_start']
+            field('Snapshot Window',f"{recovery['read_start']:.3f} → {end:.3f} ({(end-recovery['read_start'])*1000:.1f} ms)")
         field('Snapshot Size',recovery.get('snapshot_size',0))
         field('Recovered Cards',recovery.get('recovered',0))
         field('Pending Cards',recovery.get('pending',0))
-        field('Untimed Picks',recovery.get('untimed',0))
+        field('Uncertain Picks',recovery.get('uncertain',0))
         field('Logs Caught Up','yes' if recovery.get('logs_caught_up') else 'no')
         field('Arena Log','found' if recovery.get('arena_log') else 'not found')
         field('Recovery Reason',str(recovery.get('reason',''))+' · '+str(recovery.get('reason_text','')))

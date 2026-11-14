@@ -280,12 +280,14 @@ class AnchorBoundaryTests(unittest.TestCase):
         self.recovery=ArenaRecovery(clock=lambda:self.T1)
         self.t=time.monotonic()
 
-    def observe(self,deck,wall,count=2,**extra):
+    def observe(self,deck,wall,count=2,start=None,**extra):
         state=DraftState('DRAFTING','CARD',False,tuple(DraftChoice('CARD_'+c) for c in 'ABC'),'42','HERO_08',
                          tuple('CARD_'+c for c in deck),**extra)
         for _ in range(count):
             self.t+=.5
-            self.recovery.observe(self.arena,state,dict(pid=100,process_instance='same',observed_at=self.t,observed_wall=wall))
+            diag=dict(pid=100,process_instance='same',observed_at=self.t,observed_wall=wall)
+            if start is not None:diag['observed_start']=start
+            self.recovery.observe(self.arena,state,diag)
 
     def feed(self,when,cid):
         self.arena.feed(datetime.fromtimestamp(when),'Client chooses: card (CARD_'+cid+')')
@@ -303,6 +305,44 @@ class AnchorBoundaryTests(unittest.TestCase):
         history,picks=self.counts(view)
         self.assertEqual((history,picks),(Counter({'CARD_A':1}),Counter({'CARD_A':1})))
         self.assertEqual(view['recovery_source'],'memory_and_logs')
+
+    def test_pick_inside_the_read_window_is_never_taken_as_history(self):
+        # The deck was read between T1 and T1+0.004; a pick inside that window may
+        # or may not be in it, so it must not consume a snapshot copy.
+        self.observe(('A','A'),self.T1+0.004,start=self.T1)
+        self.feed(self.T1+0.002,'A')
+        view=self.view()
+        self.assertEqual(view['count'],3)
+        history,picks=self.counts(view)
+        self.assertEqual((history,picks),(Counter({'CARD_A':2}),Counter({'CARD_A':1})))
+        status=self.recovery.status()
+        self.assertEqual((status['uncertain'],status['read_start'],status['read_settled']),(1,self.T1,self.T1+0.004))
+        self.assertFalse(view['count_exact'])
+        self.assertIn('读取窗口',view['recovery_note'])
+
+    def test_pick_after_the_read_window_is_counted_and_not_flagged(self):
+        self.observe(('A','A'),self.T1+0.004,start=self.T1)
+        self.feed(self.T1+1,'A')
+        view=self.view()
+        self.assertEqual(view['count'],3);self.assertEqual(self.recovery.status()['uncertain'],0)
+
+    def test_pick_before_the_read_window_is_history(self):
+        self.observe(('A','A'),self.T1+0.004,start=self.T1)
+        self.feed(self.T1-1,'A')
+        view=self.view()
+        history,picks=self.counts(view)
+        self.assertEqual(view['count'],2)
+        self.assertEqual((history,picks),(Counter({'CARD_A':1}),Counter({'CARD_A':1})))
+        self.assertEqual(self.recovery.status()['uncertain'],0)
+
+    def test_ambiguous_pick_is_resolved_by_memory_growth_without_double_counting(self):
+        self.observe(('A','A'),self.T1+0.004,start=self.T1)
+        self.feed(self.T1+0.002,'A');self.assertEqual(self.view()['count'],3)
+        self.observe(('A','A','A'),self.T1+5)
+        view=self.view()
+        self.assertEqual(view['count'],3)
+        status=self.recovery.status()
+        self.assertEqual((status['uncertain'],status['recovered']),(0,2))
 
     def test_anchor_is_the_snapshot_time_not_a_log_time(self):
         self.observe(('A',),self.T1)
@@ -356,7 +396,7 @@ class AnchorBoundaryTests(unittest.TestCase):
         self.assertEqual((history,picks),(Counter({'CARD_A':1}),Counter({'CARD_A':1})))
         self.assertFalse(view['count_exact'])              # still marked uncertain
         status=self.recovery.status()
-        self.assertEqual(status['untimed'],1)
+        self.assertEqual(status['uncertain'],1)
         self.assertIn('时间戳',view['recovery_note'])
 
     def test_merge_without_a_snapshot_is_not_a_recovery(self):

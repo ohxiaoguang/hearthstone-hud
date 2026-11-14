@@ -4,13 +4,14 @@ Memory rows are an unordered multiset. Log records remain owned by Arena.
 Only deltas observed after an anchor can cover later log events, so repeated
 Card IDs never consume an unrelated copy from the initial recovered history.
 
-The anchor *is* the moment the stable memory snapshot was read. A record
-stamped at or before that moment is a pick the snapshot already contains (the
-log may have delivered it late), so it consumes a snapshot copy. A record
-stamped after it is a later pick and is counted separately, even when the Card
-ID repeats. A record without a trustworthy timestamp is never guessed either
-way: it is counted separately and flagged. Every early exit records a reason
-code so the HUD can say why nothing was recovered.
+The anchor is the lower bound of the stable memory read: a record stamped at or
+before it is a pick the snapshot already contains (the log may have delivered it
+late), so it consumes a snapshot copy. A record stamped after the read's *upper*
+bound is a later pick and is counted separately, even when the Card ID repeats.
+A record stamped inside the read window, or one without a trustworthy timestamp,
+cannot be ordered against the snapshot: it is never guessed either way, it is
+counted separately and flagged so the count stays visibly inexact. Every early
+exit records a reason code so the HUD can say why nothing was recovered.
 """
 from collections import Counter
 import time
@@ -46,9 +47,9 @@ class ArenaRecovery:
     def reset(self):
         self.context=None;self.candidate=None;self.observed=0;self.snapshot=None
         self.covered=set();self.known=set();self.pending={};self.credit=Counter()
-        self.note='';self.hero='';self.anchor=None
+        self.note='';self.hero='';self.anchor=None;self.settled=None
         self.reason='idle';self.parsed=0;self.slots=0;self.deck_object=False;self.merged=0;self.recovered=0
-        self.untimed=set();self.deck_reason='';self.deck_note=''
+        self.uncertain=set();self.deck_reason='';self.deck_note=''
 
     @staticmethod
     def records(arena):
@@ -92,12 +93,14 @@ class ArenaRecovery:
         if self.candidate!=fingerprint:
             self.candidate=fingerprint;return 'waiting_second_read'
         records=self.records(arena)
-        # The anchor is the moment this exact deck was read, never a later log
-        # timestamp: a pick after the snapshot must not borrow a snapshot copy.
-        base=diagnostic.get('observed_wall') or self.clock()
+        # Lower and upper bounds of the deck read. The anchor is the lower bound,
+        # never a log timestamp: a pick after the read must not borrow a copy. A
+        # record inside (anchor, settled] is unordered and never guessed.
+        base=diagnostic.get('observed_start') or diagnostic.get('observed_wall') or self.clock()
+        settled=max(base,diagnostic.get('observed_wall') or base)
         if self.snapshot is None:
-            self.snapshot=cards;self.known=set();self.covered=set();self.pending={};self.credit=Counter();self.untimed=set()
-            self.anchor=base
+            self.snapshot=cards;self.known=set();self.covered=set();self.pending={};self.credit=Counter();self.uncertain=set()
+            self.anchor=base;self.settled=settled
             available=Counter(cards)
             for ts,record in records:
                 key=self.key(record);cid=record['card_id'];self.known.add(key)
@@ -105,29 +108,37 @@ class ArenaRecovery:
                     self.covered.add(key);available[cid]-=1
                 elif state.mode!='REDRAFTING':
                     self.pending[key]=cid
-                    if ts is None:self.untimed.add(key)
+                    if self._unordered(ts):self.uncertain.add(key)
             return 'anchored'
         if state.mode=='REDRAFTING' or any(cards[cid]<n for cid,n in self.snapshot.items()):
             # Redraft replaces a multiset; operations must not append to it.
-            self.snapshot=cards;self.covered=set();self.pending={};self.credit=Counter();self.untimed=set()
-            self.anchor=base
+            self.snapshot=cards;self.covered=set();self.pending={};self.credit=Counter();self.uncertain=set()
+            self.anchor=base;self.settled=settled
             available=Counter(cards)
             for ts,record in records:
                 key=self.key(record);cid=record['card_id'];self.known.add(key)
                 if self._historical(ts) and available[cid]:self.covered.add(key);available[cid]-=1
-                elif state.mode!='REDRAFTING':self.pending[key]=cid
+                elif state.mode!='REDRAFTING':
+                    self.pending[key]=cid
+                    if self._unordered(ts):self.uncertain.add(key)
             self.note='重选历史按当前牌组恢复，不追加重选操作' if state.mode=='REDRAFTING' else '内存牌组发生替换，已重新核对历史'
             return None
         if cards!=self.snapshot:
             delta=cards-self.snapshot
             for key,cid in list(self.pending.items()):
-                if delta[cid]:delta[cid]-=1;self.covered.add(key);del self.pending[key];self.untimed.discard(key)
+                if delta[cid]:delta[cid]-=1;self.covered.add(key);del self.pending[key];self.uncertain.discard(key)
             self.snapshot=cards;self.credit+=delta
             return None
         return 'anchored'
 
     def _historical(self,ts):
         return ts is not None and self.anchor is not None and ts.timestamp()<=self.anchor
+
+    def _unordered(self,ts):
+        """No trustworthy timestamp, or one inside the read window."""
+        if ts is None:return True
+        if self.anchor is None:return False
+        return self.anchor<ts.timestamp()<=(self.settled if self.settled is not None else self.anchor)
 
     def merge(self,arena,base):
         base['history_picks']=[];base['recovery_source']='logs'
@@ -144,7 +155,7 @@ class ArenaRecovery:
         if not self.known.issubset({self.key(record) for _,record in timed}):
             self.reset();self.reason='log_rewind';return base
         remaining=Counter(self.snapshot);covered=set();pending={};credit=Counter(self.credit)
-        untimed=set(self.untimed);confirmed=[]
+        uncertain=set(self.uncertain);confirmed=[]
         for ts,record in timed:
             key=self.key(record);cid=record['card_id'];fresh=key not in self.known
             self.known.add(key)
@@ -160,21 +171,23 @@ class ArenaRecovery:
             # if the log only delivered it now.
             if self._historical(ts) and remaining[cid]>0:
                 remaining[cid]-=1;covered.add(key);confirmed.append(row)
+            elif self._unordered(ts):
+                # Inside the read window: counting it as history could hide a new
+                # pick, so keep it separate and keep the count visibly inexact.
+                pending[key]=cid;uncertain.add(key);confirmed.append(row)
             elif credit[cid]>0:
                 credit[cid]-=1;covered.add(key)
                 if remaining[cid]>0:remaining[cid]-=1
                 confirmed.append(row)
-            else:
-                pending[key]=cid;confirmed.append(row)
-                if ts is None:untimed.add(key)
+            else:pending[key]=cid;confirmed.append(row)
         self.covered,self.pending,self.credit=covered,pending,credit
-        self.untimed=untimed
+        self.uncertain=uncertain
         history=[dict(arena.rated(cid),source='memory_history',round=0,order_known=False) for cid in sorted(remaining) for _ in range(remaining[cid])]
         self.recovered=len(history)
         base.update(picks=confirmed,history_picks=history,count=len(confirmed)+len(history),
-                    exact=False,count_exact=not self.pending and not self.untimed,recovery_source='memory_and_logs',
-                    recovery_note=self.note or ('部分日志缺少时间戳，已单独计数但份数待确认' if self.untimed
-                                                else '历史牌组来自只读内存，选择顺序未知'))
+                    exact=False,count_exact=not self.pending and not self.uncertain,recovery_source='memory_and_logs',
+                    recovery_note=self.note or ('部分日志落在快照读取窗口内或缺少时间戳，已单独计数但份数待确认'
+                                                if self.uncertain else '历史牌组来自只读内存，选择顺序未知'))
         self.reason='recovered'
         return base
 
@@ -186,8 +199,9 @@ class ArenaRecovery:
         """
         return dict(merge_executed=self.merged>0,executed=bool(self.snapshot) and self.recovered>0,
                     snapshot=self.snapshot is not None,recovered=self.recovered,
-                    pending=len(self.pending),covered=len(self.covered),untimed=len(self.untimed),slots=self.slots,
+                    pending=len(self.pending),covered=len(self.covered),uncertain=len(self.uncertain),slots=self.slots,
                     deck_object=self.deck_object,deck_parsed=self.parsed,
                     deck_reason=self.deck_reason,deck_note=self.deck_note,
                     snapshot_size=sum(self.snapshot.values()) if self.snapshot else 0,
+                    read_start=self.anchor or 0,read_settled=self.settled or 0,
                     reason=self.reason,reason_text=REASONS.get(self.reason,self.reason))

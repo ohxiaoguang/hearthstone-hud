@@ -63,7 +63,7 @@ class HearthstoneMemory:
         self.finder=finder or discover_process;self.mono_factory=mono_factory
         self.process=None;self.mono=None;self.identity=None;self.pid=None;self.observed_identity=None
         self.deck_meta=dict(slots=0,reason='no_deck_object',notes=[])
-        self.snapshot_wall=0
+        self.snapshot_start=0;self.snapshot_wall=0
 
     def close(self):
         process,self.process=self.process,None
@@ -207,6 +207,7 @@ class HearthstoneMemory:
         # closed process, permission failure, cancellation or a low-level read
         # error still propagates from the Mono reader.
         deck_id='';hero='';cards=[];meta=dict(slots=0,reason='no_deck_object',notes=[]);number=None;deck_read=False
+        start=0;settled=0
         if deck is not None:
             try:
                 number=deck.get('ID')
@@ -217,6 +218,9 @@ class HearthstoneMemory:
                 deck_id=str(number) if number else ''
                 try:hero=card_id(deck.get('<HeroCardID>k__BackingField'),True)
                 except UnsupportedLayout:hero=''
+                # Lower bound: taken immediately before the content is read, so a
+                # pick already in the deck keeps its timestamp below the window.
+                start=wall_clock()
                 try:
                     cards=self._deck_cards(deck);meta=self.deck_meta;deck_read=True
                 except UnsupportedLayout:
@@ -236,12 +240,16 @@ class HearthstoneMemory:
             # must not replace its reason with its own.
             self.deck_meta=meta
             if second!=cards:raise NotReady('draft deck changed during snapshot')
+            # Upper bound of the deck content: after this instant a new pick can
+            # only be missing from `cards`. A pick between the bounds may or may
+            # not be included, so it is never classified by guesswork.
+            settled=wall_clock()
+        elif deck is not None:
+            settled=start
         if options and choices:
             if [c['m_cardID'] for c in options.list_objects(3)]!=[c.card_id for c in choices]:raise NotReady('choices changed during snapshot')
-        # Everything above is verified, so this is the moment the snapshot is
-        # known to describe the game: a pick cannot be inside the deck and still
-        # be missing from `cards` after this point.
-        self.snapshot_wall=wall_clock()
+        self.snapshot_start=start
+        self.snapshot_wall=max(start,settled) if deck is not None else 0
         return DraftState(mode,slot,underground,tuple(choices),deck_id,hero,tuple(cards),wins,losses,
                           deck is not None,meta['slots'],meta['reason'],','.join(meta.get('notes') or ()))
 
@@ -255,7 +263,8 @@ class HearthstoneMemory:
             return state,dict(code=code,status=message,pid=self.pid,error='',profile='Unity 6000.3 x64 / Assembly-CSharp',unity_version='.'.join(map(str,self.mono.version)),process_instance=str(self.identity),
                               deck_object=bool(state and state.deck_object),deck_slots=int(state.deck_slots) if state else 0,
                               deck_parsed=len(state.deck) if state else 0,deck_reason=(state.deck_reason if state else ''),
-                              deck_note=(state.deck_note if state else ''),observed_wall=(self.snapshot_wall if state else 0))
+                              deck_note=(state.deck_note if state else ''),observed_start=(self.snapshot_start if state else 0),
+                              observed_wall=(self.snapshot_wall if state else 0))
         except Cancelled:
             self.close();return None,dict(code='disabled',status='内存读取未开启',pid=None,error='')
         except (OSError,MemoryReadError,UnicodeError,KeyError,TypeError,ValueError,AttributeError) as exc:

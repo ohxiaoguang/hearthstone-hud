@@ -135,7 +135,7 @@ class MonoTests(unittest.TestCase):
         self.assertEqual(len(calls),2);self.assertEqual(state.deck,('CARD_A','CARD_A','CARD_B'))
         self.assertEqual(state.deck_reason,'');self.assertEqual(diag['deck_reason'],'');memory.close()
 
-    def test_snapshot_time_is_stamped_after_the_last_verification_read(self):
+    def test_snapshot_window_bounds_the_deck_read(self):
         h=hearthstone_heap();memory=reader(h);real=HearthstoneMemory._deck_cards
         clock={'now':1000.0};marks=[]
         def tracking(self,deck):
@@ -144,16 +144,27 @@ class MonoTests(unittest.TestCase):
             return real(self,deck)
         with patch('engine.arena_memory.wall_clock',lambda:clock['now']), patch.object(HearthstoneMemory,'_deck_cards',tracking):
             state,diag=memory.poll()
-        self.assertEqual(len(marks),2)                       # published read + verification
-        self.assertEqual(diag['observed_wall'],clock['now'])
-        self.assertGreater(diag['observed_wall'],marks[0])   # not the first read
-        self.assertGreaterEqual(diag['observed_wall'],marks[1])
-        self.assertNotEqual(diag['observed_wall'],1000.0)    # not the start of the poll
-        self.assertEqual(memory.snapshot_wall,diag['observed_wall']);memory.close()
+        self.assertEqual(len(marks),2)                        # published read + verification
+        # The window opens before the content is read and closes at the verification
+        # read, so a pick between the two can never be claimed as history.
+        self.assertEqual(diag['observed_start'],1000.0)
+        self.assertLess(diag['observed_start'],marks[0])
+        self.assertEqual(diag['observed_wall'],marks[1])
+        self.assertLess(diag['observed_start'],diag['observed_wall'])
+        self.assertEqual((memory.snapshot_start,memory.snapshot_wall),(1000.0,1020.0))
+        memory.close()
 
-    def test_memory_watch_takes_the_reader_snapshot_time(self):
+    def test_snapshot_window_is_empty_without_a_deck(self):
+        h=hearthstone_heap(choices=('HERO_08','HERO_09','HERO_01'));r=reader(h);self.assertTrue(r.connect())
+        manager=r._manager();klass=manager.klass
+        for name,value in [('m_undergroundActive',False),('m_currentSlotType',2),('m_draftDeck',0)]:
+            offset,kind,_=h.layouts[klass][0][name];h._store(manager.addr+offset,kind,value)
+        state,diag=r.poll()
+        self.assertEqual((diag['observed_start'],diag['observed_wall']),(0,0));r.close()
+
+    def test_memory_watch_takes_the_reader_snapshot_window(self):
         class Reader:
-            def poll(self):return None,dict(code='reading',status='mock',pid=1,observed_wall=123.0,error='')
+            def poll(self):return None,dict(code='reading',status='mock',pid=1,observed_start=120.0,observed_wall=123.0,error='')
             def close(self):pass
         watch=MemoryWatch(lambda stop:Reader(),normal=.01)
         watch.start()
@@ -161,7 +172,9 @@ class MonoTests(unittest.TestCase):
             for _ in range(100):
                 if watch.snapshot()[1].get('observed_wall'):break
                 time.sleep(.01)
-            self.assertEqual(watch.snapshot()[1]['observed_wall'],123.0)
+            diag=watch.snapshot()[1]
+            self.assertEqual((diag['observed_start'],diag['observed_wall']),(120.0,123.0))
+            self.assertLess(diag['observed_start'],diag['observed_wall'])
         finally:
             watch.request_stop();watch.join()
 

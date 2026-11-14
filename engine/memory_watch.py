@@ -9,7 +9,7 @@ class MemoryWatch:
     def __init__(self,factory=None,normal=.5,idle=3):
         self.factory=factory or (lambda stop:HearthstoneMemory(stop=stop))
         self.normal=normal;self.idle=idle;self.stop_event=threading.Event();self.lock=threading.Lock()
-        self.thread=None;self.state=None;self.diagnostic=dict(DISABLED);self.updated=0;self.updated_wall=0
+        self.thread=None;self.state=None;self.diagnostic=dict(DISABLED);self.updated=0;self.updated_start=0;self.updated_wall=0
         self.last_error_key=None;self.last_error_time=0;self.errors=0;self.suppressed=0;self.last_error='';self.last_error_at=0
         self.generation=0
 
@@ -29,15 +29,17 @@ class MemoryWatch:
                     reader.close();state=None;diag=dict(code='read_error',status='内存读取失败',pid=None,error=str(exc)[:300])
                 if self.stop_event.is_set():break
                 now=time.monotonic()
-                # The reader stamps the wall clock after its last consistency
-                # check, so the recovery anchor describes the snapshot itself and
-                # not the start of the poll.
-                wall=diag.get('observed_wall')
+                # The reader stamps both bounds of its deck read: the start of
+                # the published read and the end of the verification read. The
+                # interval between them is the only part of the snapshot whose
+                # content cannot be ordered against a log line.
+                wall=diag.get('observed_wall');opened=diag.get('observed_start')
                 with self.lock:
                     if (diag.get('pid'),diag.get('process_instance'))!=(self.diagnostic.get('pid'),self.diagnostic.get('process_instance')) or diag.get('code') in ('not_running','incompatible','permission_denied','mono_missing'):
                         self.generation+=1
                     self.state=state;self.diagnostic=dict(diag);self.updated=now
                     self.updated_wall=wall if isinstance(wall,(int,float)) and wall>0 else time.time()
+                    self.updated_start=opened if isinstance(opened,(int,float)) and opened>0 else self.updated_wall
                     key=(diag.get('code'),diag.get('error'))
                     if diag.get('error'):
                         if key!=self.last_error_key or now-self.last_error_time>=30:
@@ -62,6 +64,6 @@ class MemoryWatch:
         with self.lock:
             # Never retain stale choices when a worker hangs/exits or stop is requested.
             fresh=bool(self.thread and self.thread.is_alive() and not self.stop_event.is_set() and self.updated and time.monotonic()-self.updated<2)
-            diag=dict(self.diagnostic,observed_at=self.updated,observed_wall=self.updated_wall,enabled=self.thread is not None,errors=self.errors,suppressed_errors=self.suppressed,last_error=self.last_error,last_error_at=self.last_error_at)
+            diag=dict(self.diagnostic,observed_at=self.updated,observed_start=self.updated_start,observed_wall=self.updated_wall,enabled=self.thread is not None,errors=self.errors,suppressed_errors=self.suppressed,last_error=self.last_error,last_error_at=self.last_error_at)
             if not fresh and self.state is not None:diag.update(code='reading',status='候选已过期，等待新读取')
             return self.state if fresh else None,diag
