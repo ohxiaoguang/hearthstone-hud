@@ -39,6 +39,46 @@ class MonoTests(unittest.TestCase):
         self.assertEqual(diag['code'],'card_selection');self.assertEqual(state.slot,'CARD');self.assertTrue(state.underground)
         self.assertEqual([c.card_id for c in state.choices],['CARD_A','CARD_B','CARD_C']);self.assertEqual(state.choices[2].package,('CARD_Z',))
         self.assertEqual(state.deck,('CARD_A','CARD_A','CARD_B'));self.assertEqual((state.wins,state.losses),(3,1));r.close()
+    def test_deck_copy_lists_are_summed_per_variant(self):
+        r=reader(hearthstone_heap());state,diag=r.poll()
+        self.assertEqual(state.deck,('CARD_A','CARD_A','CARD_B'))
+        self.assertEqual((state.deck_object,state.deck_slots,state.deck_reason),(True,2,''))
+        self.assertEqual((diag['deck_object'],diag['deck_slots'],diag['deck_parsed']),(True,2,3));r.close()
+
+    def test_scalar_deck_copy_count_is_accepted_and_reported(self):
+        r=reader(hearthstone_heap(slots=[('CARD_A',2),('CARD_B',1)],count_field=m.T_I4));state,diag=r.poll()
+        self.assertEqual(state.deck,('CARD_A','CARD_A','CARD_B'))
+        self.assertEqual(state.deck_reason,'int_count');self.assertEqual(state.deck_slots,2)
+        self.assertEqual(diag['deck_reason'],'int_count');r.close()
+
+    def test_empty_deck_is_published_with_a_reason_not_a_failure(self):
+        r=reader(hearthstone_heap(slots=[('CARD_A',[0,0])]));state,diag=r.poll()
+        self.assertEqual(diag['code'],'card_selection');self.assertEqual(state.deck,())
+        self.assertEqual(state.deck_reason,'empty');self.assertEqual(state.deck_slots,1)
+        self.assertEqual(len(state.choices),3);r.close()
+
+    def test_implausible_deck_size_is_refused_but_candidates_survive(self):
+        r=reader(hearthstone_heap(slots=[('CARD_A',[30]),('CARD_B',[30])]));state,diag=r.poll()
+        self.assertEqual(diag['code'],'card_selection');self.assertEqual(len(state.choices),3)
+        self.assertEqual(state.deck,());self.assertEqual(state.deck_reason,'deck_overflow')
+        self.assertEqual(state.deck_id,'777');r.close()
+
+    def test_missing_deck_object_is_reported(self):
+        h=hearthstone_heap();r=reader(h);self.assertTrue(r.connect())
+        manager=r._manager();klass=manager.klass
+        for name,value in [('m_undergroundActive',False),('m_currentSlotType',1),('m_draftDeck',0)]:
+            offset,kind,_=h.layouts[klass][0][name];h._store(manager.addr+offset,kind,value)
+        state=r.draft_state()
+        self.assertEqual((state.deck_object,state.deck_id,state.deck_reason),(False,'','no_deck_object'))
+        self.assertEqual(len(state.choices),3);r.close()
+
+    def test_null_slot_list_is_reported(self):
+        h=hearthstone_heap();r=reader(h);self.assertTrue(r.connect())
+        deck=r._manager()['m_undergroundDraftDeck'];klass=deck.klass
+        offset,kind,_=h.layouts[klass][0]['m_slots'];h._store(deck.addr+offset,kind,0)
+        state=r.draft_state()
+        self.assertEqual((state.deck,state.deck_reason),((),'no_slots_null'));r.close()
+
     def test_03_hero_selection_three_heroes_without_deck(self):
         h=hearthstone_heap(choices=('HERO_08','HERO_09','HERO_01'));r=reader(h);self.assertTrue(r.connect())
         manager=r._manager();klass=manager.klass

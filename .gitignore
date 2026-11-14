@@ -54,3 +54,6 @@ tests/private/
 .DS_Store
 .idea/
 .vscode/
+
+# Local assistant workspace (session notes, not project source)
+.workbuddy/

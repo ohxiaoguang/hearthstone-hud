@@ -2,12 +2,13 @@
 # Copyright (c) 2026 justfaked. MIT: licenses/hs-decktracker-linux-MIT.txt.
 """Bounded DraftDisplay/DraftManager snapshots; never confirms logged picks."""
 from dataclasses import dataclass, field
-from .mono_memory import T_CLASS,T_GENERICINST,T_OBJECT,T_VALUETYPE,T_I4,T_I8,T_BOOLEAN,Mono, Obj, Process, MemoryReadError, UnsupportedLayout, MonoMissing, NotReady, Cancelled
+from .mono_memory import T_CLASS,T_GENERICINST,T_OBJECT,T_VALUETYPE,T_I4,T_I8,T_BOOLEAN,Mono, Obj, Process, MemoryReadError, UnsupportedLayout, MonoMissing, NotReady, Cancelled, MissingField
 from .proton import discover_process
 from .images import valid_id
 
 DRAFT_MODES=('INVALID','NO_ACTIVE_DRAFT','DRAFTING','ACTIVE_DRAFT_DECK','IN_REWARDS','REDRAFTING')
 SLOT_TYPES=('NONE','CARD','HERO','HERO_POWER')
+MAX_DECK_COPIES=40  # 30 picks plus room for a torn/duplicated read; never used as card data.
 
 @dataclass(frozen=True)
 class DraftChoice:
@@ -25,6 +26,12 @@ class DraftState:
     deck: tuple = ()
     wins: int = 0
     losses: int = 0
+    # Read-only evidence about the deck object itself; never card data.
+    # The reader always sets these explicitly; the defaults only describe a
+    # hand-built state, so "assume present" keeps synthetic states usable.
+    deck_object: bool = True
+    deck_slots: int = 0
+    deck_reason: str = ''
 
 
 def card_id(value,empty=False):
@@ -105,11 +112,42 @@ class HearthstoneMemory:
         raise NotReady('DraftManager service unavailable')
 
     def _deck_cards(self,deck):
-        cards=[];slots=deck['m_slots']
-        for entry in slots.list_objects(100) if slots else []:
-            counts=entry['m_count'];counts=counts.list_ints(16) if counts else []
-            if any(type(n) is not int or not 0<=n<=100 for n in counts) or len(cards)+sum(counts)>100:raise UnsupportedLayout('excessive deck copy count')
-            cards.extend([card_id(entry['m_cardId'])]*sum(counts))
+        """Deck copies in slot order: List<m_slots>, each with m_cardId and m_count.
+
+        m_count is the per-premium-variant copy list in the shipped layout
+        (upstream sums it); a plain int is accepted and reported. Nothing is
+        synthesised: an unreadable slot stops the read with a reason code.
+        """
+        self.deck_meta=dict(slots=0,reason='')
+        try:
+            slots=deck['m_slots']
+        except MissingField:
+            self.deck_meta['reason']='no_slots_field';return []
+        if slots is None:
+            self.deck_meta['reason']='no_slots_null';return []
+        entries=slots.list_objects(100);self.deck_meta['slots']=len(entries)
+        cards=[];int_counts=0
+        for entry in entries:
+            cid=entry.get('m_cardId')
+            if cid is None:
+                self.deck_meta['reason']='slot_without_card_id';return []
+            if not isinstance(cid,str) or not valid_id(cid):
+                self.deck_meta['reason']='slot_invalid_card_id';return []
+            counts=entry.get('m_count')
+            if counts is None:copies=[]
+            elif type(counts) is int:copies=[counts];int_counts+=1
+            else:
+                try:copies=counts.list_ints(16)
+                except UnsupportedLayout:
+                    self.deck_meta['reason']='count_layout';return []
+            if any(type(n) is not int or not 0<=n<=30 for n in copies):
+                self.deck_meta['reason']='count_range';return []
+            total=sum(copies)
+            if len(cards)+total>MAX_DECK_COPIES:
+                self.deck_meta['reason']='deck_overflow';return []
+            cards.extend([cid]*total)
+        if int_counts:self.deck_meta['reason']='int_count'
+        elif not cards:self.deck_meta['reason']='empty'
         return cards
 
     def draft_state(self):
@@ -133,12 +171,14 @@ class HearthstoneMemory:
         losses=manager['m_undergroundLosses' if underground else 'm_losses']
         if type(wins) is not int or type(losses) is not int or not 0<=wins<=50 or not 0<=losses<=20:raise UnsupportedLayout('implausible arena record')
         deck=manager['m_undergroundDraftDeck' if underground else 'm_draftDeck']
-        deck_id='';hero='';cards=[]
+        deck_id='';hero='';cards=[];slots=0;reason='no_deck_object'
         if deck is not None:
-            number=deck['ID']
+            number=deck.get('ID')
             if type(number) is not int or not 0<=number<2**63:raise UnsupportedLayout('invalid deck ID')
-            deck_id=str(number) if number else '';hero=card_id(deck['<HeroCardID>k__BackingField'],True)
+            deck_id=str(number) if number else '';hero=card_id(deck.get('<HeroCardID>k__BackingField'),True)
+            self.deck_meta=dict(slots=0,reason='')
             cards=self._deck_cards(deck)
+            slots=self.deck_meta['slots'];reason=self.deck_meta['reason']
         # Re-read selection identity to reject concurrent mode/choice transitions.
         check_options=display['m_choices']
         if manager['m_undergroundActive']!=underground or display['m_currentMode']!=DRAFT_MODES.index(mode) or (check_options.addr if check_options else 0)!=(options.addr if options else 0) or manager[prefix+'SlotType']!=SLOT_TYPES.index(slot):
@@ -149,7 +189,8 @@ class HearthstoneMemory:
         if deck is not None and self._deck_cards(deck)!=cards:raise NotReady('draft deck changed during snapshot')
         if options and choices:
             if [c['m_cardID'] for c in options.list_objects(3)]!=[c.card_id for c in choices]:raise NotReady('choices changed during snapshot')
-        return DraftState(mode,slot,underground,tuple(choices),deck_id,hero,tuple(cards),wins,losses)
+        return DraftState(mode,slot,underground,tuple(choices),deck_id,hero,tuple(cards),wins,losses,
+                          deck is not None,slots,reason)
 
     def poll(self):
         try:
@@ -158,7 +199,9 @@ class HearthstoneMemory:
             stage=state.slot if state and state.choices else ''
             code={'HERO':'hero_selection','CARD':'card_selection','HERO_POWER':'hero_power_selection'}.get(stage,'reading')
             message={'hero_selection':'英雄选择识别成功','card_selection':'卡牌选择识别成功','hero_power_selection':'英雄技能选择识别成功'}.get(code,'正在读取；当前无完整候选')
-            return state,dict(code=code,status=message,pid=self.pid,error='',profile='Unity 6000.3 x64 / Assembly-CSharp',unity_version='.'.join(map(str,self.mono.version)),process_instance=str(self.identity))
+            return state,dict(code=code,status=message,pid=self.pid,error='',profile='Unity 6000.3 x64 / Assembly-CSharp',unity_version='.'.join(map(str,self.mono.version)),process_instance=str(self.identity),
+                              deck_object=bool(state and state.deck_object),deck_slots=int(state.deck_slots) if state else 0,
+                              deck_parsed=len(state.deck) if state else 0,deck_reason=(state.deck_reason if state else ''))
         except Cancelled:
             self.close();return None,dict(code='disabled',status='内存读取未开启',pid=None,error='')
         except (OSError,MemoryReadError,UnicodeError,KeyError,TypeError,ValueError,AttributeError) as exc:

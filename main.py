@@ -268,13 +268,17 @@ class Plugin:
         diagnostic['stage']=state.slot if state else ''
         diagnostic['found']=diagnostic.get('pid') is not None and diagnostic.get('code')!='not_running'
         self._bind_memory_identity(state)
+        # Recovery only needs the read-only snapshot and the arena identity;
+        # log catch-up is not a precondition (it used to block this silently).
         if state and state.slot=='HERO':self.arena_recovery.reset()
-        elif self.settings['enabled'] and (self.arena_caught_up or not self.discovery.get('arena')):
-            self.arena_recovery.observe(self.arena,state,diagnostic)
+        elif self.settings['enabled']:self.arena_recovery.observe(self.arena,state,diagnostic)
         view=self.arena_preview.view(self.arena,state,diagnostic)
         if state and (state.slot=='HERO' or (state.deck_id and self.arena.deck_id and state.deck_id!=self.arena.deck_id)):
-            self.arena_recovery.reset();view.update(history_picks=[],recovery_source='logs')
+            self.arena_recovery.reset()
+            self.arena_recovery.reason='slot' if state.slot=='HERO' else 'id_mismatch'
+            view.update(history_picks=[],recovery_source='logs',recovery_note='内存竞技场与日志不一致，未做历史恢复')
         else:view=self.arena_recovery.merge(self.arena,view)
+        view['recovery']=dict(self.arena_recovery.status(),logs_caught_up=bool(self.arena_caught_up),arena_log=bool(self.discovery.get('arena')))
         if view['recovery_source']=='memory_and_logs' and state and state.slot=='CARD':
             view['show_count']=True
         elif self.arena.identity_source=='memory' and not view['exact']:
@@ -284,7 +288,10 @@ class Plugin:
     def _bind_memory_identity(self,state=None):
         if not self.settings['enabled']:return
         if state is None:state,_=self.memory_watch.snapshot()
-        if state and state.slot=='CARD' and state.deck_id and 0<len(state.deck)<=30:
+        # Same plausibility bound as ArenaRecovery: a 30-card deck is normal, and
+        # a slightly larger read must still bind identity instead of silently
+        # falling back to preview-only.
+        if state and state.slot=='CARD' and state.deck_id and 0<len(state.deck)<=40:
             self.arena.attach_memory_deck(state.deck_id,state.hero,state.mode)
 
     def _arena_ui(self):

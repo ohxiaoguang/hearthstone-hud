@@ -123,3 +123,141 @@ class RecoveryTests(unittest.TestCase):
         self.recovery.observe(self.arena,None,{})
         self.assertEqual(self.pick('A')['count'],5)
         self.assertEqual(self.snapshot('AAAAB')['count'],5)
+
+
+class MidJoinTests(unittest.TestCase):
+    """Arena.log may lag behind memory: late history must not count twice."""
+
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
+        self.cards=Cards(self.tmp.name)
+        self.cards.install([dict(id='CARD_'+c,dbfId=i+1,name=c,type='MINION') for i,c in enumerate('ABCD')])
+        self.arena=Arena(self.cards);self.arena.attach_memory_deck('42','HERO_08','DRAFTING')
+        # Fixed wall clock so log timestamps can be placed either side of it.
+        self.clock=10000.0
+        self.recovery=ArenaRecovery(clock=lambda:self.clock)
+        self.t=time.monotonic()
+
+    def state(self,deck,slot='CARD',mode='DRAFTING',**extra):
+        return DraftState(mode,slot,False,tuple(DraftChoice('CARD_'+c) for c in 'ABC'),'42','HERO_08',
+                          tuple('CARD_'+c for c in deck),**extra)
+
+    def observe(self,deck,count=2,observed_wall=None,**extra):
+        state=self.state(deck,**extra)
+        for _ in range(count):
+            self.t+=.5
+            diag=dict(pid=100,process_instance='same',observed_at=self.t)
+            if observed_wall is not None:diag['observed_wall']=observed_wall
+            self.recovery.observe(self.arena,state,diag)
+        return self.view()
+
+    def feed(self,offset,cid):
+        self.arena.feed(datetime.fromtimestamp(self.clock+offset),'Client chooses: card (CARD_'+cid+')')
+
+    def view(self):return self.recovery.merge(self.arena,self.arena.view())
+
+    def test_midjoin_without_log_history_recovers_whole_deck(self):
+        view=self.observe('AAABBC')
+        self.assertEqual(view['count'],6);self.assertEqual(view['picks'],[])
+        self.assertEqual(Counter(r['id'] for r in view['history_picks']),Counter({'CARD_A':3,'CARD_B':2,'CARD_C':1}))
+        self.assertEqual(view['recovery_source'],'memory_and_logs');self.assertEqual(self.recovery.status()['reason'],'recovered')
+
+    def test_snapshot_does_not_need_caught_up_arena_log(self):
+        # The arena log will only be read later; recovery must still anchor.
+        self.assertTrue(self.observe('AAB')['count']==3)
+        self.assertTrue(self.recovery.status()['snapshot'])
+        self.feed(-30,'A');self.feed(-20,'B')
+        view=self.view()
+        self.assertEqual(view['count'],3);self.assertEqual(len(view['picks']),2)
+        self.assertEqual(len(view['history_picks']),1)
+
+    def test_late_historical_log_line_does_not_double_count(self):
+        self.observe('AAAB')
+        self.feed(-5,'A')  # pick happened before the anchor, delivered afterwards
+        view=self.view()
+        self.assertEqual(view['count'],4);self.assertEqual(len(view['picks']),1)
+        self.assertEqual(len(view['history_picks']),3)
+        self.assertEqual(self.recovery.status()['pending'],0)
+
+    def test_duplicate_card_pick_after_anchor_counts_once(self):
+        self.observe('AAB')
+        self.feed(1,'A')
+        self.assertEqual(self.view()['count'],4)
+        self.feed(2,'A')
+        view=self.view()
+        self.assertEqual(view['count'],5);self.assertEqual(len(view['picks']),2)
+        self.assertEqual(len(view['history_picks']),3)
+
+    def test_same_line_twice_is_deduplicated_by_arena(self):
+        self.observe('AAB')
+        ts=datetime.fromtimestamp(self.clock+1)
+        self.arena.feed(ts,'Client chooses: card (CARD_A)')
+        self.arena.feed(ts,'Client chooses: card (CARD_A)')
+        self.assertEqual(self.view()['count'],4)
+
+    def test_later_pick_grows_with_memory_and_keeps_history(self):
+        self.observe('AAB')
+        self.feed(1,'C');self.assertEqual(self.view()['count'],4)
+        self.assertEqual(self.observe('AABC')['count'],4)  # memory caught up, no extra copy
+        self.feed(2,'B');self.assertEqual(self.view()['count'],5)
+        self.assertEqual(self.observe('AABCB')['count'],5)
+
+    def test_duplicate_card_already_in_history_is_not_consumed_by_new_pick(self):
+        self.observe('AA')
+        self.feed(1,'A')
+        view=self.view()
+        self.assertEqual(view['count'],3);self.assertEqual(len(view['picks']),1)
+        self.assertEqual(Counter(r['id'] for r in view['history_picks']),Counter({'CARD_A':2}))
+
+    def test_empty_memory_deck_reports_reason_and_keeps_logs(self):
+        view=self.observe('')
+        self.assertEqual(view['count'],0);self.assertIsNone(self.recovery.snapshot)
+        status=self.recovery.status()
+        self.assertEqual(status['reason'],'deck_empty');self.assertIn('内存牌组',status['reason_text'])
+
+    def test_deck_object_and_slot_evidence_reach_status(self):
+        self.observe('AAB',count=1,deck_object=False,deck_slots=0)
+        self.assertEqual(self.recovery.status()['reason'],'no_deck')
+        self.assertFalse(self.recovery.status()['deck_object'])
+        self.observe('AAB',count=1,deck_object=True,deck_slots=2)
+        status=self.recovery.status()
+        self.assertEqual(status['reason'],'waiting_second_read')
+        self.assertEqual(status['slots'],2);self.assertEqual(status['deck_parsed'],3)
+        self.assertTrue(status['deck_object'])
+
+    def test_hero_power_in_deck_is_rejected_not_recovered(self):
+        state=DraftState('DRAFTING','CARD',False,tuple(DraftChoice('CARD_A') for _ in range(3)),'42','HERO_08',
+                         ('CARD_A','HERO_08bp'))
+        for _ in range(2):
+            self.t+=.5
+            self.recovery.observe(self.arena,state,dict(pid=100,process_instance='same',observed_at=self.t))
+        self.assertEqual(self.recovery.status()['reason'],'deck_invalid')
+        self.assertEqual(self.view()['count'],0)
+
+    def test_mismatched_memory_id_never_replaces_log_identity(self):
+        self.arena.feed(datetime.fromtimestamp(self.clock+1),'Got new draft deck with ID: 99')
+        state=DraftState('DRAFTING','CARD',False,tuple(DraftChoice('CARD_A') for _ in range(3)),'42','HERO_08',('CARD_A',))
+        for _ in range(2):
+            self.t+=.5
+            self.recovery.observe(self.arena,state,dict(pid=100,process_instance='same',observed_at=self.t))
+        self.assertEqual(self.recovery.status()['reason'],'id_mismatch')
+        self.assertEqual(self.arena.deck_id,'99')
+
+    def test_anchor_uses_the_memory_read_time_not_the_view_time(self):
+        # The view may run long after the read; a pick in between is genuinely
+        # new and must not be folded into the snapshot.
+        self.clock=20000.0
+        self.observe('AAB',observed_wall=10000.0)
+        self.feed(5000,'C')
+        view=self.view()
+        self.assertEqual(view['count'],4);self.assertEqual(len(view['picks']),1)
+
+    def test_manual_record_replaced_by_log_keeps_snapshot(self):
+        self.observe('AAB')
+        self.arena.manual_pick('42','draft:42',1,'CARD_C')
+        self.assertEqual(self.view()['count'],4)
+        self.feed(1,'C')  # log now confirms round 1; source changes, mapping must survive
+        view=self.view()
+        self.assertEqual(view['count'],4);self.assertEqual(len(view['picks']),1)
+        self.assertEqual(len(view['history_picks']),3)
+

@@ -107,7 +107,7 @@ class Arena:
         deck_id=self.phase_decks.get(phase,self.deck_id)
         return {k[3]:r for k,r in self.manual.items() if k[:3]==(self.session,deck_id,phase) and self._kind(r['card_id'])=='card'}
 
-    def _automatic(self,phase):
+    def _automatic_entries(self,phase):
         # Client chooses has no explicit ordinal. Source timestamps distinguish a
         # delayed confirmation from the *next* round after a manual fallback.
         manual=self._manual_phase(phase);result={};cursor=0
@@ -120,8 +120,11 @@ class Arena:
                 if ts<=confirmed:break
                 ordinal+=1
             if ordinal>(30 if phase.startswith('draft:') else 100):break
-            result[ordinal]=cid;cursor=ordinal
+            result[ordinal]=(cid,ts);cursor=ordinal
         return result
+
+    def _automatic(self,phase):
+        return {ordinal:cid for ordinal,(cid,_) in self._automatic_entries(phase).items()}
 
     def records(self,phase=None):
         phase=self.phase if phase is None else phase
@@ -133,6 +136,26 @@ class Arena:
         return result
 
     def next_round(self):return max((p['round'] for p in self.records()),default=0)+1
+
+    def timed_records(self,phase=None):
+        """Same ordinals as records(), each with the confirmation timestamp.
+
+        Recovery needs the time to tell a *historical* pick that the log only
+        delivered late apart from a pick made after the memory snapshot.
+        """
+        phase=self.phase if phase is None else phase
+        auto=self._automatic_entries(phase);manual=self._manual_phase(phase);out=[]
+        for ordinal in sorted(auto.keys()|manual.keys()):
+            logged=auto.get(ordinal);fallback=manual.get(ordinal,{})
+            if logged:cid,ts=logged
+            else:
+                cid=fallback.get('card_id');ts=None
+                try:ts=datetime.fromisoformat(fallback.get('confirmed_at',''))
+                except (TypeError,ValueError):pass
+            manual_id=fallback.get('card_id')
+            out.append((ts,dict(card_id=cid or manual_id,round=ordinal,source='log' if logged else 'manual',
+                                reconciled=bool(logged and manual_id),conflict=bool(logged and manual_id and cid!=manual_id))))
+        return out
 
     def context(self):return dict(deck_id=self.deck_id,phase=self.phase,round=self.next_round())
 

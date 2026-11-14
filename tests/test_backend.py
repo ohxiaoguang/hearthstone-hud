@@ -167,6 +167,64 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(.02)
         self.assertTrue(view['exact']);self.assertEqual(view['count'],30);self.assertEqual(view['history_picks'],[])
 
+    async def test_recovery_runs_when_arena_log_is_not_caught_up(self):
+        """Mid-arena join: memory must restore history even while logs lag."""
+        from engine.memory_watch import MemoryWatch
+        from engine.arena_memory import DraftState,DraftChoice
+        self.plugin.cards.install([dict(id='CARD_'+c,dbfId=i+1,name=c,type='MINION') for i,c in enumerate('ABC')])
+        deck=['CARD_A','CARD_A','CARD_B']
+        class Reader:
+            def poll(self):
+                return (DraftState('DRAFTING','CARD',False,tuple(DraftChoice('CARD_'+c) for c in 'ABC'),'3386335194','HERO_08',tuple(deck),deck_object=True,deck_slots=2),
+                        dict(code='card_selection',status='mock',pid=100,process_instance='same',error='',deck_object=True,deck_slots=2,deck_parsed=len(deck),deck_reason=''))
+            def close(self):pass
+        self.plugin.memory_watch=MemoryWatch(lambda stop:Reader(),normal=.01)
+        root=Path(self.tmp.name)/'game';session=root/'Logs/session';session.mkdir(parents=True)
+        (session/'Power.log').write_text('')
+        (session/'Arena.log').write_text('D 12:00:01.0000000 Got new draft deck with ID: 3386335194\n')
+        await self.plugin.configure({'arena':True,'arena_memory':True,'game_dir':str(root),'visible':False})
+        await asyncio.sleep(.3)
+        # The reported device state: candidates match, yet the log side is idle.
+        view=None
+        for _ in range(60):
+            self.plugin.arena_caught_up=False
+            view=self.plugin._arena_view()
+            if view['recovery_source']=='memory_and_logs':break
+            await asyncio.sleep(.02)
+        self.assertEqual(view['recovery_source'],'memory_and_logs')
+        self.assertEqual(view['association'],'matched');self.assertEqual(view['count'],3)
+        self.assertEqual(len(view['history_picks']),3);self.assertEqual(view['picks'],[])
+        recovery=view['recovery']
+        self.assertTrue(recovery['snapshot']);self.assertTrue(recovery['executed'])
+        self.assertEqual((recovery['deck_parsed'],recovery['slots'],recovery['recovered']),(3,2,3))
+        self.assertEqual(recovery['reason'],'recovered');self.assertFalse(recovery['logs_caught_up'])
+        text=await self.plugin.diagnostic_text()
+        self.assertIn('[Arena Recovery]',text);self.assertIn('Memory Deck Size: 3',text)
+        self.assertIn('Slot Count: 2',text);self.assertIn('Snapshot: established',text)
+        self.assertIn('Recovery Executed: yes',text);self.assertIn('Recovery Reason: recovered',text)
+        self.assertEqual(self.plugin.arena.raw_choices,{'draft:3386335194':[]})
+
+    async def test_recovery_reports_why_nothing_was_restored(self):
+        from engine.memory_watch import MemoryWatch
+        from engine.arena_memory import DraftState,DraftChoice
+        self.plugin.cards.install([dict(id='CARD_A',dbfId=1,name='A',type='MINION')])
+        class Reader:
+            def poll(self):
+                return (DraftState('DRAFTING','CARD',False,tuple(DraftChoice('CARD_A') for _ in range(3)),'3386335194','HERO_08',(),deck_object=True,deck_slots=0,deck_reason='empty'),
+                        dict(code='card_selection',status='mock',pid=100,process_instance='same',error='',deck_object=True,deck_slots=0,deck_parsed=0,deck_reason='empty'))
+            def close(self):pass
+        self.plugin.memory_watch=MemoryWatch(lambda stop:Reader(),normal=.01)
+        root=Path(self.tmp.name)/'game';session=root/'Logs/session';session.mkdir(parents=True)
+        (session/'Power.log').write_text('')
+        (session/'Arena.log').write_text('D 12:00:01.0000000 Got new draft deck with ID: 3386335194\n')
+        await self.plugin.configure({'arena':True,'arena_memory':True,'game_dir':str(root),'visible':False})
+        await asyncio.sleep(.3)
+        view=self.plugin._arena_view()
+        self.assertEqual(view['recovery']['reason'],'deck_empty')
+        self.assertFalse(view['recovery']['snapshot'])
+        text=await self.plugin.diagnostic_text()
+        self.assertIn('Recovery Reason: deck_empty',text);self.assertIn('内存牌组尚未包含已选卡牌',text)
+
     async def test_display_defaults_font_size_and_immediate_publication(self):
         self.assertTrue(self.plugin.settings['own_deck'])
         self.assertFalse(self.plugin.settings['arena'])  # Merged memory feature is opt-in.
