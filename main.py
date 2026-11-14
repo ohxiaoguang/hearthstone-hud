@@ -27,7 +27,7 @@ VERSION = json.loads((ROOT/'package.json').read_text())['version']
 DEFAULTS = dict(game_dir='/home/deck/Games/battlegame/Hearthstone',
     proton_prefix='',
     log_dir='', display=':0', x=40, y=80, scale=1.0, opacity=0.85,
-    visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=False, right_x=1540, right_y=80, card_images=True, chinese_names=True, image_tls_verify=False, database_tls_verify=False, own_played=True, opponent_played=True, show_summary=True, panel_width=320, hide_exhausted=False, arena_memory=False)
+    visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=True, right_x=1540, right_y=80, card_images=True, chinese_names=True, image_tls_verify=False, database_tls_verify=False, own_played=True, opponent_played=True, show_summary=True, panel_width=320, font_size=22, hide_exhausted=False, arena_memory=False)
 
 
 class Plugin:
@@ -104,7 +104,7 @@ class Plugin:
             expected = type(DEFAULTS[key])
             if expected in (int, float):
                 value = float(value)
-                low, high = {'x':(0,7680),'y':(0,4320),'scale':(.5,3),'opacity':(.1,1),'right_x':(0,7680),'right_y':(0,4320),'panel_width':(180,640)}[key]
+                low, high = {'x':(0,7680),'y':(0,4320),'scale':(.5,3),'opacity':(.1,1),'right_x':(0,7680),'right_y':(0,4320),'panel_width':(180,640),'font_size':(14,30)}[key]
                 if not low <= value <= high:
                     raise ValueError('数值超出范围')
                 value = int(value) if expected is int else value
@@ -127,6 +127,7 @@ class Plugin:
             self.arena_caught_up=False
             self.last_scan = float('-inf')
         atomic_json(self.settings_dir / 'settings.json', self.settings)
+        self._publish()
         return await self.status()
 
     async def enable_decks_logging(self):
@@ -249,6 +250,9 @@ class Plugin:
     async def start_hud(self):
         async with self.lock:
             if self.proc and self.proc.returncode is None:
+                self.settings['visible'] = True
+                atomic_json(self.settings_dir / 'settings.json', self.settings)
+                self._publish()
                 return await self.status()
             binary = ROOT / 'bin/hearthstone-hud-renderer'
             header = binary.read_bytes()[:20] if binary.exists() else b''
@@ -259,6 +263,7 @@ class Plugin:
             self.error = ''
             self._ensure_media_worker()
             self.settings['visible'] = True
+            atomic_json(self.settings_dir / 'settings.json', self.settings)
             self._publish()
             env = dict(os.environ, DISPLAY=self.settings['display'])
             with (self.runtime / 'renderer.log').open('ab') as log:
@@ -270,6 +275,9 @@ class Plugin:
 
     async def stop_hud(self):
         async with self.lock:
+            self.settings['visible'] = False
+            atomic_json(self.settings_dir / 'settings.json', self.settings)
+            self._publish()
             if self.proc and self.proc.returncode is None:
                 self.proc.terminate()
                 try:

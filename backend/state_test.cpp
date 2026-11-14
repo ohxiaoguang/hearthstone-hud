@@ -31,6 +31,8 @@ int main(){
     auto none=left_regions(false,false,80,800,8);if(none.own.visible || none.opponent.visible)return 18;
     bad=good;bad["panel_width"]="wide";if(valid_hud_state(bad))return 19;
     bad=good;bad["show_summary"]="yes";if(valid_hud_state(bad))return 20;
+    bad=good;bad["font_size"]="large";if(valid_hud_state(bad))return 31;
+    good["font_size"]=28;if(!valid_hud_state(good))return 32;
     bad=good;bad["tracking"]["own_played"][0]["turn"]="bad";if(valid_hud_state(bad))return 10;
     bad=good;bad["tracking"]["own_added"][0]["generated"]="bad";if(valid_hud_state(bad))return 11;
     auto rated=json{{"id","A"},{"name","甲"},{"image",""},{"rating_label","80"},{"tier","Good"},{"score",80},{"best",true}};

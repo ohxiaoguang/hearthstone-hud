@@ -31,7 +31,7 @@ inline bool valid_arena_state(const nlohmann::json& a){
 }
 inline bool valid_hud_state(const nlohmann::json& s) {
     if(!s.is_object() || !s.contains("updated") || !s["updated"].is_number())return false;
-    for(const auto* k:{"scale","opacity","x","y","right_x","right_y","panel_width"})
+    for(const auto* k:{"scale","opacity","x","y","right_x","right_y","panel_width","font_size"})
         if(s.contains(k) && (!s[k].is_number() || !std::isfinite(s[k].get<double>())))return false;
     for(const auto* k:{"visible","own_deck","opponent_deck","opponent_hand","card_images","chinese_names","own_played","opponent_played","show_summary","hide_exhausted"})
         if(s.contains(k) && !s[k].is_boolean())return false;

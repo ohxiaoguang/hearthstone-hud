@@ -1,5 +1,6 @@
 """Exercise Decky lifecycle against an isolated fake Decky module, not a fake HUD."""
 import asyncio
+import json
 import importlib.util
 import sys
 import tempfile
@@ -36,6 +37,37 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
     async def test_stop_idempotent(self):
         await self.plugin.stop_hud();await self.plugin.stop_hud()
         self.assertFalse((await self.plugin.status())['running'])
+
+    async def test_display_defaults_font_size_and_immediate_publication(self):
+        self.assertTrue(self.plugin.settings['own_deck'])
+        self.assertTrue(self.plugin.settings['arena'])
+        self.assertFalse(self.plugin.settings['arena_memory'])
+        self.assertEqual(self.plugin.settings['font_size'],22)
+        await self.plugin.configure({'font_size':28,'visible':False})
+        state=json.loads((self.plugin.runtime/'state.json').read_text())
+        saved=json.loads((self.plugin.settings_dir/'settings.json').read_text())
+        self.assertEqual(state['font_size'],28)
+        self.assertFalse(state['visible'])
+        self.assertEqual(saved['font_size'],28)
+        for value in (13,31,float('inf'),float('nan')):
+            with self.assertRaises(ValueError):await self.plugin.configure({'font_size':value})
+
+    async def test_master_start_restores_hidden_renderer_and_stop_persists(self):
+        class Process:
+            returncode=None
+            def terminate(self):self.returncode=0
+            async def wait(self):return self.returncode
+        process=Process()
+        self.plugin.proc=process
+        await self.plugin.configure({'visible':False})
+        status=await self.plugin.start_hud()
+        self.assertTrue(status['running']);self.assertTrue(status['settings']['visible'])
+        self.assertIs(self.plugin.proc,process)  # No duplicate renderer launch.
+        self.assertTrue(json.loads((self.plugin.runtime/'state.json').read_text())['visible'])
+        await self.plugin.stop_hud()
+        self.assertEqual(process.returncode,0)
+        self.assertFalse(json.loads((self.plugin.runtime/'state.json').read_text())['visible'])
+        self.assertFalse(json.loads((self.plugin.settings_dir/'settings.json').read_text())['visible'])
 
     async def test_live_nested_log_to_atomic_hud_state_and_truncation(self):
         import json

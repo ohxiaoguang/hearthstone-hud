@@ -1,10 +1,10 @@
 import { ButtonItem, PanelSection, PanelSectionRow, TextField, SliderField, ToggleField } from '@decky/ui';
 import { callable, definePlugin } from '@decky/api';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { FaLayerGroup } from 'react-icons/fa';
 import { copyText } from './clipboard';
 import { ArenaEditor, type ArenaView } from './arena';
-type Settings = {game_dir:string;proton_prefix:string;log_dir:string;display:string;x:number;y:number;scale:number;opacity:number;visible:boolean;own_deck:boolean;opponent_deck:boolean;opponent_hand:boolean;arena:boolean;arena_memory:boolean;right_x:number;right_y:number;card_images:boolean;image_tls_verify:boolean;database_tls_verify:boolean;own_played:boolean;opponent_played:boolean;show_summary:boolean;panel_width:number;hide_exhausted:boolean;chinese_names:boolean};
+type Settings = {game_dir:string;proton_prefix:string;log_dir:string;display:string;x:number;y:number;scale:number;opacity:number;visible:boolean;own_deck:boolean;opponent_deck:boolean;opponent_hand:boolean;arena:boolean;arena_memory:boolean;right_x:number;right_y:number;card_images:boolean;image_tls_verify:boolean;database_tls_verify:boolean;own_played:boolean;opponent_played:boolean;show_summary:boolean;panel_width:number;font_size:number;hide_exhausted:boolean;chinese_names:boolean};
 type ImportResult = {found:number;imported:number;skipped:number;format_errors:number;invalid_ids:number;other_failures:number;errors:string[]};
 type Status = {arena:ArenaView;arena_log_status:string;arena_config:{enabled?:boolean;restart_required?:boolean};storage:{runtime:string;database:string;images:string;manual_images:string;retained_on_uninstall:boolean};version:string;settings:Settings;running:boolean;error:string;log_path:string;parse_errors:number;gamescope_status:string;
   cards:{count:number;state:string;download_state:string;source:string;updated:number;error:string;image_error:string;images_pending:number;image_cache:{manual:number;automatic:number};image_batch:{status:string;total:number;success:number;failed:number;skipped:number};image_import:ImportResult|null};
@@ -39,8 +39,9 @@ function Content(){
  const [zipPath,setZipPath]=useState('/home/deck/Downloads/cards-images.zip');
  const [busy,setBusy]=useState(false);const [copyState,setCopyState]=useState('');
  const [manualCopy,setManualCopy]=useState('');
- const run=async(job:()=>Promise<Status>)=>{try{setData(await job());setError('');}catch(e){setError(String(e));}};
- useEffect(()=>{let alive=true;const refresh=()=>{getStatus().then(d=>{if(alive)setData(d);}).catch(e=>{if(alive)setError(String(e));});};refresh();const timer=setInterval(refresh,2000);return()=>{alive=false;clearInterval(timer);};},[]);
+ const revision=useRef(0);const pending=useRef(0);
+ const run=async(job:()=>Promise<Status>)=>{const ticket=++revision.current;pending.current++;try{const result=await job();if(ticket===revision.current){setData(result);setError('');}}catch(e){if(ticket===revision.current)setError(String(e));}finally{pending.current--;}};
+ useEffect(()=>{let alive=true;const refresh=()=>{if(pending.current)return;const ticket=revision.current;getStatus().then(d=>{if(alive&&!pending.current&&ticket===revision.current)setData(d);}).catch(e=>{if(alive&&!pending.current&&ticket===revision.current)setError(String(e));});};refresh();const timer=setInterval(refresh,2000);return()=>{alive=false;clearInterval(timer);};},[]);
  const change=(values:Partial<Settings>)=>run(()=>configure(values));
  const background=async(job:()=>Promise<Status>)=>{setBusy(true);try{await run(job);}finally{setBusy(false);}};
  const copyDiagnostic=async()=>{
@@ -52,14 +53,32 @@ function Content(){
  const imported=data?.cards.image_import;
  return <PanelSection title={`炉石记牌器 · ${data?.version??'加载中'}`}>
  <PanelSectionRow><div style={box}>{data?.running?'HUD 正在运行':'HUD 已停止'}{(error||data?.error)&&<div role="alert" style={{color:'#ffbdad'}}>{error||data?.error}</div>}</div></PanelSectionRow>
- <ButtonItem onClick={()=>run(data?.running?stop:start)}>{data?.running?'停止 HUD':'启动记牌 HUD'}</ButtonItem>
  {data && <>
- <ToggleField label="显示 HUD" checked={data.settings.visible} onChange={visible=>change({visible})}/>
- <PanelSection title="日志与卡牌数据">
+ <ToggleField label="启用 HUD" checked={data.running&&data.settings.visible} disabled={busy} onChange={enabled=>background(enabled?start:stop)}/>
+ <ToggleField label="己方剩余牌库" checked={data.settings.own_deck} onChange={own_deck=>change({own_deck})}/>
+ <ToggleField label="竞技场辅助" checked={data.settings.arena} onChange={arena=>change({arena})}/>
+ <ToggleField label="自动识别竞技场候选" description="可选：只读游戏内存；关闭后停止读取。" checked={data.settings.arena_memory} onChange={arena_memory=>change({arena_memory})}/>
+ <SliderField label="卡牌名称字号" value={data.settings.font_size} min={14} max={30} step={1} onChange={font_size=>change({font_size})}/>
+ <SliderField label="面板宽度" value={data.settings.panel_width} min={180} max={640} step={10} onChange={panel_width=>change({panel_width})}/>
+ <SliderField label="整体缩放" value={data.settings.scale} min={.5} max={3} step={.1} onChange={scale=>change({scale})}/>
+ <SliderField label="面板不透明度" value={data.settings.opacity} min={.1} max={1} step={.05} onChange={opacity=>change({opacity})}/>
+ {(['opponent_played','own_played','show_summary','hide_exhausted'] as const).map((key,i)=><ToggleField key={key} label={['左侧对手已打出','左侧我方已打出','显示顶部信息','隐藏已耗尽原牌（关闭则置灰）'][i]} checked={data.settings[key]} onChange={v=>change({[key]:v})}/>)}
+ {(data.power_config.restart_required||data.decks_config.restart_required||data.arena_config.restart_required)&&<PanelSectionRow><div role="alert" style={box}>配置已更新，请完全退出并重启炉石。</div></PanelSectionRow>}
+ {data.settings.arena&&!data.arena_config.enabled&&<PanelSectionRow><div style={box}>竞技场日志未启用，自动候选仍可预览，已选牌记录需要 Arena 日志。请在“工具与诊断”中备份并启用。</div></PanelSectionRow>}
+ <Fold title="竞技场候选与手动补录">
+ <Datum label="候选识别">{data.arena.memory?.status||'未开启自动识别'}</Datum>
+ <ArenaEditor data={data.arena} onUpdate={arena=>setData(value=>value?{...value,arena}:value)}/>
+ </Fold>
+ <Fold title="面板位置与其他显示选项">
+ <div style={box}>左侧两个出牌面板同时开启时上下各半，只开一个时占满左侧。长名称可调宽面板或减小字号。</div>
+ {(['x','y','right_x','right_y'] as const).map((key,i)=><SliderField key={key} label={['左侧横向位置','左侧纵向位置','右侧横向位置','右侧纵向位置'][i]} value={data.settings[key]} min={0} max={[1920,1080,1920,1080][i]} step={10} onChange={v=>change({[key]:v})}/>)}
+ {(['opponent_hand','card_images','chinese_names'] as const).map((key,i)=><ToggleField key={key} label={['顶部对手手牌数量','卡图背景','简体中文名称'][i]} checked={data.settings[key]} onChange={v=>change({[key]:v})}/>)}
+ </Fold>
+ <Fold title="工具与诊断">
+ <div>
  <div style={box}>
  <Datum label="日志">{data.log_status}</Datum><Datum label="对局">{data.match_status}</Datum><Datum label="双方身份">{data.identity_status}</Datum>
  <Datum label="初始牌组">{data.deck_status}</Datum><Datum label="中文数据库">{data.cards.state} · {data.cards.count} 张</Datum>
- {(data.power_config.restart_required||data.decks_config.restart_required||data.arena_config.restart_required)&&<div role="alert" style={{color:'#ffd38a'}}>配置已更新，请完全退出并重启炉石。</div>}
  </div>
  <ButtonItem onClick={copyDiagnostic}>复制诊断</ButtonItem>
  {copyState&&<div role="status" style={box}>{copyState}</div>}
@@ -72,17 +91,15 @@ function Content(){
  <ButtonItem disabled={data.decks_config.enabled} onClick={()=>run(enableDecks)}>备份并启用 Decks 日志</ButtonItem>
  </Fold>
  <Fold title="竞技场选牌与静态评分">
- <ToggleField label="只读内存自动识别候选（默认关闭）" checked={data.settings.arena_memory} onChange={arena_memory=>change({arena_memory})}/>
- <div style={box}>仅以当前用户权限只读访问游戏内存；不会写入、注入或修改系统权限。关闭后停止轮询并释放连接。自动候选仍只是预览，不等于实际选择。</div>
  <Datum label="内存状态">{data.arena.memory?.status||'内存读取未开启'}</Datum>
  <Datum label="内存进程">{data.arena.memory?.found?`PID ${data.arena.memory.pid}`:'未发现／尚未读取'}</Datum>
  <Datum label="识别阶段">{data.arena.stage||'none'} · 候选 {data.arena.memory?.candidate_count??0}</Datum>
  {data.arena.memory?.last_error&&<div role="alert">最后读取错误：{data.arena.memory.last_error}</div>}
- <ToggleField label="显示竞技场 HUD（仅选牌时）" checked={data.settings.arena} onChange={arena=>change({arena})}/>
+
  <Datum label="Arena.log">{data.arena_log_status}</Datum><Datum label="Arena 配置">{data.arena_config.enabled?'已启用':'未启用'}</Datum>
  <ButtonItem disabled={data.arena_config.enabled} onClick={()=>run(enableArena)}>备份并启用 Arena 日志</ButtonItem>
  <div style={box}>修改后请完全退出并重启炉石。不会自动修改 Arena 节。需先发现竞技场 ID，再录入本轮候选或补录实际选择。</div>
- <ArenaEditor data={data.arena} onUpdate={arena=>setData(value=>value?{...value,arena}:value)}/>
+
  </Fold>
  <Fold title="数据库更新与离线导入">
  <Datum label="缓存文件">{data.storage.database}</Datum>
@@ -109,12 +126,11 @@ function Content(){
  <ButtonItem disabled={busy} onClick={()=>background(()=>importImages(zipPath))}>校验并导入卡图</ButtonItem>
  {imported&&<div role="status">发现 {imported.found} · 导入 {imported.imported} · 已存在 {imported.skipped} · 格式错误 {imported.format_errors} · 非法 ID {imported.invalid_ids} · 其他失败 {imported.other_failures}{imported.errors.map((s,i)=><div key={i}>{s}</div>)}</div>}
  </Fold>
- </PanelSection>
- <Fold title="HUD 布局与显示设置">
- <div style={box}>右侧只放己方剩余牌库。左侧两个出牌面板可独立开关，同时开启时上下各占一半；只开一个时占满左侧。</div>
+ </div>
+ <Fold title="备用路径与渲染器维护">
  {(['game_dir','log_dir','display'] as const).map((key,i)=><PathField key={key} label={['游戏目录（自动发现备用）','日志目录或 Power.log','X11 DISPLAY（重启 HUD 生效）'][i]} value={data.settings[key]} save={value=>change({[key]:value})}/>)}
- {(['x','y','scale','opacity','right_x','right_y','panel_width'] as const).map((key,i)=><SliderField key={key} label={['左侧出牌横向位置','左侧出牌纵向位置','缩放','面板不透明度','右侧牌库横向位置','右侧牌库纵向位置','面板宽度（随缩放）'][i]} value={data.settings[key]} min={[0,0,.5,.1,0,0,180][i]} max={[1920,1080,3,1,1920,1080,640][i]} step={[10,10,.1,.05,10,10,10][i]} onChange={v=>change({[key]:v})}/>)}
- {(['own_deck','opponent_played','own_played','show_summary','hide_exhausted','opponent_hand','card_images','chinese_names'] as const).map((key,i)=><ToggleField key={key} label={['右侧己方剩余牌库','左侧对手已打出','左侧我方已打出','显示顶部信息','隐藏已耗尽原牌（关闭则置灰）','顶部对手手牌数量','卡图背景','简体中文名称'][i]} checked={data.settings[key]} onChange={v=>change({[key]:v})}/>)}
+ <ButtonItem layout="below" disabled={busy} onClick={()=>background(async()=>{await stop();return start();})}>重启 HUD 渲染器</ButtonItem>
+ </Fold>
  </Fold>
  </>}
  </PanelSection>;
