@@ -3,7 +3,7 @@
 Decks.log headers/deck-code format follow hs-decktracker-linux/decks.py.
 Never infer an opponent's unknown card identity or use played cards as a deck.
 """
-from collections import Counter, OrderedDict
+from collections import Counter, OrderedDict, deque
 from datetime import datetime
 import re
 from .power import PowerParser
@@ -50,6 +50,7 @@ class Tracker(PowerParser):
         self.recent = OrderedDict()
         self.accepted = 0
         self.failures = 0
+        self.recent_errors = deque(maxlen=10)
         self.previous_start = None
 
     def _create_game(self):
@@ -93,7 +94,8 @@ class Tracker(PowerParser):
                         if e.controller==self.game.opponent.player_id and e.card_id and e.tags.get('CARDTYPE') not in ('HERO','HERO_POWER','PLAYER','GAME') and not e.card_id.startswith('HERO_'):
                             self.public.add((e.id,e.card_id))
             return True
-        except (ValueError,KeyError,TypeError,IndexError):
+        except (ValueError,KeyError,TypeError,IndexError) as exc:
+            self.recent_errors.append(type(exc).__name__+': '+str(exc)[:200]+' | '+payload[:160])
             self.failures += 1
             return False
 
@@ -128,7 +130,10 @@ class Tracker(PowerParser):
         starting=Counter()
         for dbf,n in self.initial_dbf.items(): starting[cards.id_for_dbf(dbf)]+=n
         departed=Counter(e.known_id for e in mine if (e.zone!='DECK' or e.controller!=me.player_id) and e.known_id)
-        uncertain=any(c.startswith('dbf:') for c in starting) or any(c not in starting for c in departed) or len(mine)!=sum(starting.values()) or any(not e.known_id for e in mine if e.zone!='DECK' or e.controller!=me.player_id)
+        accounted=Counter(e.known_id for e in mine if e.known_id)
+        missing=max(0,sum(starting.values())-len(mine))
+        unidentified_departures=sum(1 for e in mine if not e.known_id and (e.zone!='DECK' or e.controller!=me.player_id))
+        unknown_extras=sum(1 for e in entities if e.controller==me.player_id and e.zone=='DECK' and not e.in_starting_deck and not e.card_id)
         known_current=Counter(e.card_id for e in entities if e.controller==me.player_id and e.zone=='DECK' and e.card_id)
         extras=Counter(e.card_id for e in entities if e.controller==me.player_id and e.zone=='DECK' and e.card_id and not e.in_starting_deck)
         transformed=Counter(e.known_id for e in mine if e.zone=='DECK' and e.card_id and e.card_id!=e.known_id)
@@ -137,11 +142,22 @@ class Tracker(PowerParser):
         result['own_label']='完整初始牌组（Decks.log）' if starting else '部分已知；完整牌组未知'
         visible_own={e.card_id for e in entities if e.controller==me.player_id and e.card_id and not e.card_id.startswith('HERO_') and e.tags.get('CARDTYPE') not in ('HERO','HERO_POWER','PLAYER','GAME')}
         for cid in starting.keys()|known_current.keys()|departed.keys()|used.keys()|visible_own:
-            remaining = max(0,starting[cid]-departed[cid]-transformed[cid])+extras[cid] if starting and not uncertain else None
-            # A transformed starting entity remains in deck under its new ID.
-            remaining = (remaining or 0)+sum(1 for e in mine if e.zone=='DECK' and e.controller==me.player_id and e.card_id==cid and e.card_id!=e.known_id) if remaining is not None else None
-            result['own'].append(dict(cards.info(cid),initial=starting[cid] if starting else None,
-                remaining=remaining,known_in_deck=known_current[cid],drawn=drawn[cid],used=used[cid],count=remaining if remaining is not None else known_current[cid]))
+            initial=starting.get(cid) if starting and cid in starting else None
+            uncertain_slots=min(max(0,(initial or 0)-accounted[cid]),missing+unidentified_departures)
+            exact=initial is not None and not cid.startswith('dbf:') and not uncertain_slots and not unknown_extras and accounted[cid]<=initial
+            target_transforms=sum(1 for e in mine if e.zone=='DECK' and e.controller==me.player_id and e.card_id==cid and e.card_id!=e.known_id)
+            # Known generated cards/transform targets have no implicit initial copies.
+            if initial is None and starting and cid not in {e.known_id for e in mine} and not missing and not unidentified_departures and not unknown_extras:
+                initial=0
+                exact=True
+            remaining=max(0,(initial or 0)-departed[cid]-transformed[cid])+extras[cid]+target_transforms if exact else None
+            lower=known_current[cid]
+            reason='初始牌组与实体证据一致' if exact else '初始牌组未知' if not starting else '该卡仍有未确定的实体或身份'
+            self_row=dict(cards.info(cid),initial=initial,
+                remaining=remaining,known_in_deck=lower,remaining_lower_bound=lower if remaining is None and lower>0 else None,
+                count_confidence='exact' if exact else 'lower_bound' if lower>0 else 'unknown',count_reason=reason,
+                drawn=drawn[cid],used=used[cid],count=remaining if remaining is not None else lower)
+            result['own'].append(self_row)
         for key in ('own','opponent'):
             result[key].sort(key=lambda r:(r['cost'] if isinstance(r['cost'],int) else 99,r['name']))
             result[key]=result[key][:256]

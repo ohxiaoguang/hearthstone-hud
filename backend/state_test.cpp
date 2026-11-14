@@ -7,5 +7,8 @@ int main(){
     auto bad=good;bad["tracking"]["own"]=42;if(valid_hud_state(bad))return 2;
     bad=good;bad["visible"]="true";if(valid_hud_state(bad))return 3;
     bad=good;bad["tracking"]["own"].push_back({{"id","A"}});if(valid_hud_state(bad))return 4;
+    if(card_count_label(json{{"remaining",nullptr},{"known_in_deck",0}},true)!="?")return 5;
+    if(card_count_label(json{{"remaining",nullptr},{"remaining_lower_bound",2}},true)!=">=2")return 6;
+    if(card_count_label(json{{"remaining",0}},true)!="0")return 7;
     std::cout<<"Native HUD state validation: passed\n";
 }

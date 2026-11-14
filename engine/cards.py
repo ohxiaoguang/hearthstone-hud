@@ -4,6 +4,7 @@ Metadata approach follows hs-decktracker-linux/cards.py (MIT). Network work
 runs in a worker thread, never in log parsing or the OpenGL loop.
 """
 import asyncio
+from collections import deque
 import queue
 import json
 import re
@@ -14,6 +15,7 @@ import time
 import urllib.request
 from pathlib import Path
 from .io import atomic_json
+from .images import TileStore, valid_id, validate_png, atomic_image, MAX_IMAGE
 
 DATA_URL='https://api.hearthstonejson.com/v1/latest/zhCN/cards.json'
 IMAGE_URL='https://art.hearthstonejson.com/v1/tiles/{card_id}.png'
@@ -56,6 +58,11 @@ class Cards:
         self.directory=Path(directory)
         self.images=self.directory/'images'
         self.images.mkdir(parents=True,exist_ok=True)
+        self.tiles=TileStore(self.images)
+        self.image_batch=dict(status='idle',total=0,success=0,failed=0,skipped=0)
+        self.batch_remaining=set();self.image_errors=deque(maxlen=10)
+        self.image_totals=dict(success=0,failed=0,skipped=0)
+        self.import_result=None
         self.by_id={};self.by_dbf={};self.updated=0;self.error='';self.source='HearthstoneJSON zhCN'
         self.generation=0;self.cache_lock=threading.Lock();self.image_error='';self.download_state='尚未尝试'
         self.attempted=0;self.image_attempts={};self.queue=queue.Queue(maxsize=128);self.pending=set()
@@ -75,22 +82,37 @@ class Cards:
         return self.by_dbf.get(dbf,'dbf:'+str(dbf))
 
     def image_path(self,cid):
-        if not re.fullmatch(r'[A-Za-z0-9_]+',cid):return None
+        if not valid_id(cid):return None
         p=self.images/(cid+'.png')
         return p
 
     def info(self,cid):
         card=self.by_id.get(cid,{})
-        image=self.image_path(cid)
+        image=self.tiles.path(cid)
         return dict(id=cid,name=card.get('name') if isinstance(card.get('name'),str) else cid or '未知卡牌',cost=card.get('cost') if isinstance(card.get('cost'),int) else None,image=str(image) if image and image.exists() else '')
 
     def request_images(self,ids):
         for cid in ids:
-            path=self.image_path(cid)
-            if not path or path.exists() or cid in self.pending or time.time()-self.image_attempts.get(cid,0)<3600:
+            if not valid_id(cid) or self.tiles.path(cid) or cid in self.pending or (cid not in self.batch_remaining and time.time()-self.image_attempts.get(cid,0)<3600):
                 continue
             if self.queue.full():break
             self.pending.add(cid);self.queue.put_nowait(cid)
+
+    def begin_image_download(self,ids):
+        if self.batch_remaining:return dict(self.image_batch)
+        unique=set(ids)
+        self.image_batch=dict(status='running',total=len(unique),success=0,failed=0,skipped=0)
+        self.batch_remaining=set()
+        for cid in unique:
+            if not valid_id(cid) or self.tiles.path(cid):self.image_batch['skipped']+=1
+            else:self.batch_remaining.add(cid)
+        self.request_images(sorted(self.batch_remaining))
+        if not self.batch_remaining:self.image_batch['status']='complete'
+        return dict(self.image_batch)
+
+    def import_images(self,path):
+        self.import_result=self.tiles.import_zip(path)
+        return self.import_result
 
     def _commit(self,rows,source,expected=None):
         with self.cache_lock:
@@ -135,10 +157,14 @@ class Cards:
 
     def download_image(self,cid):
         p=self.image_path(cid)
-        if not p:return
-        data=fetch(IMAGE_URL.format(card_id=cid),1024*1024)
-        if len(data)<24 or data[:8]!=b'\x89PNG\r\n\x1a\n' or max(struct.unpack('>II',data[16:24]))>1024:raise ValueError('图片格式或尺寸不合规')
-        tmp=p.with_suffix('.tmp');tmp.write_bytes(data);tmp.replace(p)
+        if p is None:raise ValueError('非法 Card ID')
+        data=fetch(IMAGE_URL.format(card_id=cid),MAX_IMAGE)
+        validate_png(data)
+        atomic_image(p,data)
+        self.prune_images()
+
+    def prune_images(self):
+        # Flat automatic cache only. Never traverse/delete images/manual/.
         files=sorted(self.images.glob('*.png'),key=lambda f:f.stat().st_mtime,reverse=True)
         size=0
         for i,f in enumerate(files):
@@ -147,7 +173,7 @@ class Cards:
 
     async def worker(self):
         while True:
-            if time.time()-self.updated>7*86400 and time.time()-self.attempted>(60 if not self.by_id else 3600):
+            if self.queue.empty() and not self.batch_remaining and time.time()-self.updated>7*86400 and time.time()-self.attempted>(60 if not self.by_id else 3600):
                 record=await asyncio.to_thread(self.refresh)
                 self.apply(record)
             try:
@@ -158,14 +184,24 @@ class Cards:
             self.image_attempts[cid]=time.time()
             if len(self.image_attempts)>1024:
                 self.image_attempts.pop(next(iter(self.image_attempts)))
+            outcome='success'
             try:
-                await asyncio.to_thread(self.download_image,cid)
+                if self.tiles.path(cid):outcome='skipped'
+                else:await asyncio.to_thread(self.download_image,cid)
             except (OSError,ValueError) as exc:
-                self.image_error=str(exc)
+                outcome='failed';self.image_error=str(exc)[:300]
+                self.image_errors.append(cid+': '+self.image_error)
             finally:
+                self.image_totals[outcome]+=1
+                if cid in self.batch_remaining:
+                    self.batch_remaining.discard(cid);self.image_batch[outcome]+=1
+                    if not self.batch_remaining:self.image_batch['status']='complete'
                 self.pending.discard(cid);self.queue.task_done()
+                self.request_images(sorted(self.batch_remaining))
 
     def diagnostic(self):
         return dict(source=self.source,updated=self.updated,count=len(self.by_id),error=self.error,
                     state='卡牌数据库可用' if self.by_id else '卡牌数据库不可用；显示卡牌 ID',download_state=self.download_state,
-                    image_error=self.image_error,images_pending=len(self.pending))
+                    image_error=self.image_error,images_pending=len(self.pending),image_cache=self.tiles.counts(),
+                    image_batch=dict(self.image_batch),image_totals=dict(self.image_totals),image_import=self.import_result,
+                    image_errors=list(self.image_errors))

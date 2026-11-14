@@ -54,3 +54,11 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(.4)
         self.assertEqual(self.plugin.tail.generation,2)
         self.assertEqual(self.plugin.parser.accepted,1)
+
+    async def test_diagnostic_api_is_redacted_and_does_not_export_files(self):
+        self.plugin.recent_errors.append('token=private-secret /home/real-user/file')
+        before=set(self.plugin.runtime.rglob('*.txt'))
+        text=await self.plugin.diagnostic_text()
+        self.assertIn('Hearthstone HUD Diagnostic',text)
+        self.assertNotIn('private-secret',text);self.assertNotIn('real-user',text)
+        self.assertEqual(before,set(self.plugin.runtime.rglob('*.txt')))

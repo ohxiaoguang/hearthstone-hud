@@ -43,7 +43,7 @@ public:
         if(rejected.size()>256)rejected.clear();
         rejected[name]=frame;
         std::error_code ec;auto path=std::filesystem::weakly_canonical(name,ec);
-        if(ec || path.parent_path()!=root || path.extension()!=".png")return 0;
+        if(ec || (path.parent_path()!=root && path.parent_path()!=root/"manual") || path.extension()!=".png")return 0;
         int width,height,channels;
         if(!stbi_info(name.c_str(),&width,&height,&channels) || width>1024 || height>1024)return 0;
         auto pixels=stbi_load(name.c_str(),&width,&height,nullptr,4);if(!pixels)return 0;
@@ -77,8 +77,7 @@ static void panel(const char* id,const std::string& title,const json& rows,bool 
             ImGui::TableSetColumnIndex(1);ImGui::TextUnformatted(number(row.value("cost",json())).c_str());
             ImGui::TableSetColumnIndex(2);ImGui::TextUnformatted(row.value(chinese?"name":"id","").c_str());
             ImGui::TableSetColumnIndex(3);
-            auto count=own?row.value("remaining",json()):row.value("count",json());
-            std::string label=count.is_null()?">="+number(row.value("known_in_deck",json())):number(count);
+            std::string label=card_count_label(row,own);
             ImGui::TextUnformatted(label.c_str());
         }
         ImGui::EndTable();

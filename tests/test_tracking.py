@@ -159,7 +159,8 @@ class CardTests(unittest.TestCase):
             cards=Cards(folder)
             with patch('engine.cards.fetch',return_value=b'not png'):
                 with self.assertRaises(ValueError):cards.download_image('TEST_A')
-            image=(Path(__file__).resolve().parents[1]/'assets/test.png').read_bytes()
+            from image_support import tile_png
+            image=tile_png()
             for i in range(256):(cards.images/(str(i)+'.png')).write_bytes(image)
             with patch('engine.cards.fetch',return_value=image):cards.download_image('TEST_A')
             self.assertLessEqual(len(list(cards.images.glob('*.png'))),256)

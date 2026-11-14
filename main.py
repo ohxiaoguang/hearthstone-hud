@@ -1,5 +1,6 @@
 """Decky backend. No network listeners or privileged game access."""
 import asyncio
+from collections import deque
 import contextlib
 import json
 import os
@@ -13,9 +14,11 @@ from engine.tracker import Tracker, DeckLog, LINE
 from engine.cards import Cards
 from engine.discovery import discover, gamescope_status, LogClock
 from engine.proton import discover_process
+from engine.diagnostics import format_diagnostics
 from engine.logconfig import ensure_power, ensure_decks, inspect_config, diagnostic_state
 
 ROOT = Path(__file__).resolve().parent
+VERSION = json.loads((ROOT/'package.json').read_text())['version']
 DEFAULTS = dict(game_dir='/home/deck/Games/battlegame/Hearthstone',
     proton_prefix='',
     log_dir='', display=':0', x=40, y=80, scale=1.0, opacity=0.85,
@@ -38,6 +41,7 @@ class Plugin:
         self.lock = asyncio.Lock()
         self.config_lock = asyncio.Lock()
         self.error = ''
+        self.recent_errors = deque(maxlen=10)
         self.decks = DeckLog()
         self.parser = Tracker(self.decks)
         self.deck_tail = Tail()
@@ -114,6 +118,41 @@ class Plugin:
         self._publish()
         return await self.status()
 
+    def _ensure_media_worker(self):
+        if self.media_task is None or self.media_task.done():
+            self.media_task = asyncio.create_task(self.cards.worker())
+
+    async def download_missing_images(self):
+        tracking = self.parser.view(self.cards)
+        ids={r['id'] for key in ('own','opponent') for r in tracking.get(key,[])}
+        ids.update(self.cards.id_for_dbf(dbf) for dbf in self.parser.initial_dbf)
+        game=self.parser.game
+        if game:
+            for ent in game.entities.values():
+                if ent.card_id and (ent.controller==game.friendly_id or (ent.id,ent.card_id) in self.parser.public):
+                    ids.add(ent.card_id)
+        self.cards.begin_image_download(ids)
+        self._ensure_media_worker()
+        return await self.status()
+
+    async def import_card_images(self,path: str):
+        await asyncio.to_thread(self.cards.import_images,path)
+        self._publish()
+        return await self.status()
+
+    async def diagnostic_text(self):
+        data=await self.status()
+        tail=''
+        try:
+            with (self.runtime/'renderer.log').open('rb') as f:
+                f.seek(0,2);size=f.tell();f.seek(max(0,size-3000))
+                tail=f.read(3000).decode('utf-8',errors='replace')
+                if size>3000:tail='[TRUNCATED: renderer tail only]\n'+tail
+        except OSError:
+            pass
+        errors=list(self.recent_errors)+list(self.parser.recent_errors)
+        return format_diagnostics(data,VERSION,errors,tail)
+
     async def start_hud(self):
         async with self.lock:
             if self.proc and self.proc.returncode is None:
@@ -125,8 +164,7 @@ class Plugin:
             for name in ('diagnostic.json',):
                 (self.runtime / name).unlink(missing_ok=True)
             self.error = ''
-            if self.media_task is None or self.media_task.done():
-                self.media_task = asyncio.create_task(self.cards.worker())
+            self._ensure_media_worker()
             self.settings['visible'] = True
             self._publish()
             env = dict(os.environ, DISPLAY=self.settings['display'])
@@ -160,7 +198,7 @@ class Plugin:
             diag = json.loads((self.runtime / 'diagnostic.json').read_text())
         except (OSError, ValueError):
             pass
-        return dict(settings=self.settings, running=bool(self.proc and self.proc.returncode is None),
+        return dict(version=VERSION,settings=self.settings, running=bool(self.proc and self.proc.returncode is None),
                     error=self.error, diagnostic=diag, log_path=str(self.log_path or ''),
                     parse_errors=self.parser.failures, gamescope_running=self.gamescope.startswith('检测到'),
                     gamescope_status=self.gamescope, logs=self.discovery, cards=self.cards.diagnostic(),
@@ -252,6 +290,7 @@ class Plugin:
                 self._publish()
             except Exception as exc:
                 self.error = str(exc)
+                self.recent_errors.append(type(exc).__name__+': '+str(exc)[:250])
                 self.discovery['read_state'] = '读取/解析失败：'+str(exc)
             await asyncio.sleep(.25)
 

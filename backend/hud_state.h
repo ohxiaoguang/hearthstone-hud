@@ -17,9 +17,17 @@ inline bool valid_hud_state(const nlohmann::json& s) {
         for(const auto& r:t[k]) {
             if(!r.is_object())return false;
             for(const auto* field:{"id","name","image"})if(!r.contains(field)||!r[field].is_string()||r[field].get_ref<const std::string&>().size()>4096)return false;
-            for(const auto* field:{"cost","count","remaining","initial","drawn","used","known_in_deck"})
+            for(const auto* field:{"cost","count","remaining","initial","drawn","used","known_in_deck","remaining_lower_bound"})
                 if(r.contains(field)&&!r[field].is_null()&&!r[field].is_number_integer())return false;
         }
     }
     return true;
+}
+
+inline std::string card_count_label(const nlohmann::json& row,bool own){
+    const auto value=row.value(own?"remaining":"count",nlohmann::json());
+    if(value.is_number_integer())return std::to_string(value.get<int>());
+    const auto lower=row.value("remaining_lower_bound",nlohmann::json());
+    if(own && lower.is_number_integer() && lower.get<int>()>0)return ">="+std::to_string(lower.get<int>());
+    return "?";
 }

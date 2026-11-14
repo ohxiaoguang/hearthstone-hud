@@ -1,13 +1,13 @@
 {
   "name": "hearthstone-hud",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "description": "Gamescope 炉石 HUD 实机验证版",
   "license": "MIT",
   "scripts": {
     "build": "node scripts/build-frontend.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "python3 -m unittest discover -s tests -v",
+    "test": "python3 -m unittest discover -s tests -v && node scripts/test-frontend.mjs",
     "package": "python3 scripts/package.py"
   },
   "devDependencies": {

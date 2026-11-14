@@ -1,5 +1,18 @@
 # Hearthstone HUD
 
+## v0.2.3 补丁
+
+- 逐卡判断剩余数量可信度，区分初始数量、当前剩余和已知在库。准确数量直接显示，只有正数下限才显示 `>=n`，否则显示 `?`。不再因全局 uncertain 把整套牌组变为 `>=0`。
+- “复制诊断”生成有长度上限的分组纯文本并脱敏。浏览器剪贴板与传统复制均失败时，显示错误和可选择文本。没有 TXT 导出。
+- “下载缺失卡图”只处理当前初始牌组、列表和双方已确认/公开的去重 CardID，后台单并发下载，显示成功/失败/跳过及进度；失败允许手动重试，不下载整个数据库。
+- 卡图 ZIP 默认路径 `/home/deck/Downloads/cards-images.zip`，平铺文件名如 `EX1_116.png`，不能使用 dbfId。最多 512 条目、归档/解压总量 64MiB、单图 1MiB；检查路径、压缩比、PNG CRC、256x59 尺寸及完整解压。有效手动图不覆盖，错误逐项报告。
+- 手动图片位于运行目录 `cache/images/manual/`，优先于自动缓存 `cache/images/`；自动清理不进入 manual。下载仍使用官方 HTTPS tiles 接口并保留 SSL 校验。
+- 诊断界面改为摘要与折叠分组，保留所有设置项、列表长度与分页公式。窗口协议、焦点与触控属性未改。
+
+Linux 原生构建统一由 GitHub Actions 完成，本机不准备交叉编译环境。安装资产为 `hearthstone-hud-0.2.3.zip`。
+
+[本地测试记录及实机边界](docs/LOCAL_VALIDATION.md)：需在 Ally X 验证复制/备用选择、图片显示、计数、紧凑界面、QAM、触控和手柄，自动化检查不代替实机验收。
+
 Decky 管理的 SteamOS 炉石游戏内记牌 HUD，目标设备 ROG Ally X。用户已确认 v0.1.x 的 Gamescope 外部 Overlay、中文、PNG、触控和 QAM 共存正常。v0.2.2 接入日志记牌；**新版真实记牌尚待 Ally X 实机验收，未用实机日志回放验证。**
 
 安装完整 Release ZIP，或将对应 Release 的 `hearthstone-hud-0.2.2.zip` 直链填入 Decky 的 Install Plugin from URL。设备不需要开发工具或额外窗口。源码根目录 engine/ 在 ZIP 中映射为 py_modules/engine/；Linux 渲染器位于 bin/，保留 0755 权限。
