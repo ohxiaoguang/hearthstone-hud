@@ -1,0 +1,18 @@
+D 12:00:01.0000000 GameState.DebugPrintPower() - CREATE_GAME
+D 12:00:01.0100000 GameState.DebugPrintPower() - GameEntity EntityID=1
+D 12:00:01.0200000 GameState.DebugPrintPower() - Player EntityID=2 PlayerID=1 GameAccountId=[hi=0 lo=0]
+D 12:00:01.0300000 GameState.DebugPrintPower() - Player EntityID=3 PlayerID=2 GameAccountId=[hi=0 lo=0]
+D 12:00:01.0400000 GameState.DebugPrintPower() - TAG_CHANGE Entity=GameEntity tag=STEP value=BEGIN_SHUFFLE
+D 12:00:01.0500000 GameState.DebugPrintPower() - FULL_ENTITY - Creating ID=4 CardID=
+D 12:00:01.0600000 GameState.DebugPrintPower() - tag=ZONE value=DECK
+D 12:00:01.0700000 GameState.DebugPrintPower() - tag=CONTROLLER value=0
+D 12:00:01.0800000 GameState.DebugPrintPower() - FULL_ENTITY - Creating ID=5 CardID=
+D 12:00:01.0900000 GameState.DebugPrintPower() - tag=ZONE value=DECK
+D 12:00:01.0910000 GameState.DebugPrintPower() - FULL_ENTITY - Creating ID=6 CardID=
+D 12:00:01.0920000 GameState.DebugPrintPower() - tag=ZONE value=DECK
+D 12:00:01.1000000 GameState.DebugPrintGame() - PlayerID=1, PlayerName=UNKNOWN HUMAN PLAYER
+D 12:00:01.1100000 GameState.DebugPrintGame() - PlayerID=2, PlayerName=LOCAL_REDACTED
+D 12:00:01.1200000 GameState.DebugPrintPower() - TAG_CHANGE Entity=GameEntity tag=STEP value=MAIN_READY
+D 12:00:01.1300000 GameState.DebugPrintPower() - TAG_CHANGE Entity=[entityName=UNKNOWN ENTITY id=5 zone=DECK zonePos=0 cardId= player=2] tag=ZONE_POSITION value=0
+D 12:00:02.0000000 GameState.DebugPrintPower() - SHOW_ENTITY - Updating Entity=[entityName=UNKNOWN ENTITY [cardType=INVALID] id=4 zone=DECK zonePos=0 cardId= player=2] CardID=TEST_A
+D 12:00:02.1000000 GameState.DebugPrintPower() - TAG_CHANGE Entity=[entityName=测试甲 id=4 zone=DECK zonePos=0 cardId=TEST_A player=2] tag=ZONE value=HAND

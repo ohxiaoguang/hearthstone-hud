@@ -22,7 +22,7 @@ VERSION = json.loads((ROOT/'package.json').read_text())['version']
 DEFAULTS = dict(game_dir='/home/deck/Games/battlegame/Hearthstone',
     proton_prefix='',
     log_dir='', display=':0', x=40, y=80, scale=1.0, opacity=0.85,
-    visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=False, right_x=1540, right_y=80, card_images=True, chinese_names=True, image_tls_verify=False, database_tls_verify=False)
+    visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=False, right_x=1540, right_y=80, card_images=True, chinese_names=True, image_tls_verify=False, database_tls_verify=False, own_played=True, opponent_played=True, show_summary=True, panel_width=320, hide_exhausted=False)
 
 
 class Plugin:
@@ -82,7 +82,7 @@ class Plugin:
             expected = type(DEFAULTS[key])
             if expected in (int, float):
                 value = float(value)
-                low, high = {'x':(0,7680),'y':(0,4320),'scale':(.5,3),'opacity':(.1,1),'right_x':(0,7680),'right_y':(0,4320)}[key]
+                low, high = {'x':(0,7680),'y':(0,4320),'scale':(.5,3),'opacity':(.1,1),'right_x':(0,7680),'right_y':(0,4320),'panel_width':(180,640)}[key]
                 if not low <= value <= high:
                     raise ValueError('数值超出范围')
                 value = int(value) if expected is int else value
@@ -204,7 +204,7 @@ class Plugin:
             diag = json.loads((self.runtime / 'diagnostic.json').read_text())
         except (OSError, ValueError):
             pass
-        return dict(version=VERSION,settings=self.settings, running=bool(self.proc and self.proc.returncode is None),
+        return dict(version=VERSION,settings=self.settings,storage=dict(runtime=str(self.runtime),database=str(self.cards.directory/'cards.json'),images=str(self.cards.images),manual_images=str(self.cards.images/'manual'),retained_on_uninstall=True), running=bool(self.proc and self.proc.returncode is None),
                     error=self.error, diagnostic=diag, log_path=str(self.log_path or ''),
                     parse_errors=self.parser.failures, gamescope_running=self.gamescope.startswith('检测到'),
                     gamescope_status=self.gamescope, logs=self.discovery, cards=self.cards.diagnostic(),

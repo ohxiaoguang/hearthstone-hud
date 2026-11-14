@@ -71,3 +71,13 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         status=await self.plugin.status()
         self.assertTrue(status['cards']['database_tls_verify'])
         self.assertIn('Database Verification: enabled',await self.plugin.diagnostic_text())
+
+    async def test_layout_options_and_actual_storage_paths(self):
+        await self.plugin.configure(dict(own_played=False,opponent_played=True,show_summary=False,panel_width=440,hide_exhausted=True))
+        status=await self.plugin.status()
+        self.assertEqual(status['settings']['panel_width'],440)
+        self.assertFalse(status['settings']['own_played'])
+        self.assertEqual(status['storage']['database'],str(self.plugin.runtime/'cache/cards.json'))
+        self.assertEqual(status['storage']['manual_images'],str(self.plugin.runtime/'cache/images/manual'))
+        with self.assertRaises(ValueError):await self.plugin.configure({'panel_width':100})
+        with self.assertRaises(ValueError):await self.plugin.configure({'show_summary':'no'})

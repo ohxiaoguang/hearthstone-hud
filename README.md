@@ -1,6 +1,13 @@
 # Hearthstone HUD
 
-## v0.2.5：牌库与出牌事件分离
+## v0.2.6：批量初始化修复与左右布局
+
+- 已用用户提供的真实 Power.log 定位：多张实体同一时间戳的 `tag=ZONE` / `tag=CONTROLLER` 行相同，旧版整行去重会误删合法标签。现在按实体记录上下文去重，并在需要时从方括号描述补齐归属；延迟出现控制者不会丢失开局 DECK 身份。数量仍按证据计算，不直接把未知改成零。
+- 右侧只显示己方原牌/后加入的剩余牌库。左侧“对手已打出”“我方已打出”独立开关，两个都开时上下各半，一个开启时占满左侧。顶部信息可隐藏；宽度 180–640（随缩放）可调。耗尽原牌默认置灰，可切换隐藏；未知行不会被当作耗尽隐藏。
+- 实际缓存路径显示在数据库/卡图折叠项和复制诊断中。默认数据库 `/home/deck/homebrew/data/hearthstone-hud/cache/cards.json`，自动卡图同目录 `images/`，手动卡图 `images/manual/`。正常卸载保留数据目录；原始离线 JSON、卡图 ZIP 也不删除。若 Decky home 不同，以界面实际路径为准。
+- Linux 编译仍只通过 Actions；安装包为 `hearthstone-hud-0.2.6.zip`。[验证记录](docs/V0.2.6_TEST_REPORT.md)。真实日志仅本地只读回放，不提交玩家数据；新版布局尚待 Ally X 实机验收。
+
+## v0.2.5：牌库与出牌事件分离（历史）
 
 - 左侧分为原始牌库、后加入/变形且当前在库、我方实际打出三个区域，共用现有定时分页。原牌抽出后减少，打出不再扣减，耗尽行淡化保留。生成到手牌或场上的牌不进入牌库；相同 CardID 的生成实体独立计数。
 - 右侧分别展示对手公开卡牌与实际出牌。双方出牌保留逐次事件、回合、顺序、原牌/复制/效果生成/对手获得/来源未知，回手重打不去重。发现来源无充分证据时不猜测。
@@ -25,7 +32,7 @@ Linux 原生构建统一由 GitHub Actions 完成，本机不准备交叉编译�
 
 Decky 管理的 SteamOS 炉石游戏内记牌 HUD，目标设备 ROG Ally X。用户已确认 v0.1.x 的 Gamescope 外部 Overlay、中文、PNG、触控和 QAM 共存正常。v0.2.2 接入日志记牌；**新版真实记牌尚待 Ally X 实机验收，未用实机日志回放验证。**
 
-安装完整 Release ZIP，或将对应 Release 的 `hearthstone-hud-0.2.5.zip` 直链填入 Decky 的 Install Plugin from URL。设备不需要开发工具或额外窗口。源码根目录 engine/ 在 ZIP 中映射为 py_modules/engine/；Linux 渲染器位于 bin/，保留 0755 权限。
+安装完整 Release ZIP，或将对应 Release 的 `hearthstone-hud-0.2.6.zip` 直链填入 Decky 的 Install Plugin from URL。设备不需要开发工具或额外窗口。源码根目录 engine/ 在 ZIP 中映射为 py_modules/engine/；Linux 渲染器位于 bin/，保留 0755 权限。
 
 ## 使用
 

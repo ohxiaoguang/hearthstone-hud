@@ -26,7 +26,8 @@ RE_CHANGE = re.compile(r"CHANGE_ENTITY - Updating Entity=(.+) CardID=(\S*)$")
 RE_HIDE = re.compile(r"HIDE_ENTITY - Entity=(.+) tag=(\S+) value=(\S*)")
 RE_TAG_CHANGE = re.compile(r"TAG_CHANGE Entity=(.+) tag=(\S+) value=(\S*)")
 RE_TAG = re.compile(r"tag=(\S+) value=(\S*)$")
-RE_BRACKET_ID = re.compile(r" id=(\d+) zone=")
+RE_BRACKET_ID = re.compile(r"(?:^|[\s\[])id=(\d+)(?=\s|\])")
+RE_BRACKET_TAG = re.compile(r"(?:^|\s)(zone|player|cardId)=([^\s\]]*)")
 RE_BLOCK_START = re.compile(r"BLOCK_START BlockType=(\S+) Entity=(.*?) EffectCardId=(?:.*? Target=(.*?) SubOption=)?")
 RE_PLAYER_NAME = re.compile(r"PlayerID=(\d+), PlayerName=(.*)$")
 RE_GAME_INFO = re.compile(r"(GameType|FormatType|BuildNumber|ScenarioID)=(\S+)")
@@ -58,6 +59,7 @@ class Entity:
     creation_source: int | None = None
     creation_zone: str = ""
     entered_deck: bool = False
+    setup_deck: bool = False  # DECK observed during setup, even if controller arrives later
 
     @property
     def zone(self) -> str:
@@ -188,6 +190,7 @@ class PowerParser:
         self._reset_depth: int | None = None
         self._reset_seen: set[int] = set()
         self._ts = datetime.min
+        self.bracket_hydrations = 0
 
     def feed(self, ts: datetime, text: str) -> None:
         self._ts = ts
@@ -307,6 +310,7 @@ class PowerParser:
             ent.creation_source = old.creation_source
             ent.creation_zone = old.creation_zone
             ent.entered_deck = old.entered_deck
+            ent.setup_deck = old.setup_deck
         else:
             ent.in_starting_deck = None  # decided once its ZONE/CONTROLLER tags arrive
         self.game.entities[eid] = ent
@@ -320,10 +324,12 @@ class PowerParser:
             ent.creation_zone = value
         if tag == "ZONE" and value == "DECK":
             ent.entered_deck = True
+            if game.setup:
+                ent.setup_deck = True
 
         if ent.in_starting_deck is None and tag in ("ZONE", "CONTROLLER"):
-            if "ZONE" in ent.tags and "CONTROLLER" in ent.tags:
-                ent.in_starting_deck = game.setup and ent.zone == "DECK"
+            if "ZONE" in ent.tags and ent.controller:
+                ent.in_starting_deck = ent.setup_deck
                 ent.owner = ent.controller
 
         if tag == "ZONE" and old == "HAND" and value in ("PLAY", "SECRET") and self._reset_depth is None:
@@ -359,11 +365,26 @@ class PowerParser:
     def _entity(self, ref: str) -> Entity | None:
         game = self.game
         ref = ref.strip()
+        if ref.startswith("Entity="):
+            ref = ref[len("Entity="):]
         if ref.isdigit():
             return game.entities.get(int(ref))
         if ref.startswith("["):
             m = RE_BRACKET_ID.search(ref)
-            return game.entities.get(int(m[1])) if m else None
+            ent = game.entities.get(int(m[1])) if m else None
+            if ent is not None:
+                # Entity references also carry player/cardId metadata. Only fill
+                # missing fields: explicit tag transitions remain authoritative.
+                fields = dict(RE_BRACKET_TAG.findall(ref))
+                if not ent.zone and fields.get("zone"):
+                    self._set_tag(ent, "ZONE", fields["zone"])
+                player = fields.get("player", "")
+                if not ent.controller and player.isdigit() and int(player) in game.players:
+                    self._set_tag(ent, "CONTROLLER", player)
+                    self.bracket_hydrations += 1
+                if not ent.card_id and fields.get("cardId"):
+                    ent.reveal(fields["cardId"])
+            return ent
         if ref == "GameEntity":
             return game.entities.get(game.game_entity_id)
         player = self._player_by_name(ref)

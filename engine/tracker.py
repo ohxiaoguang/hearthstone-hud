@@ -6,7 +6,8 @@ Never infer an opponent's unknown card identity or use played cards as a deck.
 from collections import Counter, OrderedDict, deque
 from datetime import datetime
 import re
-from .power import PowerParser
+from .power import (PowerParser, POWER_PREFIX, RE_TAG, RE_FULL_CREATE, RE_FULL_UPDATE,
+                    RE_SHOW, RE_CHANGE, RE_GAME_ENTITY, RE_PLAYER, RE_BRACKET_ID)
 from .deckstring import decode
 
 LINE = re.compile(r'^[A-Z] (\d\d:\d\d:\d\d\.\d+) (.*)$')
@@ -48,6 +49,7 @@ class Tracker(PowerParser):
         self.used = []
         self.public = set()
         self.recent = OrderedDict()
+        self._line_entity_id = None
         self.accepted = 0
         self.failures = 0
         self.recent_errors = deque(maxlen=10)
@@ -111,18 +113,47 @@ class Tracker(PowerParser):
                              source_name=cards.info(event['source_card_id'])['name'] if event['source_card_id'] else ''))
         return rows
 
+    def _record_context(self, payload):
+        """Indented tag lines belong to the preceding entity record, including
+        when that record itself is a replay duplicate. No parser mutation here.
+        """
+        if not payload.startswith(POWER_PREFIX):
+            return False
+        body = payload[len(POWER_PREFIX):].strip()
+        if RE_TAG.fullmatch(body):
+            return True
+        self._line_entity_id = None
+        for pattern in (RE_FULL_CREATE, RE_GAME_ENTITY, RE_PLAYER):
+            match = pattern.match(body)
+            if match:
+                self._line_entity_id = int(match[1])
+                return False
+        for pattern in (RE_FULL_UPDATE, RE_SHOW, RE_CHANGE):
+            match = pattern.match(body)
+            if match:
+                ref = match[1].removeprefix('Entity=')
+                bracket = RE_BRACKET_ID.search(ref) if ref.startswith('[') else None
+                if ref.isdigit() or bracket:
+                    self._line_entity_id = int(ref if ref.isdigit() else bracket[1])
+                return False
+        return False
+
     def feed_line(self, raw, day=None):
         match = LINE.match(raw)
         if not match:
             return False
-        # Exact timestamp+payload repeats are duplicates; identical actions with
-        # different timestamps remain distinct. Bounded for long sessions.
-        if raw in self.recent:
+        stamp,payload = match.groups()
+        inline_tag = self._record_context(payload)
+        # Different entities routinely have identical timestamp + indented tag
+        # text. Dedup must include their record context, not discard legal tags.
+        key = (raw, self._line_entity_id if inline_tag else None)
+        if key in self.recent:
             return False
-        self.recent[raw] = None
+        self.recent[key] = None
         if len(self.recent)>8192:
             self.recent.popitem(last=False)
-        stamp,payload = match.groups()
+        if inline_tag and self.game:
+            self._current = self.game.entities.get(self._line_entity_id)
         try:
             ts = datetime.fromisoformat((day or datetime.now().date()).isoformat()+'T'+stamp[:15])
             if payload.startswith(('GameState.DebugPrintPower()', 'GameState.DebugPrintGame()')):
@@ -242,7 +273,10 @@ class Tracker(PowerParser):
             own_deck_entities=game.count_zone(me,'DECK'),known_own_deck=sum(known_current.values()),
             unknown_generated_deck=unknown_extras,unknown_initial_departures=unidentified_departures,
             unmapped_initial_rows=sum(c.startswith('dbf:') for c in starting),
-            controller_unset=sum(e.controller==0 for e in entities))
+            controller_unset=sum(e.controller==0 for e in entities),
+            bracket_hydrations=self.bracket_hydrations,deduplication='entity_record_context')
         result['own_deck']=game.count_zone(me,'DECK')
+        result['own_remaining']=(sum(r['remaining'] for r in result['own'])+sum(r['remaining'] for r in result['own_added'])
+                                 if starting and all(r['remaining'] is not None for r in result['own']) else None)
         result['opponent_unknown']=sum(not e['card_id'] for e in result['opponent_played'])
         return result

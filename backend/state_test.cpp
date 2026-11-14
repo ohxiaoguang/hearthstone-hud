@@ -14,8 +14,23 @@ int main(){
     good["tracking"]["own_played"]=json::array({event,event});
     good["tracking"]["own_added"]=json::array({json{{"id","A"},{"name","甲"},{"image",""},{"remaining",1}}});
     if(!valid_hud_state(good))return 8;
-    auto rows=hud_sections(good["tracking"],true);
-    if(rows.size()!=5 || !rows[0].value("section",false) || !rows[3].value("event",false))return 9;
+    auto rows=deck_rows(good["tracking"],false);
+    if(rows.size()!=2 || !rows[0].value("section",false) || !rows[1].value("deck_row",false))return 9;
+    auto plays=played_rows(good["tracking"],"own_played");
+    if(plays.size()!=2 || !plays[0].value("event",false))return 12;
+    good["tracking"]["own"].push_back({{"id","B"},{"name","乙"},{"image",""},{"remaining",0}});
+    if(deck_rows(good["tracking"],false).size()!=4 || deck_rows(good["tracking"],true).size()!=2)return 13;
+    good["tracking"]["own"].push_back({{"id","C"},{"name","丙"},{"image",""},{"remaining",nullptr}});
+    if(deck_rows(good["tracking"],true).size()!=4)return 14; // Unknown is never hidden as exhausted.
+    auto both=left_regions(true,true,80,800,8);
+    if(!both.own.visible || !both.opponent.visible || both.opponent.height!=396 || both.own.height!=396 || both.own.y!=484)return 15;
+    auto one=left_regions(false,true,80,800,8);
+    if(one.opponent.visible || !one.own.visible || one.own.height!=800 || one.own.y!=80)return 16;
+    one=left_regions(true,false,80,800,8);
+    if(!one.opponent.visible || one.own.visible || one.opponent.height!=800)return 17;
+    auto none=left_regions(false,false,80,800,8);if(none.own.visible || none.opponent.visible)return 18;
+    bad=good;bad["panel_width"]="wide";if(valid_hud_state(bad))return 19;
+    bad=good;bad["show_summary"]="yes";if(valid_hud_state(bad))return 20;
     bad=good;bad["tracking"]["own_played"][0]["turn"]="bad";if(valid_hud_state(bad))return 10;
     bad=good;bad["tracking"]["own_added"][0]["generated"]="bad";if(valid_hud_state(bad))return 11;
     std::cout<<"Native HUD state validation: passed\n";
