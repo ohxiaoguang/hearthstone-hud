@@ -61,7 +61,7 @@ inline bool valid_hud_state(const nlohmann::json& s) {
 
 inline std::string card_count_label(const nlohmann::json& row,bool own){
     const auto value=row.value(own?"remaining":"count",nlohmann::json());
-    if(value.is_number_integer())return std::to_string(value.get<int>());
+    if(value.is_number_integer())return value.get<int>()==1?"":std::to_string(value.get<int>());
     const auto lower=row.value("remaining_lower_bound",nlohmann::json());
     if(own && lower.is_number_integer() && lower.get<int>()>0)return ">="+std::to_string(lower.get<int>());
     return "?";
@@ -88,6 +88,16 @@ inline nlohmann::json played_rows(const nlohmann::json& t,const char* key){
     return rows;
 }
 struct HudRegion {float y=0,height=0;bool visible=false;};
+struct PanelLayout {int per_page,pages,page;float height;};
+inline PanelLayout panel_layout(size_t rows,float font_size,float scale,float available,long long tick,float padding=16){
+    const float stride=(std::max(32.f,font_size+8)+2)*scale;
+    const float heading=(19.2f+2)*scale;
+    const int per_page=std::max(1,int((available-padding-heading*2)/stride));
+    const int pages=std::max(1,int((rows+per_page-1)/per_page));
+    const int page=int(tick%pages);
+    const size_t shown=std::min(size_t(per_page),rows-size_t(page*per_page));
+    return {per_page,pages,page,rows?std::min(available,padding+heading*(pages>1?2:1)+shown*stride-2*scale):0.f};
+}
 struct LeftRegions {HudRegion opponent,own;};
 inline LeftRegions left_regions(bool opponent,bool own,float y,float height,float gap){
     if(opponent && own){const float half=std::max(0.f,(height-gap)/2);return {{y,half,true},{y+half+gap,half,true}};}
@@ -101,7 +111,7 @@ inline nlohmann::json arena_rows(const nlohmann::json& a,bool candidates){
     const auto append=[&](const char* key){for(const auto& r:a[key]){auto row=r;row["arena_row"]=true;rows.push_back(row);}};
     if(candidates)append("candidates");
     else {
-        rows.push_back({{"section",true},{"name",a.value("exact",false)?"最终牌组（Decks.log）":"已选牌（实际选择顺序）"}});
+        if(!a["picks"].empty())rows.push_back({{"section",true},{"name",a.value("exact",false)?"最终牌组（Decks.log）":"已选牌（实际选择顺序）"}});
         append("picks");
         if(!a["redraft_picks"].empty()){
             rows.push_back({{"section",true},{"name","重选操作（等待最终牌组，不合并）"}});append("redraft_picks");

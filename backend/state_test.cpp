@@ -10,6 +10,13 @@ int main(){
     if(card_count_label(json{{"remaining",nullptr},{"known_in_deck",0}},true)!="?")return 5;
     if(card_count_label(json{{"remaining",nullptr},{"remaining_lower_bound",2}},true)!=">=2")return 6;
     if(card_count_label(json{{"remaining",0}},true)!="0")return 7;
+    if(card_count_label(json{{"remaining",1}},true)!="")return 33;
+    if(card_count_label(json{{"remaining",2}},true)!="2")return 34;
+    if(card_count_label(json{{"remaining",nullptr},{"remaining_lower_bound",1}},true)!=">=1")return 35;
+    const auto small=panel_layout(3,22,1,800,0),large=panel_layout(12,22,1,800,0);
+    if(small.height>=large.height || small.height>=800 || panel_layout(0,22,1,800,0).height!=0)return 36;
+    const auto paged=panel_layout(100,30,1,300,0);
+    if(paged.pages<2 || paged.height>300 || paged.per_page<1)return 37;
     auto event=json{{"id","A"},{"card_id","A"},{"name","甲"},{"image",""},{"turn",2},{"order",1},{"origin_label","原始牌"},{"in_starting_deck",true}};
     good["tracking"]["own_played"]=json::array({event,event});
     good["tracking"]["own_added"]=json::array({json{{"id","A"},{"name","甲"},{"image",""},{"remaining",1}}});

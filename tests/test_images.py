@@ -43,7 +43,40 @@ class ImageTests(unittest.TestCase):
             self.assertEqual(target.read_bytes(),tile_png())
         self.assertFalse(list(cards.images.glob('.tile-*')))
 
+    def test_clear_cache_does_not_follow_symlinks_or_remove_bundled_data(self):
+        cards=Cards(self.root/'cache')
+        outside=self.root/'outside';outside.mkdir();(outside/'keep.png').write_bytes(tile_png())
+        (cards.images/'external').symlink_to(outside,target_is_directory=True)
+        (cards.directory/'unrelated.json').write_text('preserve')
+        (cards.directory/'cards.json').write_text('{}')
+        cards.clear_cache()
+        self.assertTrue((outside/'keep.png').exists())
+        self.assertEqual((cards.directory/'unrelated.json').read_text(),'preserve')
+        self.assertFalse((cards.directory/'cards.json').exists())
+        self.assertEqual(cards.by_id,{})
+
 class DownloadTests(unittest.IsolatedAsyncioTestCase):
+    async def test_first_use_downloads_database_before_queued_images(self):
+        import json
+        from test_patch import dataset
+        with tempfile.TemporaryDirectory() as folder:
+            cards=Cards(folder);stop=asyncio.Event();calls=[]
+            cards.request_images(['SAMPLE_0'])
+            def fetch(url,limit,verify=True):
+                calls.append(url)
+                return json.dumps(dataset()).encode() if 'cards.json' in url else tile_png()
+            with patch('engine.cards.fetch',side_effect=fetch):
+                worker=asyncio.create_task(cards.worker(stop))
+                try:
+                    for _ in range(100):
+                        if cards.tiles.path('SAMPLE_0'):break
+                        await asyncio.sleep(.01)
+                    self.assertEqual(len(cards.by_id),100)
+                    self.assertIn('cards.json',calls[0])
+                    self.assertIsNotNone(cards.tiles.path('SAMPLE_0'))
+                finally:
+                    stop.set();await worker
+
     async def test_progress_dedup_failure_manual_retry_and_responsiveness(self):
         with tempfile.TemporaryDirectory() as folder:
             cards=Cards(folder);cards.updated=10**12  # Keep metadata unrelated to this test.

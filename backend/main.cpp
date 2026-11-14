@@ -59,12 +59,13 @@ public:
 static std::string number(const json& value){return value.is_number_integer()?std::to_string(value.get<int>()):"?";}
 static constexpr auto flags=ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoInputs|ImGuiWindowFlags_NoFocusOnAppearing;
 static void panel(const char* id,const std::string& title,const json& rows,bool own,float x,float y,float scale,float opacity,bool images,bool chinese,TextureCache& textures,unsigned long frame,float width,float height,float font_size){
+    if(rows.empty())return;
     const float row_height=std::max(32.f,font_size+8)*scale;
-    const int per_page=std::max(1,int((height-70*scale)/(row_height+2*scale)));
-    const int pages=std::max(1,int((rows.size()+per_page-1)/per_page));
     const auto seconds=std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-    const int page=int(seconds/8)%pages;
     const auto padding=ImGui::GetStyle().WindowPadding;
+    const auto layout=panel_layout(rows.size(),font_size,scale,height,seconds/8,padding.y*2);
+    const int per_page=layout.per_page,pages=layout.pages,page=layout.page;
+    height=layout.height;
     ImGui::SetNextWindowPos({x,y});ImGui::SetNextWindowSize({width+padding.x*2,height});ImGui::SetNextWindowBgAlpha(opacity);
     ImGui::Begin(id,nullptr,flags & ~ImGuiWindowFlags_AlwaysAutoResize);
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,ImVec2(0,2*scale));ImGui::SetWindowFontScale(scale*.8f);
@@ -79,7 +80,9 @@ static void panel(const char* id,const std::string& title,const json& rows,bool 
             draw->AddText(pos,IM_COL32(255,215,135,255),row.value("name","").c_str());continue;
         }
         const bool event=row.value("event",false),deck=row.value("deck_row",false),arena=row.value("arena_row",false);
-        const float count_width=(arena?96:event?0:36)*scale;
+        const auto label=arena?row.value("rating_label","暂无评分"):event?"":card_count_label(row,deck);
+        const float rating_width=ImGui::GetFont()->CalcTextSizeA(24*scale,FLT_MAX,0,label.c_str()).x+12*scale;
+        const float count_width=arena?std::min(width*.45f,std::max(36*scale,rating_width)):label.empty()?0:36*scale;
         const bool exhausted=deck && row.value("remaining",json())==json(0);
         const auto white=exhausted?IM_COL32(170,170,170,200):IM_COL32(255,255,255,255);
         draw->AddRectFilled(pos,{pos.x+width,pos.y+row_height},IM_COL32(24,30,39,230));
@@ -104,7 +107,6 @@ static void panel(const char* id,const std::string& title,const json& rows,bool 
         draw->AddText(ImGui::GetFont(),font_size*scale,{name_pos.x+scale,name_pos.y+scale},IM_COL32(0,0,0,230),name.c_str(),nullptr,0,&clip);
         draw->AddText(ImGui::GetFont(),font_size*scale,name_pos,white,name.c_str(),nullptr,0,&clip);
         if(arena&&row.value("best",false))draw->AddRect(pos,{pos.x+width,pos.y+row_height},IM_COL32(255,215,90,255),0,0,2*scale);
-        const auto label=arena?row.value("rating_label","暂无评分"):event?"":card_count_label(row,deck);
         const ImVec4 count_clip(pos.x+width-count_width+scale,pos.y,pos.x+width,pos.y+row_height);
         float label_size=(arena?24.f:22.f)*scale;
         const auto extent=ImGui::GetFont()->CalcTextSizeA(label_size,FLT_MAX,0,label.c_str());
@@ -196,12 +198,15 @@ int main(int argc,char** argv){
         summary+=" · 对手牌库 "+number(tracking.value("opponent_deck",json()));
         ImGui::TextUnformatted(summary.c_str());ImGui::End();
         }
-        const auto left=left_regions(state.value("opponent_played",true),state.value("own_played",true),ly,std::max(80.f,sh-ly-16*scale),8*scale);
+        const auto opponent_rows=played_rows(tracking,"opponent_played"),own_rows=played_rows(tracking,"own_played");
+        const auto left=left_regions(state.value("opponent_played",true)&&!opponent_rows.empty(),state.value("own_played",true)&&!own_rows.empty(),ly,std::max(80.f,sh-ly-16*scale),8*scale);
         const auto render=[&](const char* id,const std::string& title,const json& rows,bool deck,float x,float y,float height){
             panel(id,title,rows,deck,x,y,scale,opacity,state.value("card_images",true),state.value("chinese_names",true),textures,frames,width,height,font_size);
         };
-        if(left.opponent.visible)render("opponent-played","对手已打出 · 最近在前",played_rows(tracking,"opponent_played"),false,lx,left.opponent.y,left.opponent.height);
-        if(left.own.visible)render("own-played","我方已打出 · 最近在前",played_rows(tracking,"own_played"),false,lx,left.own.y,left.own.height);
+        if(left.opponent.visible)render("opponent-played","对手已打出 · 最近在前",opponent_rows,false,lx,left.opponent.y,left.opponent.height);
+        const auto tick=std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch()).count()/8;
+        const float own_y=ly+(left.opponent.visible&&!opponent_rows.empty()?panel_layout(opponent_rows.size(),font_size,scale,left.opponent.height,tick,ImGui::GetStyle().WindowPadding.y*2).height+8*scale:0);
+        if(left.own.visible)render("own-played","我方已打出 · 最近在前",own_rows,false,lx,own_y,left.own.height);
         if(state.value("own_deck",true))render("remaining","我方剩余牌库 · "+number(tracking.value("own_remaining",json())),deck_rows(tracking,state.value("hide_exhausted",false)),true,rx,ry,std::max(80.f,sh-ry-16*scale));
         }
         } // Hidden HUD submits an empty transparent frame.

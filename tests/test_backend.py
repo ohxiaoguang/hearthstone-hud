@@ -6,10 +6,18 @@ import sys
 import tempfile
 import types
 import unittest
+import time
+from unittest.mock import patch
 from pathlib import Path
 
 class BackendTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        # First-use downloads are automatic; keep lifecycle tests network-free.
+        def unavailable(cards):
+            cards.attempted=time.time();cards.download_state='自动下载失败'
+            return None
+        self.refresh_patch=patch('engine.cards.Cards.refresh',unavailable)
+        self.refresh_patch.start()
         self.tmp=tempfile.TemporaryDirectory()
         base=Path(self.tmp.name)
         self.old=sys.modules.get('decky')
@@ -22,6 +30,7 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         if self.old is None:sys.modules.pop('decky',None)
         else:sys.modules['decky']=self.old
         self.tmp.cleanup()
+        self.refresh_patch.stop()
     async def test_settings_validation_and_visibility(self):
         with self.assertRaises(ValueError):await self.plugin.configure({'scale':float('nan')})
         with self.assertRaises(ValueError):await self.plugin.configure({'opacity':8})
@@ -68,6 +77,60 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(process.returncode,0)
         self.assertFalse(json.loads((self.plugin.runtime/'state.json').read_text())['visible'])
         self.assertFalse(json.loads((self.plugin.settings_dir/'settings.json').read_text())['visible'])
+
+    async def test_hud_activation_configures_both_logs_and_preserves_other_sections(self):
+        from engine.logconfig import inspect_config
+        root=Path(self.tmp.name)/'pfx';user=root/'drive_c/users/actual/AppData/Local/Blizzard/Hearthstone'
+        user.mkdir(parents=True)
+        original=b'[Other]\nKeep=Yes\n'
+        (user/'log.config').write_bytes(original)
+        process=dict(found=True,prefix=str(root),user_dir=str(user),instance='first')
+        with patch.dict(self.plugin._activate_tracking_logs.__func__.__globals__,discover_process=lambda:process):
+            await self.plugin._activate_tracking_logs()
+        self.assertTrue(inspect_config(user,'Decks')['enabled'])
+        self.assertTrue(inspect_config(user,'Arena')['enabled'])
+        self.assertIn('[Other]\nKeep=Yes',(user/'log.config').read_text())
+        backups=list(user.glob('log.config.backup-*'))
+        self.assertIn(original,[p.read_bytes() for p in backups])
+        self.assertTrue(self.plugin.arena_config['restart_required'])
+        async with self.plugin.config_lock:await self.plugin._sync_tracking_logs(process)
+        self.assertEqual(len(backups),len(list(user.glob('log.config.backup-*'))))
+
+    async def test_first_use_worker_and_clear_preserves_settings_and_game_data(self):
+        self.assertIsNotNone(self.plugin.media_task)
+        await self.plugin.configure({'font_size':26})
+        game_log=Path(self.tmp.name)/'Power.log';game_log.write_text('private game data')
+        source=Path(self.tmp.name)/'original.json';source.write_text('user import')
+        (self.plugin.cards.directory/'cards.json').write_text('{}')
+        (self.plugin.cards.images/'old.png').write_bytes(b'old')
+        (self.plugin.cards.tiles.manual/'manual.png').write_bytes(b'old')
+        old_worker=self.plugin.media_task
+        await self.plugin.clear_card_cache()
+        self.assertTrue(old_worker.done());self.assertIsNot(old_worker,self.plugin.media_task)
+        self.assertFalse((self.plugin.cards.images/'old.png').exists())
+        self.assertFalse((self.plugin.cards.tiles.manual/'manual.png').exists())
+        self.assertEqual(self.plugin.settings['font_size'],26)
+        self.assertEqual(game_log.read_text(),'private game data');self.assertEqual(source.read_text(),'user import')
+
+    async def test_clear_waits_for_inflight_download_then_allows_fresh_download(self):
+        import threading
+        from image_support import tile_png
+        started=threading.Event();release=threading.Event()
+        self.plugin.cards.updated=10**12
+        def download(cid):
+            started.set();release.wait(2)
+            (self.plugin.cards.images/(cid+'.png')).write_bytes(tile_png())
+        with patch.object(self.plugin.cards,'download_image',side_effect=download):
+            self.plugin.cards.request_images(['OLD_CARD'])
+            self.assertTrue(await asyncio.to_thread(started.wait,2))
+            clearing=asyncio.create_task(self.plugin.clear_card_cache())
+            try:
+                await asyncio.sleep(.02)
+                self.assertFalse(clearing.done())
+            finally:release.set()
+            await clearing
+        self.assertFalse((self.plugin.cards.images/'OLD_CARD.png').exists())
+        self.assertEqual(self.plugin.cards.pending,set())
 
     async def test_live_nested_log_to_atomic_hud_state_and_truncation(self):
         import json

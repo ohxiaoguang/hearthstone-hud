@@ -27,7 +27,7 @@ VERSION = json.loads((ROOT/'package.json').read_text())['version']
 DEFAULTS = dict(game_dir='/home/deck/Games/battlegame/Hearthstone',
     proton_prefix='',
     log_dir='', display=':0', x=40, y=80, scale=1.0, opacity=0.85,
-    visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=True, right_x=1540, right_y=80, card_images=True, chinese_names=True, image_tls_verify=False, database_tls_verify=False, own_played=True, opponent_played=True, show_summary=True, panel_width=320, font_size=22, hide_exhausted=False, arena_memory=False)
+    visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=True, right_x=1540, right_y=80, card_images=True, chinese_names=True, image_tls_verify=False, database_tls_verify=False, own_played=True, opponent_played=True, show_summary=True, panel_width=320, font_size=22, hide_exhausted=False, arena_memory=False, auto_logs=False)
 
 
 class Plugin:
@@ -44,10 +44,15 @@ class Plugin:
             pass
         # Only an explicit boolean opt-in can enable process memory access.
         if type(self.settings.get('arena_memory')) is not bool:self.settings['arena_memory']=False
+        # This testing build uses the user's requested download mode; no UI switch.
+        self.settings.update(image_tls_verify=False,database_tls_verify=False)
         self.proc = None
         self.lock = asyncio.Lock()
         self.config_lock = asyncio.Lock()
         self.memory_lock = asyncio.Lock()
+        self.media_lock = asyncio.Lock()
+        self.media_stop = asyncio.Event()
+        self.cache_resetting = False
         self.error = ''
         self.recent_errors = deque(maxlen=10)
         self.decks = DeckLog()
@@ -95,6 +100,9 @@ class Plugin:
         self.parse_errors = 0
         self.task = asyncio.create_task(self._loop())
         if self.settings['arena_memory']:self.memory_watch.start()
+        if not self.cards.by_id:
+            self.cards.download_state='准备下载'
+            self._ensure_media_worker()
 
     async def configure(self, values: dict):
         checked = {}
@@ -142,6 +150,27 @@ class Plugin:
             self.decks_config = result
         self.last_scan = float('-inf')
         return await self.status()
+
+    async def _sync_tracking_logs(self, process):
+        # Caller holds config_lock. Only the live discovered prefix is eligible.
+        for name,ensure in (('decks',ensure_decks),('arena',ensure_arena)):
+            result=await asyncio.to_thread(ensure,process)
+            receipt=getattr(self,name+'_receipt')
+            if result.get('success') and result.get('changed'):
+                receipt=dict(instance=process.get('instance'),path=result['path'],backup=result.get('backup',''))
+                setattr(self,name+'_receipt',receipt)
+                atomic_json(self.settings_dir/(name+'-config-receipt.json'),receipt)
+            if result.get('enabled') and receipt.get('path')==result.get('path'):
+                result['restart_required']=receipt.get('instance')==process.get('instance')
+            setattr(self,name+'_config',result)
+
+    async def _activate_tracking_logs(self):
+        self.settings['auto_logs']=True
+        atomic_json(self.settings_dir/'settings.json',self.settings)
+        process=await asyncio.to_thread(discover_process)
+        async with self.config_lock:
+            await self._sync_tracking_logs(process)
+        self.last_scan=float('-inf')
 
     async def enable_arena_logging(self):
         async with self.config_lock:
@@ -201,20 +230,40 @@ class Plugin:
         self._publish();return self._arena_ui()
 
     async def import_card_database(self, path: str):
-        record = await asyncio.to_thread(self.cards.import_file,path)
-        self.cards.apply(record)
+        async with self.media_lock:
+            record = await asyncio.to_thread(self.cards.import_file,path)
+            self.cards.apply(record)
         self._publish()
         return await self.status()
 
     async def retry_card_database(self):
-        record = await asyncio.to_thread(self.cards.refresh)
-        self.cards.apply(record)
+        # Same single worker handles first use, retries and images.
+        if '正在下载' not in self.cards.download_state:
+            self.cards.attempted=0
+            self.cards.updated=0
+            self.cards.download_state='准备下载'
+        self._ensure_media_worker()
         self._publish()
         return await self.status()
 
     def _ensure_media_worker(self):
-        if self.media_task is None or self.media_task.done():
-            self.media_task = asyncio.create_task(self.cards.worker())
+        if not self.cache_resetting and (self.media_task is None or self.media_task.done()):
+            self.media_stop = asyncio.Event()
+            self.media_task = asyncio.create_task(self.cards.worker(self.media_stop))
+
+    async def clear_card_cache(self):
+        async with self.media_lock:
+            self.cache_resetting=True
+            try:
+                self.media_stop.set()
+                if self.media_task:
+                    await self.media_task
+                await asyncio.to_thread(self.cards.clear_cache)
+            finally:
+                self.cache_resetting=False
+                self._ensure_media_worker()
+            self._publish()
+        return await self.status()
 
     async def download_missing_images(self):
         tracking = self.parser.view(self.cards)
@@ -225,12 +274,15 @@ class Plugin:
             for ent in game.entities.values():
                 if ent.card_id and (ent.controller==game.friendly_id or (ent.id,ent.card_id) in self.parser.public):
                     ids.add(ent.card_id)
+        arena=self._arena_view()
+        ids.update(row['id'] for key in ('candidates','picks','redraft_picks') for row in arena[key])
         self.cards.begin_image_download(ids)
         self._ensure_media_worker()
         return await self.status()
 
     async def import_card_images(self,path: str):
-        await asyncio.to_thread(self.cards.import_images,path)
+        async with self.media_lock:
+            await asyncio.to_thread(self.cards.import_images,path)
         self._publish()
         return await self.status()
 
@@ -251,6 +303,7 @@ class Plugin:
         async with self.lock:
             if self.proc and self.proc.returncode is None:
                 self.settings['visible'] = True
+                await self._activate_tracking_logs()
                 atomic_json(self.settings_dir / 'settings.json', self.settings)
                 self._publish()
                 return await self.status()
@@ -263,6 +316,7 @@ class Plugin:
             self.error = ''
             self._ensure_media_worker()
             self.settings['visible'] = True
+            await self._activate_tracking_logs()
             atomic_json(self.settings_dir / 'settings.json', self.settings)
             self._publish()
             env = dict(os.environ, DISPLAY=self.settings['display'])
@@ -313,12 +367,12 @@ class Plugin:
 
     def _publish(self):
         tracking = self.parser.view(self.cards) if self.active and self.caught_up else dict(status='waiting',turn=0,own=[],opponent=[],own_label='等待活动日志',opponent_hand=None,opponent_deck=None)
-        if self.settings['card_images']:
+        if self.settings['card_images'] and not self.cache_resetting:
             self.cards.request_images(r['id'] for key in ('own','own_added','own_played','opponent_seen','opponent_played') for r in tracking.get(key,[]))
         arena=self._arena_view()
         memory_offer=arena['source']=='memory' and len(arena['candidates'])==3
         arena['visible']=bool(self.settings['arena'] and (memory_offer or (self.arena_caught_up and arena['drafting'])) and tracking['status']!='playing')
-        if self.settings['card_images'] and arena['visible']:
+        if self.settings['card_images'] and arena['visible'] and not self.cache_resetting:
             self.cards.request_images(r['id'] for key in ('picks','redraft_picks','candidates') for r in arena[key])
         atomic_json(self.runtime / 'state.json', dict(updated=time.time(), **self.settings,
             schema=2, tracking=tracking,arena_state=arena))
@@ -331,8 +385,13 @@ class Plugin:
                     process = await asyncio.to_thread(discover_process)
                     async with self.config_lock:
                         config = await asyncio.to_thread(ensure_power,process)
-                        decks_config = await asyncio.to_thread(inspect_config,process.get('user_dir'),'Decks')
-                        arena_config = await asyncio.to_thread(inspect_config,process.get('user_dir'),'Arena')
+                        if self.settings['auto_logs'] and self.settings['visible']:
+                            await self._sync_tracking_logs(process)
+                            decks_config=self.decks_config
+                            arena_config=self.arena_config
+                        else:
+                            decks_config = await asyncio.to_thread(inspect_config,process.get('user_dir'),'Decks')
+                            arena_config = await asyncio.to_thread(inspect_config,process.get('user_dir'),'Arena')
                         if arena_config.get('enabled') and self.arena_receipt.get('path')==arena_config.get('path'):
                             arena_config['restart_required']=self.arena_receipt.get('instance')==process.get('instance')
                             arena_config['backup']=self.arena_receipt.get('backup','')

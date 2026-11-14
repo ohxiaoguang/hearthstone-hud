@@ -8,6 +8,7 @@ from collections import deque
 import queue
 import json
 import re
+import shutil
 import struct
 import ssl
 import threading
@@ -181,11 +182,32 @@ class Cards:
             size+=f.stat().st_size
             if i>=256 or size>32*1024*1024:f.unlink(missing_ok=True)
 
-    async def worker(self):
-        while True:
-            if self.queue.empty() and not self.batch_remaining and time.time()-self.updated>7*86400 and time.time()-self.attempted>(60 if not self.by_id else 3600):
+    def clear_cache(self):
+        """Called after the media worker drains; delete only plugin-owned caches."""
+        with self.cache_lock:
+            self.generation+=1  # Discard any obsolete refresh/import result.
+            (self.directory/'cards.json').unlink(missing_ok=True)
+            if self.images.is_symlink():
+                self.images.unlink()
+            elif self.images.exists():
+                shutil.rmtree(self.images)  # Does not follow links inside this tree.
+            self.images.mkdir(parents=True,exist_ok=True)
+            self.tiles=TileStore(self.images)
+            self.by_id={};self.by_dbf={};self.updated=0;self.attempted=0
+            self.error='';self.image_error='';self.source='HearthstoneJSON zhCN'
+            self.download_state='准备下载'
+            self.image_attempts.clear();self.pending.clear();self.queue=queue.Queue(maxsize=128)
+            self.batch_remaining.clear();self.image_errors.clear();self.import_result=None
+            self.image_batch=dict(status='idle',total=0,success=0,failed=0,skipped=0)
+            self.image_totals=dict(success=0,failed=0,skipped=0)
+
+    async def worker(self, stop=None):
+        # Cooperative shutdown waits for in-flight thread I/O before cache deletion.
+        while stop is None or not stop.is_set():
+            if (not self.by_id or self.queue.empty() and not self.batch_remaining) and time.time()-self.updated>7*86400 and time.time()-self.attempted>(60 if not self.by_id else 3600):
                 record=await asyncio.to_thread(self.refresh)
                 self.apply(record)
+            if stop is not None and stop.is_set():break
             try:
                 cid=self.queue.get_nowait()
             except queue.Empty:
