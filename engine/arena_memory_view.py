@@ -38,7 +38,7 @@ class ArenaPreview:
             return base
         stage={'HERO':'hero_selection','CARD':'redrafting' if state.mode=='REDRAFTING' else 'card_selection','HERO_POWER':'hero_power_selection'}[state.slot]
         matched=bool(base['deck_id'] and state.deck_id==base['deck_id'] and state.slot!='HERO')
-        formal=base['cls'] if matched else ''
+        formal=base['cls'] if matched and base.get('identity_source')!='memory' else ''
         temporary=hero_class(arena.cards,state.hero)
         conflict=bool(matched and formal and temporary and formal!=temporary)
         cls=formal or temporary

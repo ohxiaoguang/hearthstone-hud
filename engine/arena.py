@@ -30,6 +30,8 @@ class Arena:
         self.session='';self.reset_stream()
 
     def reset_stream(self):
+        self.identity_source=''
+        self.exact_phase=''
         self.deck_id='';self.hero='';self.mode='';self.phase='';self.redraft_id='';self.fresh_draft=False
         self.listed=[];self.listing=False;self.raw_choices={};self.phase_decks={}
         self.offer=[];self.offer_round=None;self.seen=OrderedDict();self.errors=0
@@ -40,6 +42,8 @@ class Arena:
         if session!=self.session:self.session=session;self.reset_stream()
 
     def _new(self,deck_id,ts,mode='DRAFTING',record=True):
+        self.identity_source='log'
+        self.exact_phase=''
         self.deck_id=deck_id;self.hero='';self.mode=mode;self.phase='draft:'+deck_id;self.redraft_id='';self.fresh_draft=mode=='DRAFTING';self.last_error=''
         self.offer=[];self.offer_round=None;self.listed=[];self.exact_dbf={}
         self.raw_choices.setdefault(self.phase,[]);self.phase_decks[self.phase]=deck_id
@@ -48,6 +52,14 @@ class Arena:
 
     @property
     def drafting(self):return self.mode in ('DRAFTING','REDRAFTING')
+
+    def attach_memory_deck(self,deck_id,hero,mode):
+        """Identity proof only; never inserts memory cards into raw_choices."""
+        if (not self.deck_id or (not self.drafting and self.deck_id!=deck_id)) and deck_id.isdecimal() and mode in ('DRAFTING','REDRAFTING'):
+            self._new(deck_id,self.clock(),mode,record=True)
+            self.fresh_draft=False
+            self.identity_source='memory'
+            self.hero=hero
 
     def _kind(self,cid):
         typ=self.cards.by_id.get(cid,{}).get('type')
@@ -63,7 +75,7 @@ class Arena:
         if len(self.seen)>8192:self.seen.popitem(last=False)
         if m:=DECK.search(text):
             if self.deck_id!=m[1]:self._new(m[1],ts,mode='UNKNOWN')
-            self.hero=m[2];self.listed=[];self.listing=True;return
+            self.hero=m[2];self.identity_source='log';self.listed=[];self.listing=True;return
         if self.listing and (m:=CARD.search(text)):
             if len(self.listed)<100:self.listed.append(m[1])
             return
@@ -82,7 +94,7 @@ class Arena:
                 self.phase='';self.redraft_id='';self.offer=[];self.offer_round=None
         elif self.drafting and self.deck_id and (m:=PICK.search(text)):
             cid=m[1];kind=self._kind(cid)
-            if kind=='hero':self.hero=cid;return
+            if kind=='hero':self.hero=cid;self.identity_source='log';return
             if kind=='power':return
             if not self.phase:self.last_error='等待重选 ID，未将选择追加到原牌组';return
             choices=self.raw_choices.setdefault(self.phase,[])
@@ -153,6 +165,7 @@ class Arena:
         return [dict(zip(('session','deck_id','phase','round'),key),**record) for key,record in self.manual.items()]
 
     def reset_decks(self):
+        self.exact_phase=''
         self.pending=None;self.exact_history=[];self.exact_dbf={};self.deck_runs=[]
         self.known_ids={deck_id for _,deck_id in self.runs}
 
@@ -178,6 +191,7 @@ class Arena:
         self.last_error=''
         self.exact_history.append((ts,deck_id,dict(definition.cards)));self.exact_history=self.exact_history[-64:]
         if deck_id==self.deck_id:
+            self.exact_phase=self.phase
             self.exact_dbf=dict(definition.cards)
             if definition.heroes:
                 hero=self.cards.id_for_dbf(definition.heroes[0])
@@ -229,9 +243,9 @@ class Arena:
         for row in offer:row['best']=bool(scores) and row['score']==max(scores)
         overflow=max(0,sum(self._kind(cid)=='card' for _,cid in self.raw_choices.get(draft_phase,[]))-30)
         unresolved=sum(self._kind(cid)=='unknown' for phase,values in self.raw_choices.items() if self.phase_decks.get(phase)==self.deck_id for _,cid in values)
-        return dict(**self.context(),mode=self.mode,hero=self.hero,cls=cls,class_name=CLASS_NAMES.get(cls,'职业未识别'),
+        return dict(**self.context(),mode=self.mode,hero=self.hero,identity_source=self.identity_source,cls=cls,class_name=CLASS_NAMES.get(cls,'职业未识别'),
             drafting=self.drafting,count=len(rows),count_exact=bool(self.exact_dbf) or (self.fresh_draft and not unresolved and not overflow),
             picks=rows,redraft_picks=redraft,candidates=offer,offer_round=self.offer_round,
-            exact=bool(self.exact_dbf),unresolved_choices=unresolved,overflow_choices=overflow,ratings=self.ratings.metadata(),
+            exact=bool(self.exact_dbf),exact_phase=self.exact_phase,unresolved_choices=unresolved,overflow_choices=overflow,ratings=self.ratings.metadata(),
             conflicts=sum(p.get('conflict',False) for phase in self.raw_choices if self.phase_decks.get(phase)==self.deck_id for p in self.records(phase)),
             error=self.last_error,parse_errors=self.errors)

@@ -104,6 +104,14 @@ class HearthstoneMemory:
                 return manager
         raise NotReady('DraftManager service unavailable')
 
+    def _deck_cards(self,deck):
+        cards=[];slots=deck['m_slots']
+        for entry in slots.list_objects(100) if slots else []:
+            counts=entry['m_count'];counts=counts.list_ints(16) if counts else []
+            if any(type(n) is not int or not 0<=n<=100 for n in counts) or len(cards)+sum(counts)>100:raise UnsupportedLayout('excessive deck copy count')
+            cards.extend([card_id(entry['m_cardId'])]*sum(counts))
+        return cards
+
     def draft_state(self):
         display=self.mono.static('DraftDisplay','s_instance')
         if display is None:return None
@@ -130,11 +138,7 @@ class HearthstoneMemory:
             number=deck['ID']
             if type(number) is not int or not 0<=number<2**63:raise UnsupportedLayout('invalid deck ID')
             deck_id=str(number) if number else '';hero=card_id(deck['<HeroCardID>k__BackingField'],True)
-            slots=deck['m_slots']
-            for entry in slots.list_objects(100) if slots else []:
-                counts=entry['m_count'];counts=counts.list_ints(16) if counts else []
-                if any(type(n) is not int or not 0<=n<=100 for n in counts) or len(cards)+sum(counts)>100:raise UnsupportedLayout('excessive deck copy count')
-                cards.extend([card_id(entry['m_cardId'])]*sum(counts))
+            cards=self._deck_cards(deck)
         # Re-read selection identity to reject concurrent mode/choice transitions.
         check_options=display['m_choices']
         if manager['m_undergroundActive']!=underground or display['m_currentMode']!=DRAFT_MODES.index(mode) or (check_options.addr if check_options else 0)!=(options.addr if options else 0) or manager[prefix+'SlotType']!=SLOT_TYPES.index(slot):
@@ -142,6 +146,7 @@ class HearthstoneMemory:
         current_deck=manager['m_undergroundDraftDeck' if underground else 'm_draftDeck']
         if (current_deck.addr if current_deck else 0)!=(deck.addr if deck else 0):raise NotReady('arena deck changed during snapshot')
         if deck is not None and (deck['ID']!=number or card_id(deck['<HeroCardID>k__BackingField'],True)!=hero):raise NotReady('arena identity changed during snapshot')
+        if deck is not None and self._deck_cards(deck)!=cards:raise NotReady('draft deck changed during snapshot')
         if options and choices:
             if [c['m_cardID'] for c in options.list_objects(3)]!=[c.card_id for c in choices]:raise NotReady('choices changed during snapshot')
         return DraftState(mode,slot,underground,tuple(choices),deck_id,hero,tuple(cards),wins,losses)

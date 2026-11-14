@@ -201,11 +201,11 @@ class Cards:
             self.image_batch=dict(status='idle',total=0,success=0,failed=0,skipped=0)
             self.image_totals=dict(success=0,failed=0,skipped=0)
 
-    async def worker(self, stop=None):
+    async def worker(self, stop=None, run_io=asyncio.to_thread):
         # Cooperative shutdown waits for in-flight thread I/O before cache deletion.
         while stop is None or not stop.is_set():
             if (not self.by_id or self.queue.empty() and not self.batch_remaining) and time.time()-self.updated>7*86400 and time.time()-self.attempted>(60 if not self.by_id else 3600):
-                record=await asyncio.to_thread(self.refresh)
+                record=await run_io(self.refresh)
                 self.apply(record)
             if stop is not None and stop.is_set():break
             try:
@@ -219,7 +219,7 @@ class Cards:
             outcome='success'
             try:
                 if self.tiles.path(cid):outcome='skipped'
-                else:await asyncio.to_thread(self.download_image,cid)
+                else:await run_io(self.download_image,cid)
             except (OSError,ValueError) as exc:
                 outcome='failed';self.image_error=str(exc)[:300]
                 self.image_errors.append(cid+': '+self.image_error)

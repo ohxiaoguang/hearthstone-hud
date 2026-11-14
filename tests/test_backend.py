@@ -47,6 +47,126 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         await self.plugin.stop_hud();await self.plugin.stop_hud()
         self.assertFalse((await self.plugin.status())['running'])
 
+    async def test_plugin_master_stops_owned_threads_and_preserves_feature_settings(self):
+        import threading
+        from engine.memory_watch import MemoryWatch
+        closed=threading.Event()
+        class Reader:
+            def poll(self):return None,dict(code='reading',status='mock',pid=100,error='')
+            def close(self):closed.set()
+        self.plugin.memory_watch=MemoryWatch(lambda stop:Reader(),normal=.01)
+        await self.plugin.configure({'arena':True,'arena_memory':True,'font_size':26})
+        class Process:
+            returncode=None
+            def terminate(self):self.returncode=0
+            async def wait(self):return self.returncode
+        process=Process();self.plugin.proc=process
+        prefix='hud-io-'+str(id(self.plugin))
+        await asyncio.sleep(.05)
+        await self.plugin.configure({'enabled':False})
+        self.assertTrue(closed.is_set());self.assertIsNone(self.plugin.memory_watch.thread)
+        self.assertEqual(process.returncode,0);self.assertIsNone(self.plugin.proc)
+        self.assertIsNone(self.plugin.io_pool);self.assertIsNone(self.plugin.task);self.assertIsNone(self.plugin.media_task)
+        self.assertFalse(any(t.name.startswith(prefix) for t in threading.enumerate()))
+        self.assertTrue(self.plugin.settings['visible']);self.assertTrue(self.plugin.settings['arena_memory'])
+        self.assertEqual(self.plugin.settings['font_size'],26)
+        self.assertFalse(any((await self.plugin.status())['background'].values()))
+        for operation in (self.plugin.start_hud,self.plugin.retry_card_database,self.plugin.download_missing_images,self.plugin.clear_card_cache):
+            with self.assertRaises(RuntimeError):await operation()
+        await self.plugin.configure({'enabled':True})
+        self.assertIsNotNone(self.plugin.task);self.assertIsNotNone(self.plugin.memory_watch.thread)
+        self.assertEqual(self.plugin.settings['font_size'],26)
+        await self.plugin.configure({'enabled':False});await self.plugin.configure({'enabled':False})
+        self.assertFalse(any(t.name.startswith(prefix) for t in threading.enumerate()))
+
+    async def test_master_waits_for_inflight_download_before_reporting_off(self):
+        import threading
+        from image_support import tile_png
+        started=threading.Event();release=threading.Event()
+        self.plugin.cards.updated=10**12
+        def download(cid):
+            started.set();release.wait(2)
+            (self.plugin.cards.images/(cid+'.png')).write_bytes(tile_png())
+        with patch.object(self.plugin.cards,'download_image',side_effect=download):
+            self.plugin.cards.request_images(['CARD_A'])
+            self.assertTrue(await asyncio.to_thread(started.wait,2))
+            closing=asyncio.create_task(self.plugin.configure({'enabled':False}))
+            try:
+                await asyncio.sleep(.02);self.assertFalse(closing.done())
+                self.assertEqual(self.plugin.lifecycle_state,'stopping')
+            finally:release.set()
+            await closing
+        self.assertTrue((self.plugin.cards.images/'CARD_A.png').exists())  # Retained, not deleted.
+        self.assertIsNone(self.plugin.io_pool)
+        self.assertEqual(self.plugin.lifecycle_state,'disabled')
+
+    async def test_saved_disabled_startup_does_not_scan_or_download_and_restores_hud_choice(self):
+        from unittest.mock import AsyncMock
+        await self.plugin.configure({'enabled':False})
+        plugin_type=type(self.plugin)
+        globals_=self.plugin._main.__func__.__globals__
+        self.plugin=plugin_type()
+        with patch.dict(globals_,discover_process=lambda:(_ for _ in ()).throw(AssertionError('unexpected scan'))):
+            await self.plugin._main()
+            await asyncio.sleep(.05)
+            self.assertIsNone(self.plugin.task);self.assertIsNone(self.plugin.media_task);self.assertIsNone(self.plugin.io_pool)
+            self.assertTrue(self.plugin.settings['visible'])
+            await self.plugin.configure({'font_size':25})
+            self.assertIsNone(self.plugin.io_pool)
+        with patch.object(self.plugin,'_start_renderer',new_callable=AsyncMock) as restore,patch.dict(globals_,platform=types.SimpleNamespace(system=lambda:'Linux')):
+            await self.plugin.configure({'enabled':True})
+            restore.assert_awaited_once()
+        self.assertEqual(self.plugin.settings['font_size'],25)
+
+    async def test_disabled_log_monitor_does_not_parse_new_data_then_catches_up(self):
+        root=Path(self.tmp.name)/'game';session=root/'Logs/session';session.mkdir(parents=True)
+        power=session/'Power.log';power.write_text('D 12:00:00.0000000 GameState.DebugPrintPower() - CREATE_GAME\n')
+        await self.plugin.configure({'game_dir':str(root),'visible':False})
+        await asyncio.sleep(.4)
+        await self.plugin.configure({'enabled':False})
+        accepted=self.plugin.parser.accepted;scan=self.plugin.last_scan
+        with power.open('a') as stream:stream.write('D 12:00:01.0000000 GameState.DebugPrintPower() - CREATE_GAME\n')
+        await asyncio.sleep(.3)
+        self.assertEqual(self.plugin.parser.accepted,accepted);self.assertEqual(self.plugin.last_scan,scan)
+        await self.plugin.configure({'enabled':True});await asyncio.sleep(.4)
+        self.assertGreater(self.plugin.parser.accepted,accepted)
+
+    async def test_mid_draft_memory_history_log_progress_and_final_decks_integration(self):
+        from engine.memory_watch import MemoryWatch
+        from engine.arena_memory import DraftState,DraftChoice
+        from engine.deckstring import DeckDefinition,encode
+        self.plugin.cards.install([dict(id='CARD_'+c,dbfId=i+1,name=c,type='MINION') for i,c in enumerate('ABC')])
+        selected=['CARD_A','CARD_A','CARD_B']
+        class Reader:
+            def poll(self):return DraftState('DRAFTING','CARD',False,tuple(DraftChoice('CARD_'+c) for c in 'ABC'),'42','HERO_08',tuple(selected)),dict(code='card_selection',status='mock',pid=100,process_instance='same',error='')
+            def close(self):pass
+        self.plugin.memory_watch=MemoryWatch(lambda stop:Reader(),normal=.01)
+        root=Path(self.tmp.name)/'game';session=root/'Logs/session';session.mkdir(parents=True)
+        (session/'Power.log').write_text('')
+        arena=session/'Arena.log';arena.write_text('D 12:00:01.0000000 Client chooses: card (CARD_A)\n')
+        await self.plugin.configure({'arena':True,'arena_memory':True,'game_dir':str(root),'visible':False})
+        for _ in range(100):
+            view=self.plugin._arena_view()
+            if view['count']==3 and len(view.get('history_picks',[]))==2:break
+            await asyncio.sleep(.02)
+        self.assertEqual(view['count'],3);self.assertEqual(len(view['picks']),1)
+        with arena.open('a') as f:f.write('D 12:00:02.0000000 Client chooses: card (CARD_A)\n')
+        for _ in range(100):
+            if self.plugin._arena_view()['count']==4:break
+            await asyncio.sleep(.02)
+        self.assertEqual(self.plugin._arena_view()['count'],4)
+        selected.append('CARD_A')
+        await asyncio.sleep(.1)
+        self.assertEqual(self.plugin._arena_view()['count'],4)
+        final=encode(DeckDefinition([637],{3:30}))
+        (session/'Decks.log').write_text('D 12:00:03.0000000 Finished Editing Deck:\nD 12:00:03.0000000 # Deck ID: 42\nD 12:00:03.0000000 '+final+'\n')
+        await self.plugin.configure({'game_dir':str(root)})
+        for _ in range(100):
+            view=self.plugin._arena_view()
+            if view['exact']:break
+            await asyncio.sleep(.02)
+        self.assertTrue(view['exact']);self.assertEqual(view['count'],30);self.assertEqual(view['history_picks'],[])
+
     async def test_display_defaults_font_size_and_immediate_publication(self):
         self.assertTrue(self.plugin.settings['own_deck'])
         self.assertFalse(self.plugin.settings['arena'])  # Merged memory feature is opt-in.

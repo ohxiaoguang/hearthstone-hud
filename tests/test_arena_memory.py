@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from engine import mono_memory as m
 from engine.arena_memory import HearthstoneMemory, DraftChoice,DraftState
 from engine.memory_watch import MemoryWatch
@@ -24,6 +25,12 @@ def reader(heap,found=None,factory=None):
     return HearthstoneMemory(process_factory=factory or (lambda pid:FakeProcess(heap)),finder=found or (lambda:dict(found=True,pid=1234,instance='1234:1')))
 
 class MonoTests(unittest.TestCase):
+    def test_torn_deck_copy_count_is_not_published(self):
+        memory=reader(hearthstone_heap())
+        with patch.object(memory,'_deck_cards',side_effect=[['CARD_A'],['CARD_B']]):
+            state,diag=memory.poll()
+        self.assertIsNone(state);self.assertEqual(diag['code'],'not_ready')
+
     def test_01_real_shaped_mono_and_assembly_initialization(self):
         mono=m.Mono(FakeProcess(hearthstone_heap()));self.assertEqual(mono.version[:2],(6000,3))
         self.assertIn('DraftDisplay',mono.classes());self.assertIn('DraftManager',mono.classes())

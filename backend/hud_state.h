@@ -10,7 +10,8 @@ inline bool valid_arena_state(const nlohmann::json& a){
     if(a.contains("show_count")&&!a["show_count"].is_boolean())return false;
     if(a.contains("stage")&&(!a["stage"].is_string() || (a["stage"]!="none" && a["stage"]!="hero_selection" && a["stage"]!="card_selection" && a["stage"]!="hero_power_selection" && a["stage"]!="drafting" && a["stage"]!="redrafting")))return false;
     if(!a.contains("count")||!a["count"].is_number_integer())return false;
-    for(const auto* k:{"candidates","picks","redraft_picks"}){
+    for(const auto* k:{"candidates","picks","redraft_picks","history_picks"}){
+        if(std::string(k)=="history_picks"&&!a.contains(k))continue;
         if(!a.contains(k)||!a[k].is_array()||a[k].size()>(std::string(k)=="candidates"?3:100))return false;
         for(const auto& r:a[k]){
             if(!r.is_object())return false;
@@ -111,8 +112,11 @@ inline nlohmann::json arena_rows(const nlohmann::json& a,bool candidates){
     const auto append=[&](const char* key){for(const auto& r:a[key]){auto row=r;row["arena_row"]=true;rows.push_back(row);}};
     if(candidates)append("candidates");
     else {
-        if(!a["picks"].empty())rows.push_back({{"section",true},{"name",a.value("exact",false)?"最终牌组（Decks.log）":"已选牌（实际选择顺序）"}});
+        if(!a["picks"].empty())rows.push_back({{"section",true},{"name",a.value("exact",false)?"最终牌组（Decks.log）":"已选牌（日志/确认记录顺序）"}});
         append("picks");
+        if(a.contains("history_picks")&&!a["history_picks"].empty()){
+            rows.push_back({{"section",true},{"name","内存历史 · 顺序未知"}});append("history_picks");
+        }
         if(!a["redraft_picks"].empty()){
             rows.push_back({{"section",true},{"name","重选操作（等待最终牌组，不合并）"}});append("redraft_picks");
         }

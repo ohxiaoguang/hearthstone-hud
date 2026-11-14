@@ -51,6 +51,9 @@ int main(){
     bad=good;bad["arena_state"]["visible"]="yes";if(valid_hud_state(bad))return 25;
     arena["picks"].push_back(rated);arena["redraft_picks"].push_back(rated);
     if(arena_rows(arena,false).size()!=4 || arena["count"]!=0)return 26; // Display never mutates counts.
+    arena["history_picks"]=json::array({rated,rated});good["arena_state"]=arena;
+    if(!valid_hud_state(good)||arena_rows(arena,false).size()!=7)return 38;
+    bad=good;bad["arena_state"]["history_picks"][0]["id"]=42;if(valid_hud_state(bad))return 39;
     arena["stage"]="hero_selection";arena["show_count"]=false;good["arena_state"]=arena;
     if(!valid_hud_state(good))return 27;
     bad=good;bad["arena_state"]["stage"]="invented";if(valid_hud_state(bad))return 28;

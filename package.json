@@ -1,6 +1,6 @@
 {
   "name": "hearthstone-hud",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "type": "module",
   "description": "Gamescope 炉石 HUD 与竞技场辅助测试版",
   "license": "MIT",
