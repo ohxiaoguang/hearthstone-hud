@@ -130,7 +130,7 @@ function Content(){
  </div></PanelSectionRow>}
  <PanelSectionRow><div style={row}>
   <SmallButton disabled={busy||batchRunning||!cards?.count} onClick={()=>background(t('applying'),downloadAllImages)}>{t('downloadAllImages')}</SmallButton>
-  <SmallButton disabled={busy||!(usage?.cached??0)} onClick={()=>setConfirm({kind:'images'})}>{t('clearImages')}</SmallButton>
+  <SmallButton disabled={busy||batchRunning||!(usage?.cached??0)} onClick={()=>setConfirm({kind:'images'})}>{t('clearImages')}</SmallButton>
  </div></PanelSectionRow>
  <PanelSectionRow><div style={box}>{t('imagesNote')}</div></PanelSectionRow>
  </Fold>

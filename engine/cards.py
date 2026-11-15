@@ -58,21 +58,21 @@ class NoArtAvailable(Exception):
 
 def validate_dataset(data):
     if not isinstance(data,list):
-        raise ValueError(i18n.t('cards.import_shape'))
+        raise ValueError(i18n.t('cards.data_shape'))
     rows=[];seen=set()
     for c in data:
         if not isinstance(c,dict) or not isinstance(c.get('id'),str) or not re.fullmatch(r'[A-Za-z0-9_]+',c['id']):
-            raise ValueError(i18n.t('cards.import_card_id'))
-        if c['id'] in seen:raise ValueError(i18n.t('cards.import_duplicate'))
+            raise ValueError(i18n.t('cards.data_card_id'))
+        if c['id'] in seen:raise ValueError(i18n.t('cards.data_duplicate'))
         seen.add(c['id'])
         if not isinstance(c.get('dbfId'),int) or isinstance(c['dbfId'],bool) or c['dbfId']<=0:
             continue
         if not isinstance(c.get('name'),str) or not c['name'].strip() or len(c['name'])>512:
             continue
         if c.get('cost') is not None and (not isinstance(c['cost'],int) or isinstance(c['cost'],bool)):
-            raise ValueError(i18n.t('cards.import_cost'))
+            raise ValueError(i18n.t('cards.data_cost'))
         rows.append({k:c[k] for k in FIELDS if k in c})
-    if len(rows)<MIN_CARDS:raise ValueError(i18n.t('cards.import_min',min=MIN_CARDS))
+    if len(rows)<MIN_CARDS:raise ValueError(i18n.t('cards.data_min',min=MIN_CARDS))
     return rows
 
 
@@ -176,7 +176,7 @@ class Cards:
 
     # -- metadata ----------------------------------------------------------
     def install(self, data):
-        if not isinstance(data,list):raise ValueError(i18n.t('cards.import_shape'))
+        if not isinstance(data,list):raise ValueError(i18n.t('cards.data_shape'))
         rows=[{k:c[k] for k in FIELDS if k in c} for c in data if isinstance(c,dict) and isinstance(c.get('id'),str)]
         self.by_id={c['id']:c for c in rows}
         self.by_dbf={c['dbfId']:c['id'] for c in rows if isinstance(c.get('dbfId'),int)}

@@ -2,7 +2,15 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
-## Unreleased
+## v1.0.1
+
+- Download-failure messages no longer mention the removed offline import: the failure text
+  points to the retry button, and the card-data validation messages describe downloaded
+  data instead of imported files. The TLS error about a missing CA bundle was reworded too.
+- While a full card-art download is running, both the download and the delete-art buttons
+  are disabled, so the two operations can no longer conflict.
+- The full language table is kept: the engine still knows all fourteen HearthstoneJSON
+  locales; today the settings page manages the English and Simplified Chinese databases.
 
 - The legacy language-neutral `cards.json` cache is no longer read or adopted. Databases
   are exactly `cache/cards-enUS.json` and `cache/cards-zhCN.json`, following the interface

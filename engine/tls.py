@@ -23,7 +23,7 @@ def build_context():
             errors.append(str(path)+': '+str(exc))
     assert context.verify_mode==ssl.CERT_REQUIRED and context.check_hostname
     count=context.cert_store_stats()['x509_ca']
-    if not count:raise ssl.SSLError('没有可用 CA；请使用离线导入，不会关闭证书校验')
+    if not count:raise ssl.SSLError('没有可用的 CA 证书；证书校验不会关闭，请重新安装完整插件 ZIP')
     return context,dict(state='证书与主机名校验开启',ca_count=count,sources=sources,errors=errors)
 
 
