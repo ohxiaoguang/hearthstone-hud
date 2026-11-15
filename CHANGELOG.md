@@ -4,6 +4,12 @@ User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-
 
 ## Unreleased
 
+- Card art download counts each card once: a card that fails and then succeeds on the retry
+  is reported as a success, a card without art (HTTP 404) is listed separately and never
+  requested again in that session, and progress stays at or below 100%.
+- Image statistics and "delete card art" now also cover the legacy `cache/images/manual/`
+  directory, while JSON databases, settings and unrelated files are left in place.
+
 - Settings are simpler: one *Language options* control drives both the interface and the card
   database (English → enUS, Chinese → zhCN); the separate card-language picker is gone.
 - New *Download resources* section: per-database status, file size and delete button, plus

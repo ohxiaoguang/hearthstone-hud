@@ -93,8 +93,13 @@ def format_diagnostics(data,version,recent=(),renderer_tail=''):
     field('Cached Images',f"manual={counts.get('manual',0)}, automatic={counts.get('automatic',0)}")
     field('Cache Size',f"{usage.get('cached',0)} of {usage.get('total',0)} cards, {usage.get('bytes',0)} bytes")
     field('Pending Downloads',cards.get('images_pending',0));field('Batch Status',batch.get('status','unknown'))
-    field('Total/Success/Failed/Skipped/Retried',
-          f"{batch.get('total',0)} / {batch.get('success',0)} / {batch.get('failed',0)} / {batch.get('skipped',0)} / {batch.get('retried',0)}")
+    field('Total/Success/Failed/No Art/Skipped/Retried',
+          f"{batch.get('total',0)} / {batch.get('success',0)} / {batch.get('failed',0)} / {batch.get('missing',0)} / {batch.get('skipped',0)} / {batch.get('retried',0)}")
+    field('Batch Progress',f"{batch.get('done',0)} of {batch.get('total',0)} finished")
+    totals=cards.get('image_totals',{})
+    field('Attempt Outcomes',f"success={totals.get('success',0)}, failed={totals.get('failed',0)}, "
+                             f"no_art={totals.get('missing',0)}, skipped={totals.get('skipped',0)}")
+    field('No Art Cards',f"{cards.get('images_missing',0)} not requested again this session")
     field('Last Error',cards.get('image_error',''))
     imported=cards.get('image_import')
     if imported:

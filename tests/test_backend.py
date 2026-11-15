@@ -515,6 +515,9 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.plugin.cards.image_batch['status'],'complete')
         self.assertEqual(sorted(downloaded),sorted(r['id'] for r in rows))
         self.assertEqual(self.plugin.cards.image_usage()['cached'],12)
+        # The published batch carries the final counts and finished work.
+        batch=(await self.plugin.status())['cards']['image_batch']
+        self.assertEqual((batch['success'],batch['failed'],batch['missing'],batch['done']),(12,0,0,12))
         # Clearing art leaves both databases and all card names in place.
         await self.plugin.clear_card_images()
         self.assertEqual(list(self.plugin.cards.images.glob('*.png')),[])

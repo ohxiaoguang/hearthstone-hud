@@ -136,8 +136,101 @@ class ResourceTests(unittest.TestCase):
         self.worker(cards,download=download,seconds=4,until=lambda:cards.image_batch['status']=='complete')
         self.assertEqual(calls.count('FAIL'),2)                  # one retry pass
         self.assertEqual(cards.image_batch['retried'],1)
-        self.assertEqual(cards.image_batch['failed'],2)          # both attempts counted
+        self.assertEqual(cards.image_batch['failed'],1)          # final result, not attempts
         self.assertEqual(cards.image_batch['success'],1)
+        self.assertEqual(cards.batch_view()['done'],2)
+
+    def test_a_retry_that_succeeds_counts_as_success_only(self):
+        self.cache('enUS')
+        cards=Cards(self.folder)
+        calls=[]
+        def download(cid):
+            calls.append(cid)
+            if calls.count(cid)==1:raise ssl.SSLError('transient')   # first attempt fails
+            (cards.images/(cid+'.png')).write_bytes(tile_png())
+        cards.begin_image_download(['CARD_0','CARD_1'])
+        self.worker(cards,download=download,seconds=4,until=lambda:cards.image_batch['status']=='complete')
+        batch=cards.batch_view()
+        self.assertEqual(calls.count('CARD_0'),2)                    # attempted twice
+        self.assertEqual((batch['success'],batch['failed']),(2,0))   # final result only
+        self.assertEqual(batch['retried'],2)
+        self.assertEqual((batch['done'],batch['total']),(2,2))
+        # Attempt counters are separate from the final result.
+        self.assertEqual(cards.image_totals['failed'],2);self.assertEqual(cards.image_totals['success'],2)
+
+    def test_missing_art_is_not_retried_and_is_reported_separately(self):
+        from urllib.error import HTTPError
+        self.cache('enUS')
+        cards=Cards(self.folder)
+        calls=[]
+        def fetch(url,limit,verify=True):
+            cid=url.rsplit('/',1)[-1].split('.')[0]
+            calls.append(cid)
+            if cid=='CARD_2':raise HTTPError(url,404,'Not Found',None,None)
+            return tile_png()
+        cards.begin_image_download(['CARD_0','CARD_1','CARD_2'])
+        self.worker(cards,fetch=fetch,seconds=4,until=lambda:cards.image_batch['status']=='complete')
+        batch=cards.batch_view()
+        self.assertEqual(calls.count('CARD_2'),1)     # a 404 is never retried
+        self.assertEqual((batch['success'],batch['failed'],batch['missing']),(2,0,1))
+        self.assertEqual(batch['retried'],0)
+        self.assertEqual((batch['done'],batch['total']),(3,3))
+        self.assertIn('CARD_2',cards.image_missing)
+        self.assertEqual(list(cards.image_errors),[])  # no art is not a download error
+        # A later run reports the known 404 without requesting it again.
+        calls.clear()
+        cards.begin_image_download(['CARD_0','CARD_1','CARD_2'])
+        self.assertEqual(cards.image_batch['status'],'complete')
+        self.assertEqual((cards.image_batch['missing'],cards.image_batch['skipped']),(1,2))
+        self.worker(cards,download=lambda cid:None,seconds=.5)
+        self.assertEqual(calls,[])
+
+    def test_progress_never_exceeds_one_hundred_percent(self):
+        self.cache('enUS')
+        cards=Cards(self.folder)
+        ids=cards.all_card_ids()[:6]
+        def download(cid):
+            if cid.endswith('3'):raise ssl.SSLError('persistent')    # both attempts fail
+            (cards.images/(cid+'.png')).write_bytes(tile_png())
+        cards.begin_image_download(ids)
+        seen=[]
+        async def main():
+            stop=asyncio.Event()
+            with patch.object(cards,'download_image',side_effect=download):
+                task=asyncio.create_task(cards.worker(stop))
+                deadline=time.time()+5
+                while time.time()<deadline:
+                    seen.append(cards.batch_view()['done'])
+                    if cards.image_batch['status']=='complete':break
+                    await asyncio.sleep(.01)
+                stop.set();await task
+        asyncio.run(main())
+        batch=cards.batch_view()
+        self.assertTrue(seen);self.assertTrue(all(0<=value<=batch['total'] for value in seen))
+        self.assertEqual((batch['done'],batch['total']),(6,6))
+        self.assertEqual((batch['success'],batch['failed']),(5,1))
+
+    def test_legacy_manual_cache_is_counted_and_cleared(self):
+        self.cache('enUS')
+        cards=Cards(self.folder)
+        manual=cards.images/'manual';manual.mkdir(parents=True,exist_ok=True)
+        (manual/'CARD_0.png').write_bytes(tile_png())
+        (manual/'CARD_1.png').write_bytes(tile_png())
+        (cards.images/'CARD_2.png').write_bytes(tile_png())
+        (manual/'notes.txt').write_text('keep')                   # not a PNG
+        (self.folder/'unrelated.json').write_text('keep')         # not a card database
+        usage=cards.image_usage()
+        self.assertEqual(usage['cached'],3)
+        self.assertEqual(usage['bytes'],sum(p.stat().st_size for p in
+                         (manual/'CARD_0.png',manual/'CARD_1.png',cards.images/'CARD_2.png')))
+        self.assertEqual(cards.clear_images(),3)
+        self.assertEqual(list(cards.images.glob('*.png')),[])
+        self.assertEqual(list(manual.glob('*.png')),[])
+        self.assertTrue((manual/'notes.txt').exists())
+        self.assertTrue((self.folder/'unrelated.json').exists())
+        self.assertTrue((self.folder/'cards-enUS.json').exists())
+        self.assertEqual(len(cards.by_id),MIN_CARDS)
+        self.assertEqual(cards.image_usage()['cached'],0)
 
     def test_clearing_images_keeps_databases_and_cancels_a_running_batch(self):
         self.cache('enUS')

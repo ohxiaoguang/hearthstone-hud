@@ -18,6 +18,7 @@ import ssl
 import threading
 import time
 import urllib.request
+from urllib.error import HTTPError
 from pathlib import Path
 from . import i18n
 from .io import atomic_json
@@ -48,6 +49,14 @@ MIN_CARDS=100
 MAX_JSON=64*1024*1024
 
 
+class NoArtAvailable(Exception):
+    """HearthstoneJSON has no tile for this Card ID (HTTP 404).
+
+    Kept apart from the transient failures so it is never retried and never
+    reported as a download error.
+    """
+
+
 def validate_dataset(data):
     if not isinstance(data,list):
         raise ValueError(i18n.t('cards.import_shape'))
@@ -74,9 +83,12 @@ class Cards:
         self.images=self.directory/'images'
         self.images.mkdir(parents=True,exist_ok=True)
         self.tiles=TileStore(self.images)
-        self.image_batch=dict(status='idle',total=0,success=0,failed=0,skipped=0,retried=0)
+        self.image_batch=dict(status='idle',total=0,success=0,failed=0,missing=0,skipped=0,retried=0)
         self.batch_remaining=set();self.image_errors=deque(maxlen=10)
-        self.image_totals=dict(success=0,failed=0,skipped=0)
+        self.image_totals=dict(success=0,failed=0,skipped=0,missing=0)
+        # Card IDs the art server answered 404 for. Never requested again in this
+        # session, so a full download cannot keep asking for art that does not exist.
+        self.image_missing=set()
         self.image_verify_tls=True
         self.database_verify_tls=True
         self.import_result=None
@@ -203,7 +215,7 @@ class Cards:
         """Queue art for cards currently on screen (one attempt per hour)."""
         for cid in ids:
             # Validation happens here so a damaged tile is fetched again.
-            if not valid_id(cid) or cid in self.pending or self.tiles.path(cid):continue
+            if not valid_id(cid) or cid in self.pending or cid in self.image_missing or self.tiles.path(cid):continue
             if cid not in self.batch_remaining and time.time()-self.image_attempts.get(cid,0)<3600:continue
             if self.queue.full():break
             self.pending.add(cid);self.queue.put_nowait(cid)
@@ -219,6 +231,10 @@ class Cards:
             if self.tiles.exists(cid):
                 self.batch_remaining.discard(cid);self.image_batch['skipped']+=1
                 continue
+            if cid in self.image_missing:
+                # Known 404 from an earlier run: report it without a request.
+                self.batch_remaining.discard(cid);self.image_batch['missing']+=1
+                continue
             if cid in self.pending:
                 self.batch_stream.appendleft(cid);break   # already queued elsewhere
             self.pending.add(cid);self.queue.put_nowait(cid)
@@ -228,7 +244,7 @@ class Cards:
         if self.batch_remaining:return dict(self.image_batch)
         unique={cid for cid in ids if valid_id(cid)}
         missing=sorted(cid for cid in unique if not self.tiles.exists(cid))
-        self.image_batch=dict(status='running',total=len(unique),success=0,failed=0,
+        self.image_batch=dict(status='running',total=len(unique),success=0,failed=0,missing=0,
                               skipped=len(unique)-len(missing),retried=0)
         self.batch_stream=deque(missing);self.batch_remaining=set(missing)
         self.batch_failed=[];self.batch_retried=0
@@ -241,7 +257,11 @@ class Cards:
         return dict(self.image_batch)
 
     def _finish_batch(self):
-        """One retry pass for failures, then report the batch as complete."""
+        """One retry pass, then final results: each card is counted exactly once.
+
+        A failure is held back instead of counted, so a retry that succeeds ends
+        up as `success` only; only the second failure is reported as `failed`.
+        """
         if self.batch_failed and not self.batch_retried:
             retry=list(dict.fromkeys(self.batch_failed));self.batch_failed.clear()
             self.batch_retried=1;self.image_batch['retried']=len(retry)
@@ -249,29 +269,48 @@ class Cards:
             self.batch_stream.extend(retry);self.batch_remaining=set(retry)
             self.image_batch['status']='running'
             self._fill_queue();return
+        if self.batch_failed:
+            self.image_batch['failed']+=len(set(self.batch_failed));self.batch_failed.clear()
         self.image_batch['status']='complete'
 
+    def batch_view(self):
+        """Batch counters plus finished work, clamped to the batch size.
+
+        `done` is derived, not stored, so a progress bar can never exceed 100%
+        even if a card is reported twice by a torn update.
+        """
+        batch=dict(self.image_batch)
+        batch['done']=min(batch['total'],batch['success']+batch['failed']+batch['missing']+batch['skipped'])
+        return batch
+
     def image_usage(self):
-        """Cache size on disk plus how many Card IDs the database offers."""
+        """Cache size on disk plus how many Card IDs the database offers.
+
+        Counts both the current cache and the legacy `manual/` directory, so the
+        settings page never reports fewer files than it can actually display.
+        """
         cached=0;size=0
-        for path in self.images.glob('*.png'):
+        for path in list(self.images.glob('*.png'))+list((self.images/'manual').glob('*.png')):
             try:size+=path.stat().st_size;cached+=1
             except OSError:continue
-        return dict(cached=cached,bytes=size,total=len(self.by_id),batch=dict(self.image_batch),
-                    downloading=self.image_batch['status']=='running')
+        batch=self.batch_view()
+        return dict(cached=cached,bytes=size,total=len(self.by_id),batch=batch,
+                    downloading=batch['status']=='running')
 
     def clear_images(self):
-        """Delete downloaded art only. The card databases are left untouched."""
+        """Delete downloaded art only. Card databases and settings are untouched."""
         removed=0
         with self.cache_lock:
             self.batch_stream.clear();self.batch_remaining.clear();self.batch_failed.clear()
             self.batch_retried=0
-            self.image_batch=dict(status='idle',total=0,success=0,failed=0,skipped=0,retried=0)
+            self.image_batch=dict(status='idle',total=0,success=0,failed=0,missing=0,skipped=0,retried=0)
             while True:
                 try:self.queue.get_nowait();self.queue.task_done()
                 except queue.Empty:break
             self.pending.clear();self.image_attempts.clear();self.image_errors.clear()
-            for path in self.images.glob('*.png'):
+            # Only PNG tiles, in both the current cache and the legacy manual
+            # directory; JSON databases, settings and stray files are left alone.
+            for path in list(self.images.glob('*.png'))+list((self.images/'manual').glob('*.png')):
                 try:path.unlink();removed+=1
                 except OSError:pass
             self.tiles=TileStore(self.images)
@@ -365,7 +404,13 @@ class Cards:
     def download_image(self,cid):
         p=self.image_path(cid)
         if p is None:raise ValueError('invalid Card ID')
-        data=fetch(IMAGE_URL.format(card_id=cid),MAX_IMAGE,verify=self.image_verify_tls)
+        try:
+            data=fetch(IMAGE_URL.format(card_id=cid),MAX_IMAGE,verify=self.image_verify_tls)
+        except HTTPError as exc:
+            # A missing tile is a property of the card, not a network failure:
+            # do not retry it and do not report it as an error.
+            if exc.code==404:raise NoArtAvailable(cid) from exc
+            raise
         validate_png(data)
         atomic_image(p,data)
 
@@ -389,9 +434,10 @@ class Cards:
             self.image_attempts.clear();self.pending.clear();self.queue=queue.Queue(maxsize=128)
             self.batch_remaining.clear();self.batch_stream.clear();self.batch_failed.clear();self.batch_retried=0
             self.image_errors.clear();self.import_result=None
+            self.image_missing.clear()
             self.auto_download=True
-            self.image_batch=dict(status='idle',total=0,success=0,failed=0,skipped=0,retried=0)
-            self.image_totals=dict(success=0,failed=0,skipped=0)
+            self.image_batch=dict(status='idle',total=0,success=0,failed=0,missing=0,skipped=0,retried=0)
+            self.image_totals=dict(success=0,failed=0,skipped=0,missing=0)
 
     async def worker(self, stop=None, run_io=asyncio.to_thread):
         # Cooperative shutdown waits for in-flight thread I/O before cache deletion.
@@ -420,19 +466,25 @@ class Cards:
             try:
                 if self.tiles.path(cid):outcome='skipped'
                 else:await run_io(self.download_image,cid)
+            except NoArtAvailable:
+                # No tile exists for this Card ID: not an error, never retried.
+                outcome='missing';self.image_missing.add(cid)
             except (OSError,ValueError) as exc:
                 outcome='failed';self.image_error=str(exc)[:300]
                 self.image_errors.append(cid+': '+self.image_error)
             finally:
-                self.image_totals[outcome]+=1
-                finished=False
-                if cid in self.batch_remaining:
-                    self.batch_remaining.discard(cid);self.image_batch[outcome]+=1
-                    if outcome=='failed':self.batch_failed.append(cid)
-                    finished=not self.batch_remaining
+                self.image_totals[outcome]+=1   # attempts, not final results
+                in_batch=cid in self.batch_remaining
+                if in_batch:self.batch_remaining.discard(cid)
                 # Release the id before the batch may re-queue it for a retry.
                 self.pending.discard(cid);self.queue.task_done()
-                if finished:self._finish_batch()
+                if in_batch:
+                    # A failure is only counted once it is final, so a retry that
+                    # succeeds contributes to `success` alone.
+                    if outcome=='failed':self.batch_failed.append(cid)
+                    else:self.image_batch[outcome]+=1
+                    if self.batch_remaining:self._fill_queue()
+                    else:self._finish_batch()
                 else:self._fill_queue()
 
     def diagnostic(self):
@@ -443,6 +495,7 @@ class Cards:
                     state=i18n.t('cards.state_ready') if self.by_id else i18n.t('cards.state_missing'),
                     download_state=self.download_state,download_phase=self.download_phase,
                     image_error=self.image_error,images_pending=len(self.pending),image_cache=self.tiles.counts(),
-                    image_batch=dict(self.image_batch),image_totals=dict(self.image_totals),image_import=self.import_result,
+                    image_batch=self.batch_view(),image_totals=dict(self.image_totals),image_import=self.import_result,
                     image_errors=list(self.image_errors),image_usage=self.image_usage(),
+                    images_missing=len(self.image_missing),
                     databases=self.language_files(),managed_languages=list(i18n.MANAGED_CARD_LANGUAGES))

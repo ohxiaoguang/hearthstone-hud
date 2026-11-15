@@ -79,7 +79,10 @@ enables logging the next time Hearthstone starts.
 - Card art is language independent. Tiles live in `cache/images/`, are shared by every
   language and are never evicted by a size cap. *Download all card art* fetches every unique
   Card ID in the loaded database, skips files already on disk (so an interrupted run resumes
-  where it stopped), ignores duplicates and retries failures once.
+  where it stopped), ignores duplicates and retries failures once. A card the art server has
+  no tile for (HTTP 404) is counted separately as *without art* instead of as a failure and is
+  not requested again in that session. Progress reports finished cards only, so a card that
+  fails once and then succeeds is counted as a success and the bar never exceeds 100%.
 - Each database and the art cache have their own delete button with a confirmation prompt.
   Deleting one database keeps the other one and all art; deleting art keeps both databases.
 - Until a newly selected database finishes downloading, the HUD keeps showing the previous

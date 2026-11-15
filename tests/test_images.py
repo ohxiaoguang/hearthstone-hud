@@ -32,7 +32,8 @@ class ImageTests(unittest.TestCase):
         # The cache keeps every downloaded tile now: no 256-file or 32 MiB cap.
         self.assertTrue((self.store.manual/'CARD_A.png').exists())
         self.assertEqual(len(list(cards.images.glob('*.png'))),before+1)
-        self.assertEqual(cards.image_usage()['cached'],before+1)
+        # Usage counts the root cache and the legacy manual directory together.
+        self.assertEqual(cards.image_usage()['cached'],before+1+len(list(self.store.manual.glob('*.png'))))
     def test_paths_bad_id_corruption_and_limits(self):
         result=self.store.import_zip(self.archive([('../outside.png',tile_png()),('123.png',tile_png()),('CARD_A.png',b'broken'),('ok/CARD_B.png',tile_png())]))
         self.assertEqual(result['imported'],0);self.assertEqual(result['format_errors'],1);self.assertEqual(result['invalid_ids'],1);self.assertEqual(result['other_failures'],2)
@@ -97,9 +98,10 @@ class DownloadTests(unittest.IsolatedAsyncioTestCase):
                 for _ in range(100):
                     if cards.image_batch['status']=='complete':break
                     await asyncio.sleep(.01)
-                # One failure is retried once by the batch itself, then reported.
+                # One failure is retried once by the batch itself, then reported:
+                # the retry is an attempt, so the card is counted once, as failed.
                 self.assertEqual(cards.image_batch['total'],2);self.assertEqual(cards.image_batch['success'],1)
-                self.assertEqual(cards.image_batch['failed'],2);self.assertEqual(cards.image_batch['retried'],1)
+                self.assertEqual(cards.image_batch['failed'],1);self.assertEqual(cards.image_batch['retried'],1)
                 cards.request_images(['FAIL']);self.assertNotIn('FAIL',cards.pending)
                 cards.begin_image_download(['CARD_A','FAIL']);self.assertEqual(cards.image_batch['skipped'],1)
                 for _ in range(100):

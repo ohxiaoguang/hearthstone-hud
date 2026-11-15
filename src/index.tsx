@@ -10,7 +10,7 @@ import { UI_LANGUAGES, tr, type UiLang } from './i18n';
 
 type Settings = {enabled:boolean;visible:boolean;own_deck:boolean;arena:boolean;arena_memory:boolean;font_size:number;panel_width:number;scale:number;opacity:number;x:number;y:number;right_x:number;right_y:number;own_played:boolean;opponent_played:boolean;show_summary:boolean;hide_exhausted:boolean;ui_language:UiLang};
 type Database = {code:string;active:boolean;exists:boolean;bytes:number;updated:number};
-type Batch = {status:string;total:number;success:number;failed:number;skipped:number;retried?:number};
+type Batch = {status:string;total:number;success:number;failed:number;missing?:number;skipped:number;retried?:number;done?:number};
 type Cards = {count:number;download_state:string;download_phase:string;error:string;language?:string;data_language?:string;
   databases?:Record<string,Database>;image_usage?:{cached:number;bytes:number;total:number;downloading:boolean};image_batch:Batch};
 type Status = {lifecycle:string;version:string;repository?:string;settings:Settings;running:boolean;error:string;
@@ -68,7 +68,7 @@ function Content(){
   catch(e){setCopyState(t('copyFailed',{error:String(e)}));setManualCopy(text||`Hearthstone HUD Diagnostic\n[Plugin]\nVersion: ${data?.version??'unknown'}\nStatus: ${data?.running?'running':'stopped'}\n[Recent Errors]\nBackend diagnostic retrieval failed; full diagnostic unavailable.`);}
  };
  const cards=data?.cards;const databases=cards?.databases??{};const usage=cards?.image_usage;const batch=cards?.image_batch;
- const done=(batch?.success??0)+(batch?.failed??0)+(batch?.skipped??0);
+ const done=Math.min(batch?.total??0,(batch?.success??0)+(batch?.failed??0)+(batch?.missing??0)+(batch?.skipped??0));
  const downloading=cards?.download_phase==='prepare'||cards?.download_phase==='running';
  const batchRunning=batch?.status==='running';
  const databaseLabel=(code:string)=>code==='enUS'?t('databaseEnglish'):t('databaseChinese');
@@ -122,9 +122,11 @@ function Content(){
   <span style={{flex:'1 1 160px'}}>{t('imagesCached',{cached:usage?.cached??0,total:usage?.total??0})}</span>
   <span style={{opacity:.8}}>{t('imagesOnDisk',{size:size(usage?.bytes??0)})}</span>
  </div>
- {batchRunning&&<PanelSectionRow><div role="status" style={box}>
+ {(batchRunning||(batch?.status==='complete'&&(batch?.total??0)>0))&&<PanelSectionRow><div role="status" style={box}>
   <progress aria-label={t('downloadAria')} value={batch?.total?done/batch.total:0} style={{width:'100%'}}/>
-  {t('imageBatchRunning',{done,total:batch?.total??0,failed:batch?.failed??0,retried:batch?.retried??0})}
+  {batchRunning
+    ?t('imageBatchRunning',{done,total:batch?.total??0,failed:batch?.failed??0,missing:batch?.missing??0,retried:batch?.retried??0})
+    :t('imageBatchDone',{total:batch?.total??0,success:batch?.success??0,failed:batch?.failed??0,missing:batch?.missing??0,skipped:batch?.skipped??0})}
  </div></PanelSectionRow>}
  <PanelSectionRow><div style={row}>
   <SmallButton disabled={busy||batchRunning||!cards?.count} onClick={()=>background(t('applying'),downloadAllImages)}>{t('downloadAllImages')}</SmallButton>
