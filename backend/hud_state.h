@@ -110,16 +110,8 @@ inline LeftRegions left_regions(bool opponent,bool own,float y,float height,floa
 inline nlohmann::json arena_rows(const nlohmann::json& a,bool candidates){
     using nlohmann::json;auto rows=json::array();
     const auto append=[&](const char* key){for(const auto& r:a[key]){auto row=r;row["arena_row"]=true;rows.push_back(row);}};
-    if(candidates)append("candidates");
-    else {
-        if(!a["picks"].empty())rows.push_back({{"section",true},{"name",a.value("exact",false)?"最终牌组（Decks.log）":"已选牌（日志/确认记录顺序）"}});
-        append("picks");
-        if(a.contains("history_picks")&&!a["history_picks"].empty()){
-            rows.push_back({{"section",true},{"name","内存历史 · 顺序未知"}});append("history_picks");
-        }
-        if(!a["redraft_picks"].empty()){
-            rows.push_back({{"section",true},{"name","重选操作（等待最终牌组，不合并）"}});append("redraft_picks");
-        }
-    }
+    // One flat list: the selected deck (mana order) or the three candidates.
+    // No section headers, order markers or recovery groups are rendered.
+    append(candidates?"candidates":"picks");
     return rows;
 }

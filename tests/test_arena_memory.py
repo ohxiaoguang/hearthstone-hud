@@ -278,51 +278,125 @@ class PollerTests(unittest.IsolatedAsyncioTestCase):
         watch.request_stop();await asyncio.to_thread(watch.join)
 
 class PreviewTests(unittest.TestCase):
+    """The selected deck is the memory DraftDeck; logs and candidates never add."""
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.cards=Cards(Path(self.tmp.name))
-        self.cards.install([dict(id='HERO_08',name='英雄甲',cardClass='MAGE',type='HERO'),dict(id='HERO_09',name='英雄乙',cardClass='PRIEST',type='HERO'),dict(id='HERO_01',name='英雄丙',cardClass='WARRIOR',type='HERO')]+[dict(id='CARD_'+c,name='测试'+c,type='MINION') for c in 'ABC'])
+        self.cards.install([
+            dict(id='HERO_08',name='英雄甲',cardClass='MAGE',type='HERO'),
+            dict(id='HERO_09',name='英雄乙',cardClass='PRIEST',type='HERO'),
+            dict(id='HERO_01',name='英雄丙',cardClass='WARRIOR',type='HERO'),
+            dict(id='CARD_A',name='测试A',cost=2,type='MINION'),
+            dict(id='CARD_B',name='测试B',cost=2,type='MINION'),
+            dict(id='CARD_C',name='测试C',cost=0,type='MINION'),
+            dict(id='CARD_D',name='测试D',cost=None,type='MINION')])
         from engine.arena_ratings import ArenaRatings
         self.arena=Arena(self.cards,ArenaRatings(data=dict(schema=1,classes={'MAGE':{'CARD_A':dict(score=80,tier='synthetic'),'CARD_B':dict(score=80,tier='synthetic')}})))
         self.stats=ClassRatings(data=dict(schema=1,modes={m:dict(classes={'MAGE':dict(totalGames=100,totalsWins=60),'PRIEST':dict(totalGames=200,totalsWins=100),'WARRIOR':dict(totalGames=100,totalsWins=60)}) for m in ('arena','arena-underground')}))
         self.preview=ArenaPreview(self.stats)
-    def diag(self):return dict(enabled=True,observed_at=time.monotonic(),code='hero_selection',pid=123,error='')
-    def state(self,slot='HERO',deck_id='',hero='',mode='DRAFTING'):
-        return DraftState(mode,slot,False,tuple(DraftChoice(c) for c in (('HERO_08','HERO_09','HERO_01') if slot=='HERO' else ('CARD_A','CARD_B','CARD_C'))),deck_id,hero)
-    def begin(self):
-        self.arena.feed(datetime(2026,11,15,12),'Got new draft deck with ID: 42')
-        self.arena.feed(datetime(2026,11,15,12,0,1),'Client chooses: 英雄 (HERO_08)')
+
+    def diag(self,code='card_selection',**extra):
+        data=dict(enabled=True,observed_at=time.monotonic(),code=code,pid=123,process_instance='inst-1',error='')
+        data.update(extra);return data
+
+    def state(self,slot='CARD',deck=(),deck_id='42',hero='HERO_08',mode='DRAFTING',**extra):
+        choices=('HERO_08','HERO_09','HERO_01') if slot in ('HERO','HERO_POWER') else ('CARD_A','CARD_B','CARD_C')
+        return DraftState(mode,slot,False,tuple(DraftChoice(c) for c in choices),deck_id,hero,tuple(deck),**extra)
+
+    def view(self,state,diag=None):return self.preview.view(self.cards,self.arena.ratings,state,diag or self.diag())
+
     def test_17_hero_preview_without_arena_id_and_tied_recommendations(self):
-        before=copy.deepcopy(self.arena.view());v=self.preview.view(self.arena,self.state(),self.diag())
+        v=self.view(self.state('HERO',deck_id='',hero=''))
         self.assertEqual(v['stage'],'hero_selection');self.assertFalse(v['show_count']);self.assertEqual(len(v['candidates']),3)
         self.assertEqual([r['best'] for r in v['candidates']],[True,False,True]);self.assertEqual(v['candidates'][0]['hero_stats']['rank'],1)
-        self.assertEqual(self.arena.view(),before);self.assertEqual(self.arena.raw_choices,{})
-    def test_18_card_preview_missing_score_and_no_count_mutation(self):
-        self.begin();before=copy.deepcopy(self.arena.view());v=self.preview.view(self.arena,self.state('CARD','42','HERO_08'),self.diag())
-        self.assertEqual(v['stage'],'card_selection');self.assertEqual([r['best'] for r in v['candidates']],[True,True,False]);self.assertEqual(v['candidates'][2]['rating_label'],'暂无评分')
-        self.assertEqual(v['count'],before['count']);self.assertEqual(self.arena.view(),before)
-    def test_19_log_hero_history_wins_conflict(self):
-        self.begin();v=self.preview.view(self.arena,self.state('CARD','42','HERO_09'),self.diag())
-        self.assertTrue(v['log_conflict']);self.assertEqual(self.arena.hero,'HERO_08');self.assertEqual(v['candidates'][0]['score'],80)
-    def test_20_different_arena_ids_never_mix_selected_lists(self):
-        self.begin();self.arena.feed(datetime(2026,11,15,12,0,2),'Client chooses: 牌 (CARD_A)')
-        v=self.preview.view(self.arena,self.state('CARD','99','HERO_09'),self.diag())
-        self.assertEqual(v['association'],'preview_only');self.assertFalse(v['show_count']);self.assertEqual(v['picks'],[])
-        self.assertEqual(self.arena.view()['count'],1)
-    def test_21_phase_switch_rejects_old_snapshot_until_new_sample(self):
-        self.begin();state=self.state('CARD','42','HERO_08');diag=self.diag();self.preview.view(self.arena,state,diag)
-        self.arena.feed(datetime(2026,11,15,12,0,2),'SetDraftMode - REDRAFTING')
-        v=self.preview.view(self.arena,state,diag);self.assertNotEqual(v['source'],'memory')
-        v=self.preview.view(self.arena,self.state('CARD','42','HERO_08','REDRAFTING'),self.diag());self.assertEqual(v['stage'],'redrafting');self.assertEqual(v['source'],'memory')
-    def test_22_off_or_failure_keeps_manual_log_features(self):
-        self.begin();self.arena.set_offer('42',self.arena.phase,1,['CARD_A','CARD_B','CARD_C'])
-        v=self.preview.view(self.arena,None,dict(enabled=False,code='disabled'));self.assertEqual(v['source'],'manual');self.assertEqual(len(v['candidates']),3)
-        v=self.preview.view(self.arena,None,dict(enabled=True,code='permission_denied'));self.assertEqual(len(v['candidates']),3)
-    def test_23_successful_no_screen_read_clears_stale_offer(self):
-        self.begin();self.arena.set_offer('42',self.arena.phase,1,['CARD_A','CARD_B','CARD_C'])
-        view=self.preview.view(self.arena,None,dict(enabled=True,code='reading'))
-        self.assertEqual(view['candidates'],[]);self.assertFalse(view['drafting']);self.assertEqual(view['stage'],'none')
-        self.assertEqual(len(self.arena.offer),3) # Presentation cannot mutate log/manual storage.
+        self.assertEqual(v['count'],0);self.assertEqual(self.arena.raw_choices,{})
+
+    def test_18_card_preview_scores_candidates_without_touching_the_deck(self):
+        v=self.view(self.state(deck=('CARD_C',)))
+        self.assertEqual(v['stage'],'card_selection')
+        self.assertEqual([r['best'] for r in v['candidates']],[True,True,False])
+        self.assertEqual(v['candidates'][2]['rating_label'],'暂无评分')
+        self.assertEqual(v['count'],1);self.assertEqual([r['id'] for r in v['picks']],['CARD_C'])
+
+    def test_30_selected_cards_and_count_come_from_the_memory_deck(self):
+        deck=('CARD_A','CARD_B','CARD_C','CARD_A','CARD_B','CARD_D')
+        v=self.view(self.state(deck=deck))
+        self.assertEqual(v['count'],6);self.assertTrue(v['count_exact']);self.assertFalse(v['deck_stale'])
+        self.assertEqual(sorted(r['id'] for r in v['picks']),sorted(deck))
+        self.assertNotIn('history_picks',v)
+
+    def test_31_duplicate_cards_keep_their_copies(self):
+        v=self.view(self.state(deck=('CARD_A','CARD_A')))
+        self.assertEqual(v['count'],2);self.assertEqual([r['id'] for r in v['picks']],['CARD_A','CARD_A'])
+
+    def test_32_repeated_client_chooses_lines_never_change_the_count(self):
+        from datetime import datetime
+        self.arena.feed(datetime(2026,11,15,7,54,20),'Got new draft deck with ID: 42')
+        for i in range(10):
+            self.arena.feed(datetime(2026,11,15,7,54,25+i),'Client chooses: 腐臭吞噬者 (CARD_A)')
+        self.assertEqual(self.arena.view()['count'],10)   # the log model still sees ten
+        v=self.view(self.state(deck=('CARD_B',)))
+        self.assertEqual(v['count'],1);self.assertEqual([r['id'] for r in v['picks']],['CARD_B'])
+
+    def test_33_candidates_never_join_the_selected_deck(self):
+        v=self.view(self.state(deck=('CARD_C',)))
+        self.assertEqual(len(v['candidates']),3)
+        self.assertEqual([r['id'] for r in v['picks']],['CARD_C'])
+        self.assertNotIn({r['id'] for r in v['candidates']},{r['id'] for r in v['picks']} - {'CARD_C'})
+
+    def test_34_growing_deck_replaces_instead_of_appending(self):
+        self.assertEqual(self.view(self.state(deck=('CARD_A',)*6))['count'],6)
+        v=self.view(self.state(deck=('CARD_A',)*7))
+        self.assertEqual(v['count'],7)
+
+    def test_35_selected_cards_are_sorted_by_mana(self):
+        v=self.view(self.state(deck=('CARD_A','CARD_C','CARD_D')))
+        self.assertEqual([r['cost'] for r in v['picks']],[0,2,None])
+
+    def test_36_same_cost_is_sorted_by_name(self):
+        v=self.view(self.state(deck=('CARD_B','CARD_A','CARD_C')))
+        self.assertEqual([r['name'] for r in v['picks']],['测试C','测试A','测试B'])
+
+    def test_37_unknown_cost_stays_last_and_loses_no_card(self):
+        v=self.view(self.state(deck=('CARD_D','CARD_D','CARD_C')))
+        self.assertEqual([r['id'] for r in v['picks']],['CARD_C','CARD_D','CARD_D'])
+        self.assertEqual(v['count'],3)
+
+    def test_38_failed_read_keeps_the_last_deck_but_marks_it_stale(self):
+        self.view(self.state(deck=('CARD_A','CARD_B')))
+        v=self.view(None,self.diag(code='reading'))
+        self.assertEqual(v['count'],2);self.assertEqual(v['stage'],'none')
+        self.assertFalse(v['count_exact']);self.assertTrue(v['deck_stale'])
+
+    def test_39_a_new_arena_clears_the_previous_deck(self):
+        self.view(self.state(deck=('CARD_A','CARD_B')))
+        v=self.view(self.state(deck=('CARD_C',),deck_id='99',hero='HERO_09'))
+        self.assertEqual(v['deck_id'],'99');self.assertEqual([r['id'] for r in v['picks']],['CARD_C'])
+
+    def test_40_process_restart_does_not_keep_the_old_deck(self):
+        self.view(self.state(deck=('CARD_A','CARD_B')))
+        v=self.view(self.state(deck=(),deck_id='42'),self.diag(process_instance='inst-2'))
+        self.assertEqual(v['count'],0);self.assertEqual(v['picks'],[])
+        v=self.view(None,self.diag(code='not_running'))
+        self.assertEqual(v['count'],0)
+
+    def test_41_hero_selection_clears_the_finished_arena(self):
+        self.view(self.state(deck=('CARD_A','CARD_B')))
+        v=self.view(self.state('HERO',deck=(),deck_id='',hero=''))
+        self.assertEqual(v['count'],0);self.assertFalse(v['show_count'])
+
+    def test_42_redraft_replaces_the_deck_instead_of_extending_it(self):
+        self.view(self.state(deck=('CARD_A',)*5))
+        v=self.view(self.state(deck=('CARD_B',)*3,mode='REDRAFTING'))
+        self.assertEqual(v['stage'],'redrafting');self.assertEqual(v['count'],3)
+        self.assertEqual({r['id'] for r in v['picks']},{'CARD_B'})
+
+    def test_43_unreadable_deck_keeps_the_previous_selection_marked_stale(self):
+        self.view(self.state(deck=('CARD_A','CARD_B')))
+        v=self.view(self.state(deck=(),deck_reason='slot_layout'))
+        self.assertEqual(v['count'],2);self.assertFalse(v['count_exact'])
+
     def test_24_class_aggregation_modes_missing_and_source_snapshot(self):
         raw=dict(stats=[dict(playerClass='mage',totalGames=100,totalsWins=60),dict(playerClass='mage',totalGames=50,totalsWins=20)])
         self.assertEqual(aggregate(raw)['MAGE'],dict(totalGames=150,totalsWins=80))
@@ -333,11 +407,7 @@ class PreviewTests(unittest.TestCase):
         partial=copy.deepcopy(data);partial['modes'].pop('arena-underground')
         single=ClassRatings(data=partial);self.assertIsNotNone(single.get(False,'MAGE'));self.assertIsNone(single.get(True,'MAGE'))
         with self.assertRaises(ValueError):aggregate(dict(stats=[dict(playerClass='mage',totalGames=1,totalsWins=2)]))
-    def test_25_memory_deck_never_replaces_logged_final_definition(self):
-        self.begin();self.arena.exact_dbf={1:30};self.cards.by_dbf[1]='CARD_A'
-        before=copy.deepcopy(self.arena.view());state=DraftState('DRAFTING','CARD',False,self.state('CARD').choices,'42','HERO_08',('CARD_B',)*30)
-        v=self.preview.view(self.arena,state,self.diag());self.assertEqual(v['count'],30);self.assertEqual({r['id'] for r in v['picks']},{'CARD_A'})
-        self.assertEqual(self.arena.view(),before)
+
     def test_26_process_discovery_proton_and_hud_exclusion(self):
         from engine.proton import discover_process
         root=Path(self.tmp.name)/'proc';root.mkdir();prefix=Path(self.tmp.name)/'prefix';(prefix/'drive_c').mkdir(parents=True)

@@ -131,54 +131,11 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         await self.plugin.configure({'enabled':True});await asyncio.sleep(.4)
         self.assertGreater(self.plugin.parser.accepted,accepted)
 
-    async def test_mid_draft_memory_history_log_progress_and_final_decks_integration(self):
+    async def test_hud_selected_cards_follow_the_memory_deck_only(self):
+        """Memory is the only source; ten identical log lines change nothing."""
         from engine.memory_watch import MemoryWatch
         from engine.arena_memory import DraftState,DraftChoice
-        from engine.deckstring import DeckDefinition,encode
-        self.plugin.cards.install([dict(id='CARD_'+c,dbfId=i+1,name=c,type='MINION') for i,c in enumerate('ABC')])
-        selected=['CARD_A','CARD_A','CARD_B']
-        class Reader:
-            def poll(self):return DraftState('DRAFTING','CARD',False,tuple(DraftChoice('CARD_'+c) for c in 'ABC'),'42','HERO_08',tuple(selected)),dict(code='card_selection',status='mock',pid=100,process_instance='same',error='')
-            def close(self):pass
-        self.plugin.memory_watch=MemoryWatch(lambda stop:Reader(),normal=.01)
-        # A pick is ordered against the memory snapshot by its own log time, so
-        # the fixture needs real session times: the first line predates the
-        # snapshot, the second one is written "now", after it.
-        from datetime import datetime,timedelta
-        now=datetime.now();midnight=now.replace(hour=0,minute=0,second=0,microsecond=0)
-        earlier=max(midnight,now-timedelta(minutes=5)).strftime('%H:%M:%S')
-        current=(now+timedelta(seconds=1)).strftime('%H:%M:%S')
-        root=Path(self.tmp.name)/'game';session=root/'Logs'/f'Hearthstone_{now.strftime("%Y_%m_%d_%H_%M_%S")}';session.mkdir(parents=True)
-        (session/'Power.log').write_text('')
-        arena=session/'Arena.log';arena.write_text('D '+earlier+'.0000000 Client chooses: card (CARD_A)\n')
-        await self.plugin.configure({'arena':True,'arena_memory':True,'game_dir':str(root),'visible':False})
-        for _ in range(100):
-            view=self.plugin._arena_view()
-            if view['count']==3 and len(view.get('history_picks',[]))==2:break
-            await asyncio.sleep(.02)
-        self.assertEqual(view['count'],3);self.assertEqual(len(view['picks']),1)
-        with arena.open('a') as f:f.write('D '+current+'.0000000 Client chooses: card (CARD_A)\n')
-        for _ in range(100):
-            if self.plugin._arena_view()['count']==4:break
-            await asyncio.sleep(.02)
-        self.assertEqual(self.plugin._arena_view()['count'],4)
-        selected.append('CARD_A')
-        await asyncio.sleep(.1)
-        self.assertEqual(self.plugin._arena_view()['count'],4)
-        final=encode(DeckDefinition([637],{3:30}))
-        (session/'Decks.log').write_text('D 12:00:03.0000000 Finished Editing Deck:\nD 12:00:03.0000000 # Deck ID: 42\nD 12:00:03.0000000 '+final+'\n')
-        await self.plugin.configure({'game_dir':str(root)})
-        for _ in range(100):
-            view=self.plugin._arena_view()
-            if view['exact']:break
-            await asyncio.sleep(.02)
-        self.assertTrue(view['exact']);self.assertEqual(view['count'],30);self.assertEqual(view['history_picks'],[])
-
-    async def test_recovery_runs_when_arena_log_is_not_caught_up(self):
-        """Mid-arena join: memory must restore history even while logs lag."""
-        from engine.memory_watch import MemoryWatch
-        from engine.arena_memory import DraftState,DraftChoice
-        self.plugin.cards.install([dict(id='CARD_'+c,dbfId=i+1,name=c,type='MINION') for i,c in enumerate('ABC')])
+        self.plugin.cards.install([dict(id='CARD_'+c,dbfId=i+1,name=c,cost=i,type='MINION') for i,c in enumerate('ABC')])
         deck=['CARD_A','CARD_A','CARD_B']
         class Reader:
             def poll(self):
@@ -188,49 +145,83 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         self.plugin.memory_watch=MemoryWatch(lambda stop:Reader(),normal=.01)
         root=Path(self.tmp.name)/'game';session=root/'Logs/session';session.mkdir(parents=True)
         (session/'Power.log').write_text('')
-        (session/'Arena.log').write_text('D 12:00:01.0000000 Got new draft deck with ID: 3386335194\n')
+        arena=session/'Arena.log';arena.write_text('D 12:00:01.0000000 Got new draft deck with ID: 3386335194\n')
         await self.plugin.configure({'arena':True,'arena_memory':True,'game_dir':str(root),'visible':False})
-        await asyncio.sleep(.3)
-        # The reported device state: candidates match, yet the log side is idle.
-        view=None
-        for _ in range(60):
-            self.plugin.arena_caught_up=False
+        for _ in range(100):
             view=self.plugin._arena_view()
-            if view['recovery_source']=='memory_and_logs':break
+            if view['count']==3:break
             await asyncio.sleep(.02)
-        self.assertEqual(view['recovery_source'],'memory_and_logs')
-        self.assertEqual(view['association'],'matched');self.assertEqual(view['count'],3)
-        self.assertEqual(len(view['history_picks']),3);self.assertEqual(view['picks'],[])
-        recovery=view['recovery']
-        self.assertTrue(recovery['snapshot']);self.assertTrue(recovery['executed'])
-        self.assertEqual((recovery['deck_parsed'],recovery['slots'],recovery['recovered']),(3,2,3))
-        self.assertEqual(recovery['reason'],'recovered');self.assertFalse(recovery['logs_caught_up'])
-        text=await self.plugin.diagnostic_text()
-        self.assertIn('[Arena Recovery]',text);self.assertIn('Memory Deck Size: 3',text)
-        self.assertIn('Slot Count: 2',text);self.assertIn('Snapshot: established',text)
-        self.assertIn('Recovery Executed: yes',text);self.assertIn('Recovery Reason: recovered',text)
-        self.assertEqual(self.plugin.arena.raw_choices,{'draft:3386335194':[]})
+        self.assertEqual(view['count'],3);self.assertEqual(len(view['picks']),3)
+        self.assertEqual([r['id'] for r in view['picks']],['CARD_A','CARD_A','CARD_B'])
+        self.assertNotIn('history_picks',view)
+        # The exact sequence reported from the device: repeated picks of one card.
+        with arena.open('a') as f:
+            for second in range(25,35):
+                f.write(f'D 12:00:{second}.0000000 Client chooses: 腐臭吞噬者 (CARD_A)\n')
+        for _ in range(60):
+            await asyncio.sleep(.02)
+            if self.plugin.arena.raw_choices.get('draft:3386335194') and len(self.plugin.arena.raw_choices['draft:3386335194'])==10:break
+        await asyncio.sleep(.2)
+        view=self.plugin._arena_view()
+        self.assertEqual(view['count'],3)
+        self.assertEqual(self.plugin.arena.view()['count'],10)   # log model sees them, HUD ignores them
+        deck.append('CARD_C')
+        await asyncio.sleep(.2)
+        self.assertEqual(self.plugin._arena_view()['count'],4)   # replaced, not appended
+        state=json.loads((self.plugin.runtime/'state.json').read_text())
+        self.assertEqual(state['arena_state']['count'],4);self.assertTrue(state['arena_state']['visible'])
 
-    async def test_recovery_reports_why_nothing_was_restored(self):
+    async def test_memory_deck_shows_without_any_arena_log(self):
+        """No Arena.log at all: the panel still shows the memory deck."""
         from engine.memory_watch import MemoryWatch
         from engine.arena_memory import DraftState,DraftChoice
-        self.plugin.cards.install([dict(id='CARD_A',dbfId=1,name='A',type='MINION')])
+        self.plugin.cards.install([dict(id='CARD_'+c,dbfId=i+1,name=c,cost=i,type='MINION') for i,c in enumerate('ABC')])
         class Reader:
             def poll(self):
-                return (DraftState('DRAFTING','CARD',False,tuple(DraftChoice('CARD_A') for _ in range(3)),'3386335194','HERO_08',(),deck_object=True,deck_slots=0,deck_reason='empty'),
-                        dict(code='card_selection',status='mock',pid=100,process_instance='same',error='',deck_object=True,deck_slots=0,deck_parsed=0,deck_reason='empty'))
+                return (DraftState('DRAFTING','CARD',False,tuple(DraftChoice('CARD_'+c) for c in 'ABC'),'3386335194','HERO_08',('CARD_A','CARD_B'),deck_object=True,deck_slots=2),
+                        dict(code='card_selection',status='mock',pid=100,process_instance='same',error='',deck_object=True,deck_slots=2,deck_parsed=2,deck_reason=''))
             def close(self):pass
         self.plugin.memory_watch=MemoryWatch(lambda stop:Reader(),normal=.01)
         root=Path(self.tmp.name)/'game';session=root/'Logs/session';session.mkdir(parents=True)
         (session/'Power.log').write_text('')
-        (session/'Arena.log').write_text('D 12:00:01.0000000 Got new draft deck with ID: 3386335194\n')
         await self.plugin.configure({'arena':True,'arena_memory':True,'game_dir':str(root),'visible':False})
-        await asyncio.sleep(.3)
-        view=self.plugin._arena_view()
-        self.assertEqual(view['recovery']['reason'],'deck_empty')
-        self.assertFalse(view['recovery']['snapshot'])
+        for _ in range(100):
+            view=self.plugin._arena_view()
+            if view['count']==2:break
+            await asyncio.sleep(.02)
+        self.assertFalse(self.plugin.arena_caught_up);self.assertEqual(view['count'],2)
+        self.assertEqual(view['deck_id'],'3386335194');self.assertTrue(view['count_exact'])
         text=await self.plugin.diagnostic_text()
-        self.assertIn('Recovery Reason: deck_empty',text);self.assertIn('内存牌组尚未包含已选卡牌',text)
+        self.assertIn('[Arena]',text);self.assertIn('Deck Source: memory DraftDeck only',text)
+        self.assertIn('[Arena Memory]',text);self.assertIn('deck_parsed: 2',text)
+
+    async def test_failed_read_keeps_the_last_deck_in_the_hud(self):
+        """A read failure must not empty the panel or fall back to the log."""
+        from engine.memory_watch import MemoryWatch
+        from engine.arena_memory import DraftState,DraftChoice
+        self.plugin.cards.install([dict(id='CARD_'+c,dbfId=i+1,name=c,cost=i,type='MINION') for i,c in enumerate('ABC')])
+        state={'good':True}
+        class Reader:
+            def poll(self):
+                deck=('CARD_A','CARD_B') if state['good'] else ()
+                reason='' if state['good'] else 'slot_layout'
+                return (DraftState('DRAFTING','CARD',False,tuple(DraftChoice('CARD_'+c) for c in 'ABC'),'3386335194','HERO_08',deck,deck_object=True,deck_slots=2,deck_reason=reason),
+                        dict(code='card_selection',status='mock',pid=100,process_instance='same',error='',deck_object=True,deck_slots=2,deck_parsed=len(deck),deck_reason=reason))
+            def close(self):pass
+        self.plugin.memory_watch=MemoryWatch(lambda stop:Reader(),normal=.01)
+        root=Path(self.tmp.name)/'game';session=root/'Logs/session';session.mkdir(parents=True)
+        (session/'Power.log').write_text('')
+        (session/'Arena.log').write_text('D 12:00:01.0000000 Got new draft deck with ID: 3386335194\nD 12:00:02.0000000 Client chooses: 卡 (CARD_C)\n')
+        await self.plugin.configure({'arena':True,'arena_memory':True,'game_dir':str(root),'visible':False})
+        for _ in range(100):
+            if self.plugin._arena_view()['count']==2:break
+            await asyncio.sleep(.02)
+        state['good']=False
+        await asyncio.sleep(.2)
+        view=self.plugin._arena_view()
+        self.assertEqual(view['count'],2)                  # stale snapshot kept
+        self.assertFalse(view['count_exact'])
+        self.assertEqual([r['id'] for r in view['picks']],['CARD_A','CARD_B'])  # log pick CARD_C not used
 
     async def test_display_defaults_font_size_and_immediate_publication(self):
         self.assertTrue(self.plugin.settings['own_deck'])
@@ -374,7 +365,8 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):await self.plugin.configure({'panel_width':100})
         with self.assertRaises(ValueError):await self.plugin.configure({'show_summary':'no'})
 
-    async def test_arena_qam_candidates_manual_reconcile_and_inode_rewind(self):
+    async def test_arena_log_picks_and_manual_records_never_reach_the_hud(self):
+        """Arena.log keeps parsing, but the selected list stays memory-only."""
         import json
         from datetime import datetime
         from unittest.mock import patch
@@ -393,25 +385,30 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         ctx=self.plugin.arena.context()
         with patch.object(self.plugin,'_ensure_media_worker'):
             preview=await self.plugin.arena_set_offer(ctx['deck_id'],ctx['phase'],ctx['round'],['TEST_A','TEST_B','TEST_A'])
-        self.assertEqual(preview['count'],0);self.assertEqual(len(preview['candidates']),3)
+        self.assertEqual(preview['count'],0);self.assertEqual(preview['picks'],[]);self.assertEqual(preview['candidates'],[])
         await self.plugin.arena_manual_pick('42',ctx['phase'],1,'TEST_A')
-        self.assertTrue((self.plugin.settings_dir/'arena-manual.json').exists())
-        with arena.open('a') as f:f.write('D 12:00:03.0000000 Client chooses: 卡 (TEST_A)\n')
+        with arena.open('a') as f:
+            for second in range(3,13):
+                f.write(f'D 12:00:{second:02d}.0000000 Client chooses: 卡 (TEST_A)\n')
         for _ in range(80):
-            if self.plugin.arena.records()[0]['reconciled']:break
+            if self.plugin.arena.records() and self.plugin.arena.records()[0]['reconciled']:break
             await asyncio.sleep(.05)
-        self.assertEqual(len(self.plugin.arena.records()),1);self.assertTrue(self.plugin.arena.records()[0]['reconciled'])
+        self.assertTrue(self.plugin.arena.records()[0]['reconciled'])
+        self.assertGreaterEqual(self.plugin.arena.view()['count'],1)   # the log model still sees picks
+        self.assertEqual(self.plugin._arena_view()['count'],0)         # the HUD does not
         generation=self.plugin.arena_tail.generation
         replacement=session/'replacement';replacement.write_text(begin+'D 12:00:04.0000000 Client chooses: 卡 (TEST_B)\n');replacement.replace(arena)
         for _ in range(80):
             if self.plugin.arena_tail.generation>generation:break
             await asyncio.sleep(.05)
         self.assertGreater(self.plugin.arena_tail.generation,generation)
-        self.assertEqual(self.plugin.arena.view()['count'],1);self.assertEqual(self.plugin.arena.records()[0]['card_id'],'TEST_B')
+        self.assertEqual(self.plugin.arena.records()[0]['card_id'],'TEST_B')
         state=json.loads((self.plugin.runtime/'state.json').read_text())
-        self.assertTrue(state['arena_state']['visible']);self.assertEqual(state['tracking']['status'],'waiting')
+        self.assertFalse(state['arena_state']['visible']);self.assertEqual(state['arena_state']['count'],0)
+        self.assertEqual(state['tracking']['status'],'waiting')
 
-    async def test_arena_reads_when_power_idle_and_final_deck_precedes_game(self):
+    async def test_decks_log_final_definition_still_feeds_match_tracking(self):
+        """Decks.log remains the source for arena match tracking, not for the panel."""
         import json,os,time
         from engine.deckstring import DeckDefinition,encode
         self.plugin.cards.install([dict(id='TEST_A',dbfId=1,name='测试甲',type='MINION')])
@@ -425,7 +422,8 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
             if self.plugin.arena.exact_dbf:break
             await asyncio.sleep(.05)
         self.assertFalse(self.plugin.active);self.assertEqual(self.plugin.arena.exact_dbf,{1:30})
-        self.assertTrue(json.loads((self.plugin.runtime/'state.json').read_text())['arena_state']['visible'])
+        # No memory snapshot: the arena panel stays empty even with a final definition.
+        self.assertFalse(json.loads((self.plugin.runtime/'state.json').read_text())['arena_state']['visible'])
         power.write_text('D 12:00:04.0000000 GameState.DebugPrintPower() - CREATE_GAME\nD 12:00:04.1000000 GameState.DebugPrintGame() - GameType=GT_ARENA\n')
         await self.plugin.configure({'game_dir':str(root)})
         for _ in range(80):

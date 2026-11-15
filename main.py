@@ -19,7 +19,6 @@ from engine.arena import Arena
 from engine.memory_watch import MemoryWatch
 from engine.arena_class_ratings import ClassRatings
 from engine.arena_memory_view import ArenaPreview
-from engine.arena_recovery import ArenaRecovery
 from engine.discovery import discover, gamescope_status, LogClock
 from engine.proton import discover_process
 from engine.diagnostics import format_diagnostics
@@ -85,9 +84,7 @@ class Plugin:
         self.arena = Arena(self.cards,manual=manual if isinstance(manual,list) else [])
         self.parser.arena = self.arena
         self.memory_watch = MemoryWatch()
-        self.memory_identity = None
         self.arena_preview = ArenaPreview(ClassRatings())
-        self.arena_recovery = ArenaRecovery()
         self.arena_tail = Tail();self.arena_clock = None;self.side_session = None
         self.arena_caught_up = False;self.arena_config = {};self.arena_receipt = {}
         try:
@@ -253,46 +250,12 @@ class Plugin:
         return await self.status()
 
     def _arena_view(self):
+        """Arena panel state. Selected cards come from the memory DraftDeck only."""
         state,diagnostic=self.memory_watch.snapshot()
-        if diagnostic.get('enabled'):
-            identity=(diagnostic.get('pid'),diagnostic.get('process_instance'))
-            if diagnostic.get('code')=='not_running':
-                if self.memory_identity is not None:self.arena.clear_offer()
-                self.arena_recovery.reset()
-                self.memory_identity=None
-            elif identity[0] is not None:
-                if self.memory_identity is not None and identity!=self.memory_identity:
-                    self.arena.clear_offer();self.arena_recovery.reset()
-                self.memory_identity=identity
         diagnostic['candidate_count']=len(state.choices) if state else 0
         diagnostic['stage']=state.slot if state else ''
         diagnostic['found']=diagnostic.get('pid') is not None and diagnostic.get('code')!='not_running'
-        self._bind_memory_identity(state)
-        # Recovery only needs the read-only snapshot and the arena identity;
-        # log catch-up is not a precondition (it used to block this silently).
-        if state and state.slot=='HERO':self.arena_recovery.reset()
-        elif self.settings['enabled']:self.arena_recovery.observe(self.arena,state,diagnostic)
-        view=self.arena_preview.view(self.arena,state,diagnostic)
-        if state and (state.slot=='HERO' or (state.deck_id and self.arena.deck_id and state.deck_id!=self.arena.deck_id)):
-            self.arena_recovery.reset()
-            self.arena_recovery.reason='slot' if state.slot=='HERO' else 'id_mismatch'
-            view.update(history_picks=[],recovery_source='logs',recovery_note='内存竞技场与日志不一致，未做历史恢复')
-        else:view=self.arena_recovery.merge(self.arena,view)
-        view['recovery']=dict(self.arena_recovery.status(),logs_caught_up=bool(self.arena_caught_up),arena_log=bool(self.discovery.get('arena')))
-        if view['recovery_source']=='memory_and_logs' and state and state.slot=='CARD':
-            view['show_count']=True
-        elif self.arena.identity_source=='memory' and not view['exact']:
-            view['show_count']=False
-        return view
-
-    def _bind_memory_identity(self,state=None):
-        if not self.settings['enabled']:return
-        if state is None:state,_=self.memory_watch.snapshot()
-        # Same plausibility bound as ArenaRecovery: a 30-card deck is normal, and
-        # a slightly larger read must still bind identity instead of silently
-        # falling back to preview-only.
-        if state and state.slot=='CARD' and state.deck_id and 0<len(state.deck)<=40:
-            self.arena.attach_memory_deck(state.deck_id,state.hero,state.mode)
+        return self.arena_preview.view(self.cards,self.arena.ratings,state,diagnostic)
 
     def _arena_ui(self):
         view=self._arena_view()
@@ -378,7 +341,7 @@ class Plugin:
                 if ent.card_id and (ent.controller==game.friendly_id or (ent.id,ent.card_id) in self.parser.public):
                     ids.add(ent.card_id)
         arena=self._arena_view()
-        ids.update(row['id'] for key in ('candidates','picks','history_picks','redraft_picks') for row in arena[key])
+        ids.update(row['id'] for key in ('candidates','picks') for row in arena[key])
         self.cards.begin_image_download(ids)
         self._ensure_media_worker()
         return await self.status()
@@ -485,10 +448,10 @@ class Plugin:
         if self.settings['enabled'] and self.settings['card_images'] and not self.cache_resetting:
             self.cards.request_images(r['id'] for key in ('own','own_added','own_played','opponent_seen','opponent_played') for r in tracking.get(key,[]))
         arena=self._arena_view()
-        memory_offer=arena['source']=='memory' and len(arena['candidates'])==3
-        arena['visible']=bool(self.settings['enabled'] and self.settings['arena'] and (memory_offer or arena.get('history_picks') or (self.arena_caught_up and arena['drafting'])) and tracking['status']!='playing')
+        # The panel follows the memory snapshot alone; Arena.log no longer gates it.
+        arena['visible']=bool(self.settings['enabled'] and self.settings['arena'] and (arena['count'] or arena['candidates']) and tracking['status']!='playing')
         if self.settings['card_images'] and arena['visible'] and not self.cache_resetting:
-            self.cards.request_images(r['id'] for key in ('picks','history_picks','redraft_picks','candidates') for r in arena[key])
+            self.cards.request_images(r['id'] for key in ('picks','candidates') for r in arena[key])
         atomic_json(self.runtime / 'state.json', dict(self.settings,updated=time.time(),schema=2,tracking=tracking,arena_state=arena,visible=bool(self.settings['enabled'] and self.settings['visible'])))
 
     async def _loop(self):
@@ -538,9 +501,7 @@ class Plugin:
                     session=str(self.log_path.parent)
                     if session!=self.side_session:
                         self.arena.set_session(session);self.arena_tail=Tail();self.deck_tail=Tail()
-                        self.arena_recovery.reset()
                         self.decks=DeckLog();self.parser.decks=self.decks;self.side_session=session
-                    self._bind_memory_identity()
                     side_ready=True
                     # Process Arena before Decks (ID proof), and both before Power.
                     for kind in ('arena','decks'):
@@ -552,7 +513,7 @@ class Plugin:
                             clock=LogClock(item['path'],item['mtime'])
                             if kind=='arena':
                                 self.arena_clock=clock;self.arena.reset_stream()
-                                self.arena_caught_up=False;self.arena_recovery.reset();self._bind_memory_identity()
+                                self.arena_caught_up=False
                                 # Re-apply final Decks definitions after an Arena rewind.
                                 self.deck_tail=Tail();self.decks=DeckLog();self.parser.decks=self.decks
                             else:

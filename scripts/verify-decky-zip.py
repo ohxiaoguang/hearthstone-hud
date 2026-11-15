@@ -13,7 +13,7 @@ def verify(archive):
         names = set(z.namelist())
         required = ['main.py', 'plugin.json', 'dist/index.js',
                     'py_modules/engine/__init__.py', 'py_modules/engine/io.py',
-                    'py_modules/engine/power.py', 'assets/certs/cacert.pem', 'licenses/certifi-MPL-2.0.txt','licenses/hs-decktracker-linux-MIT.txt', 'py_modules/engine/cards.py', 'py_modules/engine/tls.py', 'py_modules/engine/images.py', 'py_modules/engine/diagnostics.py', 'py_modules/engine/tracker.py', 'py_modules/engine/discovery.py', 'py_modules/engine/proton.py', 'py_modules/engine/logconfig.py', 'py_modules/engine/deckstring.py','py_modules/engine/arena.py','py_modules/engine/arena_recovery.py','py_modules/engine/arena_ratings.py','py_modules/engine/arena_ratings.json','py_modules/engine/mono_memory.py','py_modules/engine/arena_memory.py','py_modules/engine/memory_watch.py','py_modules/engine/arena_memory_view.py','py_modules/engine/arena_class_ratings.py','py_modules/engine/arena_class_ratings.json', 'scripts/diagnose-logs.py', 'bin/hearthstone-hud-renderer']
+                    'py_modules/engine/power.py', 'assets/certs/cacert.pem', 'licenses/certifi-MPL-2.0.txt','licenses/hs-decktracker-linux-MIT.txt', 'py_modules/engine/cards.py', 'py_modules/engine/tls.py', 'py_modules/engine/images.py', 'py_modules/engine/diagnostics.py', 'py_modules/engine/tracker.py', 'py_modules/engine/discovery.py', 'py_modules/engine/proton.py', 'py_modules/engine/logconfig.py', 'py_modules/engine/deckstring.py','py_modules/engine/arena.py','py_modules/engine/arena_ratings.py','py_modules/engine/arena_ratings.json','py_modules/engine/mono_memory.py','py_modules/engine/arena_memory.py','py_modules/engine/memory_watch.py','py_modules/engine/arena_memory_view.py','py_modules/engine/arena_class_ratings.py','py_modules/engine/arena_class_ratings.json', 'scripts/diagnose-logs.py', 'bin/hearthstone-hud-renderer']
         for name in required:
             assert 'hearthstone-hud/' + name in names, 'Missing: ' + name
         assert not any(n.startswith('hearthstone-hud/engine/') for n in names), 'Old root engine layout'
@@ -30,7 +30,7 @@ import importlib.util, pathlib, sys, types
 plugin = pathlib.Path(sys.argv[1])
 sys.path.append(str(plugin / 'py_modules'))
 sys.modules['decky'] = types.ModuleType('decky')
-import engine.io, engine.power, engine.arena, engine.arena_ratings, engine.arena_recovery
+import engine.io, engine.power, engine.arena, engine.arena_ratings
 import engine.mono_memory, engine.arena_memory, engine.memory_watch, engine.arena_memory_view, engine.arena_class_ratings
 assert not engine.memory_watch.MemoryWatch().snapshot()[1]["enabled"]
 assert len(engine.arena_class_ratings.ClassRatings().metadata()["modes"]) == 2

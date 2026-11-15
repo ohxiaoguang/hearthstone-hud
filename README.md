@@ -1,14 +1,20 @@
 # Hearthstone HUD
 
-## v0.5.1：竞技场恢复修复（中途接入 / 时间边界 / 读取隔离）
+## v0.6.0（未发布）：竞技场已选牌改为纯内存
 
-- 修复“候选识别成功、Association=matched，但 Recovered History 为 0”的路径：历史恢复此前被 Arena.log 的追平状态门控。日志未追平、文件陈旧或本轮没有新日志时，只读内存快照仍会按两次一致读取建立基线，日志随后到达只补差额（迟到的旧记录按时间戳并入历史，不重复计数）。
-- 内存牌组读取不再静默失败：`m_draftDeck` 是否存在、`m_slots` 槽位数量、`m_count` 解析（逐版本复制列表或单值）、成功解析的卡牌份数都会写入诊断；槽位异常只放弃牌组，不影响候选识别，也不猜测卡牌。
-- 内存读取会同时给出窗口下界（首个牌组读取开始）与上界（复读校验结束）。日志事件时间早于/等于下界 → 并入历史不重复计数；晚于上界 → 按新选牌计入（重复 Card ID 逐次计）；落在窗口内或没有时间戳 → 不猜，单独计数并标记 `Uncertain Picks`，此时 `count_exact` 为待确认。锚点不再使用“第二次读取之后”的时间，避免窗口内新选牌被当成历史。
-- 每个提前返回都有原因码：`no_state / mode / slot / no_deck / no_deck_id / deck_empty / deck_overflow / deck_invalid / id_mismatch / waiting_second_read / exact_deck / log_rewind / recovered`，与中文说明一起显示在“复制诊断 → Arena Recovery”。
-- 手工补录被日志确认（同轮同卡、来源变化）不再清空已恢复历史；重选、ID 冲突、日志重写仍按原规则重新核对。
-- 诊断新增 `Merge Executed` / `Recovery Executed` / `Snapshot Window` / `Uncertain Picks` / `Deck Reason`，`Recovery Executed` 只在真正建立快照并产出历史牌时为 yes。
-- 详见 [修复说明与 SteamOS 验收步骤](docs/V0.5.1_ARENA_RECOVERY_FIX.md)。
+- **唯一数据源**：已选牌只来自游戏进程里的 `DraftManager.m_draftDeck`（地下模式为 `m_undergroundDraftDeck`），逐份读取 `m_slots` 的 `m_cardId` 与 `m_count`。Arena.log 的 `Client chooses` 不再参与计数，也不再与内存牌组合并、对账或恢复历史。
+- **不再重复计数**：点击候选查看详情可能连续写入多条相同的 `Client chooses`，现在只影响日志文件，已选牌数量完全不受影响。手写补录、Decks.log 最终定义同样不改变已选牌数量。
+- **快照整体替换**：内存牌组变化时用新快照替换旧快照，不做增量追加；重复卡牌按实际份数显示（同一张卡 2 份就是 2 行）。数量即 `len(state.deck)`，候选永远不计入。
+- **费用排序**：已选牌按 `cost` 从低到高排列，同费按名称排序，费用未知的排在最后；排序只影响显示，不增删卡牌。
+- **HUD 简化**：右侧只有一个「已选牌 X/30」列表，取消“日志/确认顺序”“内存历史 · 顺序未知”“重选操作”等分区与来源提示；左侧候选、卡图、费用与评分保持不变。
+- **异常处理**：同一进程同一竞技场读取失败时保留上一份有效牌组（`count_exact=false`，面板标“份数待确认”），不回退到日志；游戏退出、进程实例变化、竞技场 ID 变化或回到英雄选择时清空旧牌组；`REDRAFTING` 以当前内存牌组替换。
+- **移除的代码**：`engine/arena_recovery.py`（日志合并/恢复）与其测试、QAM 里的手动候选/补录页面（`src/arena.tsx`，已不在构建入口内）。Arena.log 解析、Power.log 普通记牌、Decks.log 的最终牌组用途都保留不变。
+- 详见 [实现与实机验收](docs/V0.6.0_MEMORY_ONLY_ARENA.md)。
+
+## v0.5.1：竞技场恢复修复（历史）
+
+- 该版本用日志与内存合并恢复历史牌（`ArenaRecovery`），已在 v0.6.0 中移除；保留本节作为版本记录。
+- 详见 [v0.5.1 修复说明](docs/V0.5.1_ARENA_RECOVERY_FIX.md)。
 
 ## v0.5.0：插件总开关与竞技场中途恢复
 
