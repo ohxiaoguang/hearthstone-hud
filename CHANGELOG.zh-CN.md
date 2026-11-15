@@ -2,12 +2,28 @@
 
 各版本的用户可见变化。English: [CHANGELOG.md](CHANGELOG.md)
 
-## 未发布
+## v1.0.0
 
-- Release 页面只保留安装 ZIP：带版本号的 `hearthstone-hud-<版本>.zip` 与固定名称的
-  `hearthstone-hud.zip`，固定下载地址为
-  `https://github.com/ohxiaoguang/hearthstone-hud/releases/latest/download/hearthstone-hud.zip`。
-  Release 改为正式版（不再是 Pre-release）；构建检查报告只保留在 Actions 产物中。
+第一个正式稳定版本。目前已实现功能的完整汇总：
+
+- **对局记牌**：解析 Power.log 实时跟踪对局——己方剩余牌库（原始牌 / 后加入·变形分组）、
+  对手手牌与牌库数量、双方最近出牌、每张牌的来源（初始牌、变形、复制、效果生成）、回合
+  信息；证据不足时给出精确的原因说明。Decks.log 提供竞技场对局的完整初始牌组。
+- **竞技场辅助**：可选的只读进程内存读取——英雄与卡牌候选（含 HearthArena 卡牌评分与
+  Firestone 职业统计）、已选牌按费用升序（同费按名称、未知费用垫底）、重复卡按实际份数
+  显示。已选牌唯一来源是内存 DraftDeck，经两次一致性读取校验；候选仅供预览。读取失败时
+  保留上一份牌组并显示「份数待确认」。
+- **卡牌数据与语言**：中英双语界面（默认英文），卡牌数据库跟随界面语言（enUS / zhCN）；
+  每种语言独立缓存，离线复用，缺失才下载。下载途中切换语言不会造成数据错乱。
+- **卡图**：与语言无关的卡图缓存，按需为当前画面下载，或一次可断点续传的全量下载；统计
+  成功、失败、无卡图与已有缓存；HTTP 404 记为「无卡图」，本次会话不再请求。
+- **资源管理**：设置面板显示两个数据库的大小、状态与独立删除按钮，以及卡图用量与独立
+  清理；清理任一资源不影响其他资源。
+- **生命周期与诊断**：总开关停止全部后台工作；原生 HUD 渲染器安全启停；Power/Decks/Arena
+  日志的 log.config 配置管理；一键复制脱敏诊断报告。
+- **发布格式**：Release 只包含一个 `hearthstone-hud.zip`，固定下载地址
+  `https://github.com/ohxiaoguang/hearthstone-hud/releases/latest/download/hearthstone-hud.zip`；
+  Release 为正式稳定版，构建检查报告只保留在 Actions 产物中。
 
 ## v0.7.2
 

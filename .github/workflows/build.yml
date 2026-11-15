@@ -68,15 +68,15 @@ jobs:
           path: artifact
       - name: Prepare release assets
         run: |
-          # The fixed name keeps a stable download URL; the versioned name keeps
-          # every release self-describing. Both are the same bytes.
+          # One asset, one fixed name: the stable download address never changes,
+          # and the version lives inside the ZIP's package.json/plugin.json.
+          # The build reports stay in the Actions artifacts only.
           zips=(artifact/release/hearthstone-hud-*.zip)
           if [ ! -f "${zips[0]}" ] || [ ${#zips[@]} -ne 1 ]; then
             echo 'expected exactly one install ZIP in the build artifact' >&2
             exit 1
           fi
-          cp "${zips[0]}" hearthstone-hud.zip
-          cmp "${zips[0]}" hearthstone-hud.zip
+          mv "${zips[0]}" hearthstone-hud.zip
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -88,12 +88,11 @@ jobs:
             echo "missing release notes: $notes" >&2
             exit 1
           fi
-          # Only the two install ZIPs are published; the build reports stay in
-          # the Actions artifacts. The create call passes no pre-release flag,
-          # so this becomes the latest stable release and
+          # The create call passes no pre-release flag, so this becomes the
+          # latest stable release and
           # https://github.com/ohxiaoguang/hearthstone-hud/releases/latest/download/hearthstone-hud.zip
           # always serves the newest version.
           gh release create "$GITHUB_REF_NAME" \
-            artifact/release/hearthstone-hud-*.zip hearthstone-hud.zip \
+            hearthstone-hud.zip \
             --title "Hearthstone HUD $GITHUB_REF_NAME" \
             --notes-file "$notes"

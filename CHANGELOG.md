@@ -2,13 +2,36 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
-## Unreleased
+## v1.0.0
 
-- Releases now contain only the install ZIPs: a versioned `hearthstone-hud-<version>.zip`
-  and a fixed `hearthstone-hud.zip` for the permanent download address
-  `https://github.com/ohxiaoguang/hearthstone-hud/releases/latest/download/hearthstone-hud.zip`.
-  Releases are stable (no longer pre-releases); the build reports stay in the Actions
-  artifacts.
+First stable release. Everything implemented so far, in one place:
+
+- **Deck tracking.** Parses Power.log for the live match: your remaining deck grouped by
+  original vs added/transformed cards, opponent hand and deck counts, your and their most
+  recent plays, per-card provenance (starting deck, transformed, copied, generated), turn
+  header, and exact counts with reasons whenever evidence is incomplete. Decks.log provides
+  the exact starting deck for arena matches.
+- **Arena helper.** Optional read-only process memory access: hero and card candidates with
+  HearthArena card ratings and Firestone class statistics, the selected deck sorted by mana
+  cost (ties by name, unknown cost last), and duplicate cards kept as real copies. The
+  memory DraftDeck is the only source for selected cards, verified by two consistent reads;
+  candidates are preview-only. Failures keep the last deck marked "count unconfirmed".
+- **Card data and languages.** Bilingual interface (English default, 简体中文) that also drives
+  the card database (enUS / zhCN); each database is cached per language, reused offline and
+  only downloaded when missing. Language switching mid-download cannot corrupt the result.
+- **Card art.** Language-independent tile cache, downloaded on demand for what is on screen
+  or in one resumable full pass with per-card statistics (success, failed, without art,
+  already cached); HTTP 404 is remembered as "no art" and not retried in the session.
+- **Resource management.** The settings panel shows both databases with size, state and a
+  delete button each, plus card art usage with independent cleanup; clearing one resource
+  never touches the others.
+- **Lifecycle and diagnostics.** Master switch that stops all background work, safe
+  start/stop of the native HUD renderer, log.config management for Power/Decks/Arena
+  logging, and a one-click redacted diagnostic report for bug reports.
+- **Release format.** Releases contain a single `hearthstone-hud.zip` at the permanent
+  address
+  `https://github.com/ohxiaoguang/hearthstone-hud/releases/latest/download/hearthstone-hud.zip`;
+  they are stable (not pre-releases) and the build reports stay in the Actions artifacts.
 
 ## v0.7.2
 
