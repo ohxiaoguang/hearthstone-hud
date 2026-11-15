@@ -38,7 +38,7 @@ def active_operation(method):
     @wraps(method)
     async def guarded(self,*args,**kwargs):
         async with self.lifecycle_lock:
-            if not self.settings['enabled'] or self.io_pool is None:raise RuntimeError('插件已关闭，请先启用插件')
+            if not self.settings['enabled'] or self.io_pool is None:raise RuntimeError(i18n.t('plugin.disabled_error'))
             return await method(self,*args,**kwargs)
     return guarded
 
@@ -120,7 +120,8 @@ class Plugin:
         except (OSError,ValueError):
             pass
         self.last_scan = float('-inf')
-        self.gamescope = '尚未扫描'
+        self.gamescope_running = False
+        self.gamescope = ''
         self.active = False
         self.caught_up = False
         self.deck_clock = None
@@ -135,7 +136,7 @@ class Plugin:
         return i18n.card_language(self.settings.get('card_language','auto'),self.settings.get('ui_language'))
 
     async def _io(self,method,*args):
-        if self.io_pool is None:raise RuntimeError('插件后台已停止')
+        if self.io_pool is None:raise RuntimeError(i18n.t('plugin.stopped_error'))
         return await asyncio.get_running_loop().run_in_executor(self.io_pool,method,*args)
 
     async def _start_services(self):
@@ -145,7 +146,7 @@ class Plugin:
         self.loop_stop=asyncio.Event();self.last_scan=float('-inf')
         self.task=asyncio.create_task(self._loop())
         if self.settings['arena_memory']:self.memory_watch.start()
-        if not self.cards.by_id:self.cards.download_state='准备下载'
+        if not self.cards.by_id:self.cards._phase('prepare')
         self._ensure_media_worker()
         if self.settings['visible'] and platform.system()=='Linux':
             try:await self._start_renderer()
@@ -157,7 +158,7 @@ class Plugin:
         self.lifecycle_state='stopping'
         self.loop_stop.set();self.media_stop.set();self.memory_watch.request_stop()
         try:await self._stop_renderer(preserve=True)
-        except Exception as exc:self.error='HUD 停止错误：'+str(exc)
+        except Exception as exc:self.error=i18n.t('hud.stop_error',error=str(exc))
         if self.task:
             with contextlib.suppress(Exception,asyncio.CancelledError):await self.task
             self.task=None
@@ -171,10 +172,10 @@ class Plugin:
         else:self.memory_watch.join()
         if self.proc and self.proc.returncode is None:
             self.lifecycle_state='stop_failed'
-            raise RuntimeError('HUD 进程尚未退出；后台任务已停止，请复制诊断')
+            raise RuntimeError(i18n.t('hud.stop_failed'))
         self.lifecycle_state='disabled'
         try:self._publish()
-        except OSError as exc:self.error='停用完成，状态写入失败：'+str(exc)
+        except OSError as exc:self.error=i18n.t('hud.publish_failed',error=str(exc))
 
     async def configure(self,values:dict):
         async with self.lifecycle_lock:
@@ -184,7 +185,7 @@ class Plugin:
         checked = {}
         for key, value in values.items():
             if key not in DEFAULTS:
-                raise ValueError('未知配置项')
+                raise ValueError(i18n.t('config.unknown_key'))
             expected = type(DEFAULTS[key])
             if key=='ui_language':
                 if value not in dict(i18n.UI_LANGUAGES):
@@ -196,10 +197,10 @@ class Plugin:
                 value = float(value)
                 low, high = {'x':(0,7680),'y':(0,4320),'scale':(.5,3),'opacity':(.1,1),'right_x':(0,7680),'right_y':(0,4320),'panel_width':(180,640),'font_size':(14,30)}[key]
                 if not low <= value <= high:
-                    raise ValueError('数值超出范围')
+                    raise ValueError(i18n.t('config.out_of_range'))
                 value = int(value) if expected is int else value
             elif type(value) is not expected:
-                raise ValueError('配置类型不正确')
+                raise ValueError(i18n.t('config.bad_type'))
             checked[key] = value
         was_enabled=self.settings['enabled']
         # A failed settings write must not leave the master flag changed while
@@ -238,7 +239,7 @@ class Plugin:
             process = await self._io(discover_process)
             result = await self._io(ensure_decks,process)
             if not result.get('success'):
-                raise RuntimeError(result.get('state','Decks 配置失败'))
+                raise RuntimeError(result.get('state') or i18n.t('log.decks_failed'))
             if result.get('changed'):
                 self.decks_receipt = dict(instance=process.get('instance'),path=result['path'],backup=result.get('backup',''))
                 atomic_json(self.settings_dir/'decks-config-receipt.json',self.decks_receipt)
@@ -272,7 +273,7 @@ class Plugin:
         async with self.config_lock:
             process=await self._io(discover_process)
             result=await self._io(ensure_arena,process)
-            if not result.get('success'):raise RuntimeError(result.get('state','Arena 配置失败'))
+            if not result.get('success'):raise RuntimeError(result.get('state') or i18n.t('log.arena_failed'))
             if result.get('changed'):
                 self.arena_receipt=dict(instance=process.get('instance'),path=result['path'],backup=result.get('backup',''))
                 atomic_json(self.settings_dir/'arena-config-receipt.json',self.arena_receipt)
@@ -317,7 +318,7 @@ class Plugin:
 
     @active_operation
     async def arena_manual_pick(self, deck_id: str, phase: str, ordinal: int, cid: str):
-        if not self.arena_caught_up:raise ValueError('请等待同会话 Arena 日志读取完成后再补录')
+        if not self.arena_caught_up:raise ValueError(i18n.t('arena.manual_wait'))
         self.arena.manual_pick(deck_id,phase,ordinal,cid)
         atomic_json(self.settings_dir/'arena-manual.json',self.arena.export_manual())
         self._publish();return self._arena_ui()
@@ -333,10 +334,10 @@ class Plugin:
     @active_operation
     async def retry_card_database(self):
         # Same single worker handles first use, retries and images.
-        if '正在下载' not in self.cards.download_state:
+        if self.cards.download_phase!='running':
             self.cards.attempted=0
             self.cards.updated=0
-            self.cards.download_state='准备下载'
+            self.cards._phase('prepare')
         self._ensure_media_worker()
         self._publish()
         return await self.status()
@@ -412,7 +413,7 @@ class Plugin:
             binary = ROOT / 'bin/hearthstone-hud-renderer'
             header = binary.read_bytes()[:20] if binary.exists() else b''
             if platform.system() != 'Linux' or header[:5] != b'\x7fELF\x02' or len(header)<20 or struct.unpack('<H',header[18:20])[0] != 62:
-                raise RuntimeError('需要 Linux x86_64 ELF 渲染器，请安装 Actions 完整构建 ZIP')
+                raise RuntimeError(i18n.t('hud.binary_required'))
             for name in ('diagnostic.json',):
                 (self.runtime / name).unlink(missing_ok=True)
             self.error = ''
@@ -426,7 +427,7 @@ class Plugin:
                 self.proc = await asyncio.create_subprocess_exec(str(binary), str(self.runtime / 'state.json'), str(ROOT / 'assets'), str(self.runtime / 'diagnostic.json'), env=env, stdout=log, stderr=log)
             await asyncio.sleep(.3)
             if self.proc.returncode is not None:
-                self.error = '渲染器启动失败，请查看 renderer.log'
+                self.error = i18n.t('hud.start_failed')
             return await self.status()
 
     @active_operation
@@ -465,7 +466,7 @@ class Plugin:
                     lifecycle=self.lifecycle_state,
                     background=dict(log_monitor=bool(self.task and not self.task.done()),downloads=bool(self.media_task and not self.media_task.done()),memory=self.memory_watch.thread is not None,io_pool=self.io_pool is not None),
                     error=self.error, diagnostic=diag, log_path=str(self.log_path or ''),
-                    parse_errors=self.parser.failures, gamescope_running=self.gamescope.startswith('检测到'),
+                    parse_errors=self.parser.failures, gamescope_running=self.gamescope_running,
                     gamescope_status=self.gamescope, logs=self.discovery, cards=self.cards.diagnostic(),
                     process=self.process, power_config=self.power_config, decks_config=self.decks_config,arena_config=self.arena_config,
                     match_status=stage, identity_status=identities, deck_status=deck_stage,
@@ -479,7 +480,8 @@ class Plugin:
         """Static HUD labels in the selected interface language."""
         return dict(arena_hero=i18n.t('arena.hero'),arena_hero_power=i18n.t('arena.hero_power'),arena_card=i18n.t('arena.card'),
                     opponent_played=i18n.t('hud.opponent_played'),own_played=i18n.t('hud.own_played'),
-                    empty_own=i18n.t('hud.empty_own'),empty_other=i18n.t('hud.empty_other'),no_rating=i18n.t('arena.no_rating'))
+                    empty_own=i18n.t('hud.empty_own'),empty_other=i18n.t('hud.empty_other'),no_rating=i18n.t('arena.no_rating'),
+                    deck_original=i18n.t('hud.deck_original'),deck_added=i18n.t('hud.deck_added'))
 
     def _tracking_titles(self,tracking):
         """Preformatted summary line and deck title, so the renderer holds no copy."""
@@ -541,7 +543,7 @@ class Plugin:
                     self.arena_config = arena_config
                     self.discovery = result
                     self.last_scan = time.monotonic()
-                    self.gamescope = gamescope_status()
+                    self.gamescope_running, self.gamescope = gamescope_status()
                 power = self.discovery.get('power')
                 self.active = bool(power and power['active'])
                 self.log_path = Path(power['path']) if power else None
@@ -603,15 +605,15 @@ class Plugin:
                     self.discovery['parse_errors'] = self.parser.failures
                     self.discovery['deck_candidates'] = len(self.decks.candidates)
                     self.discovery['deck_parse_errors'] = self.decks.errors
-                    self.discovery['read_state'] = '日志已读取'
-                    self.discovery['parse_state'] = '对局已结束' if self.parser.game and self.parser.game.complete else '已识别对局' if self.parser.game else '等待 CREATE_GAME；可能需下一局'
+                    self.discovery['read_state'] = i18n.t('log.read_ok')
+                    self.discovery['parse_state'] = i18n.t('log.match_done') if self.parser.game and self.parser.game.complete else i18n.t('log.match_found') if self.parser.game else i18n.t('log.await_create_game')
                 if self.proc and self.proc.returncode is not None:
-                    self.error = '渲染器已退出，代码 %s' % self.proc.returncode
+                    self.error = i18n.t('hud.exited_code',code=self.proc.returncode)
                 self._publish()
             except Exception as exc:
                 self.error = str(exc)
                 self.recent_errors.append(type(exc).__name__+': '+str(exc)[:250])
-                self.discovery['read_state'] = '读取/解析失败：'+str(exc)
+                self.discovery['read_state'] = i18n.t('log.read_failed',error=str(exc));self.discovery['parse_failed'] = True
             try:await asyncio.wait_for(self.loop_stop.wait(),.25)
             except asyncio.TimeoutError:pass
 

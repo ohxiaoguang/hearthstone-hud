@@ -130,13 +130,14 @@ class DiscoveryTests(unittest.TestCase):
             d=discover(game);self.assertEqual(d['power']['path'],str(power));self.assertEqual(d['decks']['path'],str(deck))
             self.assertEqual(discover(game,str(power))['power']['path'],str(power))
             os.utime(power,(1,1));self.assertFalse(discover(game)['power']['active'])
-            self.assertIn('旧文件不回放',discover(game)['read_state'])
+            self.assertIn('not replayed',discover(game)['read_state'])
     def test_lowercase_missing_and_gamescope_variant(self):
         with tempfile.TemporaryDirectory() as folder:
             game=Path(folder);(game/'logs').mkdir();(game/'logs/power.log').write_text('')
             self.assertIsNotNone(discover(game)['power'])
             (game/'100').mkdir();(game/'100/comm').write_text('gamescope-wl\n')
-            self.assertIn('gamescope-wl',gamescope_status(game))
+            found,text=gamescope_status(game)   # (detected, localized text)
+            self.assertTrue(found);self.assertIn('gamescope-wl',text)
             self.assertTrue(discover(game/'missing')['errors'])
 
 class CardTests(unittest.TestCase):

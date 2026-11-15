@@ -60,12 +60,29 @@ class ProtonTests(unittest.TestCase):
     def test_no_process_no_write_and_distinct_diagnostics(self):
         self.assertFalse(ensure_power(dict(found=False))['success'])
         self.assertFalse((self.home/'log.config').exists())
-        self.assertIn('游戏进程',diagnostic_state({}, {}, {}))
-        self.assertIn('前缀',diagnostic_state(dict(found=True), {}, {}))
+        self.assertIn('Game process',diagnostic_state({}, {}, {}))   # English is the default
+        from engine import i18n
+        try:
+            i18n.set_ui_language('zh-CN')
+            self.assertIn('游戏进程',diagnostic_state({}, {}, {}))
+        finally:i18n.set_ui_language('en')
+        self.assertIn('prefix',diagnostic_state(dict(found=True), {}, {}))
         p=dict(found=True,prefix=str(self.prefix))
-        self.assertIn('不存在',diagnostic_state(p,dict(exists=False),{}))
-        self.assertIn('未启用',diagnostic_state(p,dict(exists=True,enabled=False),{}))
+        self.assertIn('does not exist',diagnostic_state(p,dict(exists=False),{}))
+        self.assertIn('not enabled',diagnostic_state(p,dict(exists=True,enabled=False),{}))
+        # The same three states in Chinese, so both dictionaries cover them.
+        try:
+            i18n.set_ui_language('zh-CN')
+            self.assertIn('前缀',diagnostic_state(dict(found=True), {}, {}))
+            self.assertIn('不存在',diagnostic_state(p,dict(exists=False),{}))
+            self.assertIn('未启用',diagnostic_state(p,dict(exists=True,enabled=False),{}))
+        finally:i18n.set_ui_language('en')
         config=dict(exists=True,enabled=True)
-        self.assertIn('尚未生成',diagnostic_state(p,config,{}))
-        self.assertIn('暂未更新',diagnostic_state(p,config,dict(power=dict(active=False))))
-        self.assertIn('正常读取',diagnostic_state(p,config,dict(power=dict(active=True),offset=1)))
+        self.assertIn('has not been created',diagnostic_state(p,config,{}))
+        self.assertIn('not updating yet',diagnostic_state(p,config,dict(power=dict(active=False))))
+        self.assertIn('read normally',diagnostic_state(p,config,dict(power=dict(active=True),offset=1)))
+        try:
+            i18n.set_ui_language('zh-CN')
+            self.assertIn('尚未生成',diagnostic_state(p,config,{}))
+            self.assertIn('正常读取',diagnostic_state(p,config,dict(power=dict(active=True),offset=1)))
+        finally:i18n.set_ui_language('en')

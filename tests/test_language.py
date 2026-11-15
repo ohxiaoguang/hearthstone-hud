@@ -5,6 +5,7 @@ import json
 import re
 import sys
 import tempfile
+import threading
 import time
 import types
 import unittest
@@ -227,3 +228,237 @@ class PluginLanguageTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn('chinese_names',reloaded.settings)
             self.assertEqual(reloaded.cards.language,'frFR')
         finally:await reloaded._unload()
+
+
+class LanguageSwitchRaceTests(unittest.IsolatedAsyncioTestCase):
+    """Real async ordering: a download is in flight while the user switches."""
+
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
+        self.folder=Path(self.tmp.name)/'cache'
+        i18n.set_ui_language('en')
+
+    def tearDown(self):
+        i18n.set_ui_language('en')
+
+    def names(self,locale,prefix):return dataset(prefix)
+
+    def run_worker(self,cards,fake):
+        """Start the real worker with a controllable fetch and return (stop, task)."""
+        stop=asyncio.Event()
+        patcher=patch('engine.cards.fetch',side_effect=fake)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        task=asyncio.create_task(cards.worker(stop))
+        self.addCleanup(lambda:stop.set())
+        return stop,task
+
+    async def test_switch_during_download_never_installs_the_old_language(self):
+        cards=Cards(self.folder)
+        self.assertEqual(cards.language,'enUS')
+        first=threading.Event();seen=threading.Event()
+        def fake(url,limit,verify=True):
+            seen.set()
+            if '/enUS/' in url:first.wait(5)
+            else:time.sleep(.05)
+            if '/enUS/' in url:return json.dumps(dataset('English')).encode()
+            return json.dumps(dataset('日本語')).encode()
+        stop,task=self.run_worker(cards,fake)
+        try:
+            self.assertTrue(await asyncio.to_thread(seen.wait,5))
+            for _ in range(100):
+                if cards.download_phase=='running':break
+                await asyncio.sleep(.02)
+            self.assertEqual(cards.download_phase,'running')
+            cards.set_language('jaJP')                     # the user switches mid-download
+            self.assertEqual(cards.language,'jaJP')
+            self.assertTrue(cards.need_download)
+            first.set()                                    # the enUS payload arrives late
+            for _ in range(200):
+                if (self.folder/'cards-jaJP.json').exists():break
+                await asyncio.sleep(.02)
+        finally:
+            stop.set();await task
+        self.assertEqual(cards.language,'jaJP')
+        self.assertFalse((self.folder/'cards-enUS.json').exists())   # stale payload never written
+        self.assertTrue((self.folder/'cards-jaJP.json').exists())
+        self.assertEqual(cards.data_language,'jaJP')
+        self.assertEqual(cards.info('SAMPLE_1')['name'],'日本語1')
+        self.assertFalse(cards.need_download)
+        self.assertEqual(cards.download_phase,'ok')
+
+    async def test_a_late_old_payload_cannot_clear_the_new_pending_state(self):
+        cards=Cards(self.folder)
+        first=threading.Event();seen=threading.Event()
+        started_new=threading.Event();release_new=threading.Event()
+        def fake(url,limit,verify=True):
+            if '/enUS/' in url:
+                seen.set();first.wait(5)
+                raise OSError('the old download failed after the switch')
+            started_new.set();release_new.wait(5)
+            return json.dumps(dataset('日本語')).encode()
+        stop,task=self.run_worker(cards,fake)
+        try:
+            self.assertTrue(await asyncio.to_thread(seen.wait,5))
+            cards.set_language('jaJP')
+            first.set()                                    # old request finishes (with an error)
+            for _ in range(200):
+                if started_new.is_set():break              # the jaJP download is in flight
+                await asyncio.sleep(.02)
+            self.assertTrue(started_new.is_set())
+            self.assertTrue(cards.need_download)           # still pending for jaJP
+            self.assertNotEqual(cards.download_phase,'ok')
+            self.assertEqual(cards.error,'')               # the old error did not leak
+            self.assertEqual(cards.data_language,'')       # nothing installed from enUS
+            release_new.set()
+            for _ in range(200):
+                if (self.folder/'cards-jaJP.json').exists():break
+                await asyncio.sleep(.02)
+        finally:
+            stop.set();await task
+        self.assertEqual(cards.download_phase,'ok')
+        self.assertFalse(cards.need_download)
+
+    async def test_rapid_switching_applies_only_the_last_language(self):
+        cards=Cards(self.folder)
+        gate=threading.Event();seen=threading.Event()
+        def fake(url,limit,verify=True):
+            seen.set();gate.wait(5)
+            if '/deDE/' in url:return json.dumps(dataset('Deutsch')).encode()
+            return json.dumps(dataset('Wrong')).encode()
+        stop,task=self.run_worker(cards,fake)
+        try:
+            self.assertTrue(await asyncio.to_thread(seen.wait,5))   # enUS download in flight
+            for locale in ('jaJP','koKR','deDE'):
+                cards.set_language(locale)
+            gate.set()
+            for _ in range(200):
+                if (self.folder/'cards-deDE.json').exists():break
+                await asyncio.sleep(.02)
+        finally:
+            stop.set();await task
+        self.assertEqual(cards.language,'deDE')
+        self.assertEqual(cards.data_language,'deDE')
+        self.assertEqual(cards.info('SAMPLE_1')['name'],'Deutsch1')
+        self.assertEqual([p.name for p in sorted(self.folder.glob('cards-*.json'))],['cards-deDE.json'])
+
+    def test_apply_rejects_another_locale_or_a_stale_generation(self):
+        cards=Cards(self.folder);cards.install(dataset('English'))
+        rows=dataset('日本語')
+        self.assertFalse(cards.apply(dict(rows=rows,updated=1,source='x',locale='jaJP',generation=cards.generation)))
+        self.assertEqual(cards.info('SAMPLE_1')['name'],'English1')   # nothing installed
+        self.assertFalse(cards.apply(dict(rows=rows,updated=1,source='x',locale='enUS',generation=cards.generation+5)))
+        self.assertEqual(cards.info('SAMPLE_1')['name'],'English1')
+        cards.set_language('jaJP')
+        self.assertFalse(cards.apply(dict(rows=rows,updated=1,source='x',locale='enUS',generation=cards.generation)))
+        self.assertEqual(cards.info('SAMPLE_1')['name'],'English1')
+
+    def test_commit_refuses_a_locale_the_user_has_left(self):
+        cards=Cards(self.folder)
+        cards.set_language('jaJP')
+        generation=cards.generation
+        self.assertIsNone(cards._commit(dataset('English'),'late enUS download',generation,locale='enUS'))
+        self.assertFalse((self.folder/'cards-enUS.json').exists())
+        record=cards._commit(dataset('日本語'),'jaJP download',generation,locale='jaJP')
+        self.assertTrue(record and record['locale']=='jaJP')
+        self.assertTrue((self.folder/'cards-jaJP.json').exists())
+
+
+class VisibleTextTests(unittest.IsolatedAsyncioTestCase):
+    """Everything the HUD or the settings panel renders follows the interface language."""
+
+    CJK=re.compile(r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]')
+
+    async def asyncSetUp(self):
+        def unavailable(cards):
+            cards.attempted=time.time();cards._phase('failed')
+            return None
+        self.refresh_patch=patch('engine.cards.Cards.refresh',unavailable);self.refresh_patch.start()
+        self.tmp=tempfile.TemporaryDirectory();base=Path(self.tmp.name)
+        self.old=sys.modules.get('decky')
+        sys.modules['decky']=types.SimpleNamespace(DECKY_PLUGIN_SETTINGS_DIR=base/'settings',DECKY_PLUGIN_RUNTIME_DIR=base/'runtime')
+        spec=importlib.util.spec_from_file_location('hud_text',Path(__file__).resolve().parents[1]/'main.py')
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        self.plugin=module.Plugin();await self.plugin._main()
+        self.plugin.cards.install([dict(id='CARD_A',dbfId=1,name='Alpha',cost=1,type='MINION'),
+                                   dict(id='CARD_B',dbfId=2,name='Beta',cost=2,type='MINION')])
+        await asyncio.sleep(.3)
+
+    async def asyncTearDown(self):
+        await self.plugin._unload()
+        if self.old is None:sys.modules.pop('decky',None)
+        else:sys.modules['decky']=self.old
+        self.tmp.cleanup();self.refresh_patch.stop();i18n.set_ui_language('en')
+
+    def state(self):
+        return json.loads((self.plugin.runtime/'state.json').read_text())
+
+    async def test_english_ui_contains_no_chinese(self):
+        state=self.state()
+        self.assertEqual(state['labels']['deck_original'],'Original deck')
+        self.assertEqual(state['labels']['deck_added'],'Added / transformed · currently in deck')
+        self.assertEqual(state['labels']['arena_card'],'Arena · Card selection')
+        self.assertEqual(state['labels']['empty_own'],'No remaining cards or waiting for log evidence')
+        status=await self.plugin.status()
+        visible=[state['labels'],state['tracking'],state['arena_state'],state.get('settings',{}),
+                 status['error'],status['match_status'],status['identity_status'],status['deck_status'],
+                 status['decks_log_status'],status['arena_log_status'],status['log_status'],
+                 status['cards']['download_state'],status['cards']['state']]
+        chinese=[value for value in visible if self.CJK.search(json.dumps(value,ensure_ascii=False))]
+        self.assertEqual(chinese,[])   # nothing user visible is Chinese in English mode
+
+    async def test_chinese_ui_translates_the_same_surfaces(self):
+        await self.plugin.configure({'ui_language':'zh-CN'})
+        state=self.state()
+        self.assertEqual(state['labels']['deck_original'],'原始牌库')
+        self.assertEqual(state['labels']['deck_added'],'后加入 / 变形 · 当前在库')
+        self.assertEqual(state['labels']['arena_card'],'竞技场 · 卡牌选择')
+        self.assertEqual(state['arena_state']['picked_title'],'已选牌 0/30')
+        status=await self.plugin.status()
+        self.assertEqual(status['match_status'],'尚未识别对局')
+        for value in (state['labels'],state['tracking'],state['arena_state'],status['match_status'],status['log_status']):
+            self.assertTrue(self.CJK.search(json.dumps(value,ensure_ascii=False)))
+
+    async def test_errors_follow_the_interface_language(self):
+        with self.assertRaises(ValueError) as raised:
+            await self.plugin.configure({'font_size':999})
+        self.assertIn('out of range',str(raised.exception))
+        await self.plugin.configure({'ui_language':'zh-CN'})
+        with self.assertRaises(ValueError) as raised:
+            await self.plugin.configure({'font_size':999})
+        self.assertIn('超出范围',str(raised.exception))
+        with self.assertRaises(ValueError) as raised:
+            await self.plugin.configure({'nope':1})
+        self.assertIn('未知配置项',str(raised.exception))
+
+    async def test_switch_is_immediate_and_survives_a_reload(self):
+        await self.plugin.configure({'ui_language':'zh-CN'})
+        self.assertIn('已选牌',self.state()['arena_state']['picked_title'])
+        await self.plugin.configure({'ui_language':'en'})
+        self.assertIn('Selected',self.state()['arena_state']['picked_title'])
+        await self.plugin.configure({'ui_language':'zh-CN'})
+        await self.plugin._unload()
+        spec=importlib.util.spec_from_file_location('hud_text2',Path(__file__).resolve().parents[1]/'main.py')
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        reloaded=module.Plugin();await reloaded._main()
+        try:
+            await asyncio.sleep(.3)
+            state=json.loads((reloaded.runtime/'state.json').read_text())
+            self.assertEqual(state['labels']['deck_added'],'后加入 / 变形 · 当前在库')
+        finally:await reloaded._unload()
+
+
+class DownloadRetryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_a_failing_download_is_not_retried_in_a_tight_loop(self):
+        tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup)
+        cards=Cards(Path(tmp.name)/'cache')
+        calls=[]
+        def fake(url,limit,verify=True):
+            calls.append(url);raise OSError('offline')
+        stop=asyncio.Event()
+        with patch('engine.cards.fetch',side_effect=fake),patch('engine.cards.time.sleep'):
+            task=asyncio.create_task(cards.worker(stop))
+            await asyncio.sleep(.6)
+            stop.set();await task
+        self.assertEqual(len(calls),2)          # one refresh = two attempts, then back off
+        self.assertEqual(cards.download_phase,'failed')

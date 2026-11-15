@@ -230,7 +230,7 @@ int main(int argc,char** argv){
         const auto tick=std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch()).count()/8;
         const float own_y=ly+(left.opponent.visible&&!opponent_rows.empty()?panel_layout(opponent_rows.size(),font_size,scale,left.opponent.height,tick,ImGui::GetStyle().WindowPadding.y*2).height+8*scale:0);
         if(left.own.visible)render("own-played",labels.value("own_played","You played · newest first"),own_rows,false,lx,own_y,left.own.height);
-        if(state.value("own_deck",true))render("remaining",tracking.value("remaining_title","Your remaining deck · "+number(tracking.value("own_remaining",json()))),deck_rows(tracking,state.value("hide_exhausted",false)),true,rx,ry,std::max(80.f,sh-ry-16*scale));
+        if(state.value("own_deck",true))render("remaining",tracking.value("remaining_title","Your remaining deck · "+number(tracking.value("own_remaining",json()))),deck_rows(tracking,state.value("hide_exhausted",false),labels),true,rx,ry,std::max(80.f,sh-ry-16*scale));
         }
         } // Hidden HUD submits an empty transparent frame.
         ImGui::Render();int fw,fh;glfwGetFramebufferSize(w,&fw,&fh);glViewport(0,0,fw,fh);glClearColor(0,0,0,0);glClear(GL_COLOR_BUFFER_BIT);ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());glfwSwapBuffers(w);

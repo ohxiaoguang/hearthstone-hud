@@ -81,7 +81,9 @@ inline std::string card_count_label(const nlohmann::json& row,bool own){
 }
 
 // Presentation only: model rows/events keep their independent quantities.
-inline nlohmann::json deck_rows(const nlohmann::json& t,bool hide_exhausted){
+// Group headings are localized by the backend; the strings below are the English
+// defaults used when an older state.json carries no `labels` object.
+inline nlohmann::json deck_rows(const nlohmann::json& t,bool hide_exhausted,const nlohmann::json& labels=nlohmann::json::object()){
     using nlohmann::json;
     auto rows=json::array();
     for(const auto* key:{"own","own_added"}){
@@ -89,7 +91,12 @@ inline nlohmann::json deck_rows(const nlohmann::json& t,bool hide_exhausted){
         bool heading=false;
         for(const auto& r:t[key]){
             if(hide_exhausted && r.value("remaining",json())==json(0))continue;
-            if(!heading){rows.push_back({{"section",true},{"name",std::string(key)=="own"?"原始牌库":"后加入 / 变形 · 当前在库"}});heading=true;}
+            if(!heading){
+                const std::string name=std::string(key)=="own"?
+                    labels.value("deck_original","Original deck"):
+                    labels.value("deck_added","Added / transformed · currently in deck");
+                rows.push_back({{"section",true},{"name",name}});heading=true;
+            }
             auto row=r;row["deck_row"]=true;rows.push_back(row);
         }
     }

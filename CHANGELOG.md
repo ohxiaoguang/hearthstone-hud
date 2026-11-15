@@ -2,6 +2,15 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
+## Unreleased
+
+- Switching the card language while a download is running now discards that download: the
+  finish order can no longer install the previous language or overwrite the new language's
+  pending state.
+- Every remaining text the HUD renders (deck group headings) and every error the settings
+  panel can show now comes from the translation catalog; English mode no longer shows
+  Chinese text anywhere in the HUD or the panel.
+
 ## v0.7.0
 
 - Card database supports all 14 HearthstoneJSON locales, each cached separately and reused

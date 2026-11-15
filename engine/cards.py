@@ -141,18 +141,31 @@ class Cards:
         return True
 
     def set_language(self,locale):
-        """Switch the card database locale, reusing any cache already on disk."""
+        """Switch the card database locale, reusing any cache already on disk.
+
+        A switch invalidates downloads that are still in flight: bumping the
+        generation makes their commit fail, and `_commit` additionally refuses to
+        write for a locale that is no longer selected. The pending download flag
+        and the retry timer are reset so the new locale is fetched immediately
+        instead of inheriting the previous locale's bookkeeping.
+        """
         if locale not in i18n.CARD_CODES:
             raise ValueError('unsupported card language: %s'%locale)
         if locale==self.language and (self.by_id or not self.need_download):return False
-        self.language=locale
-        self.error=''
+        with self.cache_lock:
+            self.generation+=1          # Discard results of the previous locale.
+            self.language=locale
+            self.error=''
+            self.attempted=0            # The new locale is due right away.
+            self.need_download=True     # Cleared by `_load_cached` on a cache hit.
         if self._load_cached(locale):
             self._phase('ok')
             return True
+        # Cache miss: `_load_cached` only flags a switch away from data we already
+        # have, so make the pending download explicit here.
+        self.need_download=True
         # Keep the previously loaded names visible until the new file arrives;
         # `data_language` records that they belong to another locale.
-        self.need_download=True
         self._phase('prepare')
         return True
 
@@ -206,20 +219,26 @@ class Cards:
 
     # -- download and import ------------------------------------------------
     def _commit(self,rows,source,expected=None,locale=None):
+        """Persist rows for `locale`, never for a locale the user has left."""
         locale=locale or self.language
         with self.cache_lock:
+            if locale!=self.language:
+                return None  # The user switched languages while this ran.
             if expected is not None and expected!=self.generation:
                 return None  # A manual import/newer refresh won the race.
             updated=time.time()
             atomic_json(self.cache_path(locale),dict(updated=updated,source=source,locale=locale,cards=rows))
-            if locale==self.language:self.generation+=1
+            self.generation+=1
             return dict(rows=rows,updated=updated,source=source,locale=locale,generation=self.generation)
 
     def apply(self,record):
+        """Install a finished download only if it still describes this locale."""
         with self.cache_lock:
-            if record and record['generation']==self.generation:
-                self.install(record['rows']);self.updated=record['updated'];self.source=record['source']
-                self.data_language=record.get('locale',self.language);self.need_download=False;self.error=''
+            if not record or record.get('locale')!=self.language or record['generation']!=self.generation:
+                return False
+            self.install(record['rows']);self.updated=record['updated'];self.source=record['source']
+            self.data_language=record.get('locale',self.language);self.need_download=False;self.error=''
+            return True
 
     def import_file(self,path):
         path=Path(path).expanduser()
@@ -237,18 +256,21 @@ class Cards:
         return self._commit(rows,i18n.t('cards.source_import',locale=locale,name=path.name),locale=locale)
 
     def refresh(self):
-        self.attempted=time.time();expected=self.generation;locale=self.language
+        """Download one locale. Progress and errors never leak into another one."""
+        locale=self.language;expected=self.generation
+        current=lambda:locale==self.language
+        if current():self.attempted=time.time()
         for attempt in range(2):
-            self._phase('running',attempt=attempt+1)
+            if current():self._phase('running',attempt=attempt+1)
             try:
                 rows=validate_dataset(json.loads(fetch(DATA_URL.format(locale=locale),MAX_JSON,verify=self.database_verify_tls)))
                 record=self._commit(rows,i18n.t('cards.source',locale=locale),expected,locale=locale)
-                self._phase('ok' if record else 'skipped')
+                if current():self._phase('ok' if record else 'skipped')
                 return record
             except (OSError,ValueError,TypeError) as exc:
-                self.error=str(exc)
+                if current():self.error=str(exc)
                 if attempt==0:time.sleep(1)
-        self._phase('failed')
+        if current():self._phase('failed')
         return None
 
     def download_image(self,cid):
@@ -292,8 +314,15 @@ class Cards:
     async def worker(self, stop=None, run_io=asyncio.to_thread):
         # Cooperative shutdown waits for in-flight thread I/O before cache deletion.
         while stop is None or not stop.is_set():
-            due=(self.need_download or not self.by_id or self.queue.empty() and not self.batch_remaining) and time.time()-self.updated>7*86400 and time.time()-self.attempted>(60 if not self.by_id else 3600)
-            if self.need_download or due:
+            now=time.time();quiet=self.queue.empty() and not self.batch_remaining
+            # 7-day refresh of what we already have, or an explicit language whose
+            # cache is missing. Both keep the original retry spacing (one attempt
+            # per minute without data, per hour with data) so a failing network
+            # cannot turn the loop into a request storm.
+            retry=60 if not self.by_id else 3600
+            stale=(not self.by_id or quiet) and now-self.updated>7*86400 and now-self.attempted>retry
+            switching=self.need_download and now-self.attempted>retry
+            if stale or switching:
                 record=await run_io(self.refresh)
                 self.apply(record)
             if stop is not None and stop.is_set():break

@@ -1,4 +1,5 @@
 """Bounded log discovery. Never walk home or replay inactive old sessions."""
+from . import i18n
 import os
 import time
 from pathlib import Path
@@ -15,7 +16,7 @@ def discover(game_dir, manual='', now=None, max_age=300):
         else:
             candidates = []
             if not root.exists():
-                errors.append(str(root)+': 不存在')
+                errors.append(str(root)+': '+i18n.t('log.missing_dir'))
                 continue
             def onerror(exc):
                 errors.append(str(exc))
@@ -27,7 +28,7 @@ def discover(game_dir, manual='', now=None, max_age=300):
                     if name.lower() in ('power.log', 'decks.log','arena.log'):
                         candidates.append(Path(folder)/name)
                 if visited >= 1024:
-                    errors.append('扫描达到 1024 目录上限')
+                    errors.append(i18n.t('log.scan_limit'))
                     break
         for path in candidates:
             try:
@@ -43,23 +44,24 @@ def discover(game_dir, manual='', now=None, max_age=300):
     arena = next((f for f in found if selected and f['kind']=='arena.log' and Path(f['path']).parent==Path(selected['path']).parent),None)
     return dict(roots=[str(r) for r in roots], power=selected, decks=decks, arena=arena,
                 files=sorted(found,key=lambda f:f['mtime'],reverse=True)[:12], errors=errors,
-                visited=visited, read_state='可读取' if selected and selected['active'] else '等待新日志（旧文件不回放）' if selected else '未发现 Power.log')
+                visited=visited, read_state=i18n.t('log.readable') if selected and selected['active'] else i18n.t('log.waiting_new_log') if selected else i18n.t('log.power_not_found'))
 
 
 def gamescope_status(proc=Path('/proc')):
+    """(detected, localized status text). The boolean never depends on the text."""
     errors = 0
     for comm in proc.glob('[0-9]*/comm'):
         try:
             name = comm.read_text().strip()
             if name == 'gamescope' or name.startswith('gamescope-'):
-                return '检测到 '+name
+                return True, i18n.t('gamescope.detected',name=name)
             # Some wrappers use a different comm; inspect executable symlink only.
             exe = (comm.parent/'exe').resolve().name
             if exe == 'gamescope' or exe.startswith('gamescope-'):
-                return '检测到 '+exe
+                return True, i18n.t('gamescope.detected',name=exe)
         except OSError:
             errors += 1
-    return '未确认（进程检查不代表 HUD 可见性）' + ('；部分进程不可读' if errors else '')
+    return False, i18n.t('gamescope.unknown') + (i18n.t('gamescope.partial') if errors else '')
 
 
 class LogClock:

@@ -23,6 +23,15 @@ int main(){
     if(!valid_hud_state(good))return 8;
     auto rows=deck_rows(good["tracking"],false);
     if(rows.size()!=2 || !rows[0].value("section",false) || !rows[1].value("deck_row",false))return 9;
+    // Group headings come from the backend labels; without them the renderer
+    // falls back to English, never to another language.
+    if(rows[0].value("name","")!="Added / transformed · currently in deck")return 48;
+    const auto localized=deck_rows(good["tracking"],false,json{{"deck_original","原始牌库"},{"deck_added","后加入 / 变形 · 当前在库"}});
+    if(localized.size()!=2 || localized[0].value("name","")!="后加入 / 变形 · 当前在库")return 49;
+    const auto plain=json{{"own",json::array({json{{"id","B"},{"name","B"},{"image",""},{"remaining",1}}})}};
+    if(deck_rows(plain,false)[0].value("name","")!="Original deck")return 50;              // English default.
+    if(deck_rows(plain,false,json{{"deck_original","原始牌库"}})[0].value("name","")!="原始牌库")return 51;
+    if(deck_rows(plain,false,json{{"deck_added","x"}})[0].value("name","")!="Original deck")return 52; // Missing key.
     auto plays=played_rows(good["tracking"],"own_played");
     if(plays.size()!=2 || !plays[0].value("event",false))return 12;
     good["tracking"]["own"].push_back({{"id","B"},{"name","乙"},{"image",""},{"remaining",0}});

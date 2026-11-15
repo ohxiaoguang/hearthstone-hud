@@ -84,7 +84,9 @@ enables logging the next time Hearthstone starts.
 - Card art is language independent. Tiles live in `cache/images/` and are shared by all
   languages; the cache is trimmed to 256 files / 32 MiB.
 - Until a newly selected language finishes downloading, the HUD keeps showing the previous
-  language's names instead of falling back to raw card IDs.
+  language's names instead of falling back to raw card IDs. Switching again while a download
+  is still running discards that download, so an older language can never overwrite the one
+  you just picked.
 - Reloading the plugin keeps the selected languages and never re-downloads existing caches.
 
 The HUD renderer builds one font atlas that covers Latin, Cyrillic, Chinese, Japanese, Korean
