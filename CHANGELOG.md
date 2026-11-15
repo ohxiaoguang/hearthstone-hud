@@ -2,7 +2,7 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
-## Unreleased
+## v0.7.1
 
 - Switching the card language while a download is running now discards that download: the
   finish order can no longer install the previous language or overwrite the new language's
