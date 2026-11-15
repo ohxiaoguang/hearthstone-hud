@@ -52,6 +52,11 @@ int main(){
     arena["picks"].push_back(rated);arena["redraft_picks"].push_back(rated);
     const auto picked=arena_rows(arena,false);
     if(picked.size()!=1 || picked[0].value("section",false) || !picked[0].value("arena_row",false) || arena["count"]!=0)return 26; // Flat selected deck, one row per pick; display never mutates counts.
+    if(arena_picked_title(arena)!="已选牌 0/30")return 40; // No hint while the snapshot is exact.
+    arena["count"]=6;arena["count_exact"]=false;
+    if(arena_picked_title(arena)!="已选牌 6/30（份数待确认）")return 41; // Retained deck after a failed read.
+    arena["count_exact"]=true;
+    if(arena_picked_title(arena)!="已选牌 6/30")return 42; // Hint clears when a good read returns.
     arena["history_picks"]=json::array({rated,rated});good["arena_state"]=arena;
     if(!valid_hud_state(good)||arena_rows(arena,false).size()!=1)return 38; // Legacy history rows are accepted but never rendered.
     bad=good;bad["arena_state"]["history_picks"][0]["id"]=42;if(valid_hud_state(bad))return 39;

@@ -187,7 +187,7 @@ int main(int argc,char** argv){
             const std::string title=hero?"竞技场 · 英雄选择":power?"竞技场 · 英雄技能选择":"竞技场 · 卡牌选择"+(show_count?" · "+count:"");
             const float available=std::max(80.f,sh-ly-16*scale);
             panel("arena-offer",title,arena_rows(arena,true),false,lx,ly,scale,opacity,state.value("card_images",true),state.value("chinese_names",true),textures,frames,width,std::min(available,230*scale),font_size);
-            if(show_count)panel("arena-picked","已选牌 "+count,arena_rows(arena,false),false,rx,ry,scale,opacity,state.value("card_images",true),state.value("chinese_names",true),textures,frames,width,std::max(80.f,sh-ry-16*scale),font_size);
+            if(show_count)panel("arena-picked",arena_picked_title(arena),arena_rows(arena,false),false,rx,ry,scale,opacity,state.value("card_images",true),state.value("chinese_names",true),textures,frames,width,std::max(80.f,sh-ry-16*scale),font_size);
         }else{
         if(state.value("show_summary",true)){
         ImGui::SetNextWindowPos({sw*.5f,8},ImGuiCond_Always,{.5f,0});ImGui::SetNextWindowBgAlpha(opacity);

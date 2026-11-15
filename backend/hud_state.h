@@ -1,6 +1,7 @@
 #pragma once
 #include <nlohmann/json.hpp>
 #include <cmath>
+#include <string>
 #include <algorithm>
 inline bool valid_arena_state(const nlohmann::json& a){
     if(!a.is_object())return false;
@@ -105,6 +106,16 @@ inline LeftRegions left_regions(bool opponent,bool own,float y,float height,floa
     if(opponent)return {{y,height,true},{}};
     if(own)return {{},{y,height,true}};
     return {};
+}
+
+inline std::string arena_picked_title(const nlohmann::json& a){
+    const auto count=a.value("count",nlohmann::json());
+    std::string title="已选牌 "+(count.is_number_integer()?std::to_string(count.get<int>()):"?")+"/30";
+    // The count is exact only while the last snapshot was read successfully. A
+    // deck kept after a failed read must say so, and the hint disappears on its
+    // own once a good snapshot sets count_exact back to true.
+    if(!a.value("count_exact",true))title+="（份数待确认）";
+    return title;
 }
 
 inline nlohmann::json arena_rows(const nlohmann::json& a,bool candidates){

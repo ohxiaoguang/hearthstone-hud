@@ -70,8 +70,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          notes="docs/${GITHUB_REF_NAME}_RELEASE_NOTES.md"
+          if [ ! -f "$notes" ]; then
+            echo "missing release notes: $notes" >&2
+            exit 1
+          fi
           gh release create "$GITHUB_REF_NAME" \
             artifact/release/hearthstone-hud-*.zip artifact/build/*.txt \
             --title "Hearthstone HUD $GITHUB_REF_NAME" \
             --prerelease \
-            --notes-file docs/V0.5.1_RELEASE_NOTES.md
+            --notes-file "$notes"

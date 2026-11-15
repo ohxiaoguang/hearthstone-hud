@@ -65,5 +65,7 @@ class MemoryWatch:
             # Never retain stale choices when a worker hangs/exits or stop is requested.
             fresh=bool(self.thread and self.thread.is_alive() and not self.stop_event.is_set() and self.updated and time.monotonic()-self.updated<2)
             diag=dict(self.diagnostic,observed_at=self.updated,observed_start=self.updated_start,observed_wall=self.updated_wall,enabled=self.thread is not None,errors=self.errors,suppressed_errors=self.suppressed,last_error=self.last_error,last_error_at=self.last_error_at)
-            if not fresh and self.state is not None:diag.update(code='reading',status='候选已过期，等待新读取')
+            # A hung or exited worker still hands out nothing; the flag tells the
+            # panel that the deck it keeps is no longer backed by a live read.
+            if not fresh and self.state is not None:diag.update(code='reading',status='候选已过期，等待新读取',stale_read=True)
             return self.state if fresh else None,diag

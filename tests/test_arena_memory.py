@@ -365,9 +365,30 @@ class PreviewTests(unittest.TestCase):
 
     def test_38_failed_read_keeps_the_last_deck_but_marks_it_stale(self):
         self.view(self.state(deck=('CARD_A','CARD_B')))
-        v=self.view(None,self.diag(code='reading'))
+        v=self.view(None,self.diag(code='read_error',error='memory read failed'))
         self.assertEqual(v['count'],2);self.assertEqual(v['stage'],'none')
         self.assertFalse(v['count_exact']);self.assertTrue(v['deck_stale'])
+
+    def test_44_a_good_read_after_a_failure_clears_the_stale_hint(self):
+        self.view(self.state(deck=('CARD_A','CARD_B')))
+        self.assertTrue(self.view(None,self.diag(code='read_error',error='boom'))['count_exact'] is False)
+        v=self.view(self.state(deck=('CARD_A','CARD_B','CARD_C')))
+        self.assertEqual(v['count'],3);self.assertTrue(v['count_exact']);self.assertFalse(v['deck_stale'])
+
+    def test_45_finished_draft_is_not_a_failed_read(self):
+        # A successful poll with no active draft must not raise the hint, even
+        # though the previous deck is the one being shown.
+        self.view(self.state(deck=('CARD_A','CARD_B')))
+        v=self.view(None,self.diag(code='reading'))
+        self.assertEqual(v['count'],2);self.assertTrue(v['count_exact']);self.assertFalse(v['deck_stale'])
+
+    def test_46_expired_snapshot_marks_the_kept_deck_stale(self):
+        self.view(self.state(deck=('CARD_A','CARD_B')))
+        v=self.view(None,self.diag(code='reading',stale_read=True))
+        self.assertEqual(v['count'],2);self.assertFalse(v['count_exact']);self.assertTrue(v['deck_stale'])
+        # ...and a fresh read clears it again.
+        v=self.view(self.state(deck=('CARD_A','CARD_B')))
+        self.assertTrue(v['count_exact']);self.assertFalse(v['deck_stale'])
 
     def test_39_a_new_arena_clears_the_previous_deck(self):
         self.view(self.state(deck=('CARD_A','CARD_B')))

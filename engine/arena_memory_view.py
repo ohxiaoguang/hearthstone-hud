@@ -9,6 +9,10 @@ import re
 from .arena import CLASS_NAMES,HERO_CLASSES
 from .arena_memory import DECK_UNREADABLE
 
+# Diagnostic codes that mean the read itself failed, as opposed to a successful
+# poll that simply found no active draft.
+READ_FAILURES=('read_error','not_ready','incompatible','permission_denied','not_running','mono_missing')
+
 
 def hero_class(cards,cid):
     cls=cards.by_id.get(cid,{}).get('cardClass','')
@@ -49,8 +53,11 @@ class ArenaPreview:
                 self.reset();self.identity=identity
             elif self.identity is None:self.identity=identity
         if state is None:
-            # No usable snapshot this time: keep the deck, never claim it is current.
-            if self.deck:self.stale=True
+            # Keep the last deck. Only a failed read makes it uncertain: a good
+            # poll that finds no active draft (finished deck, between rounds)
+            # leaves the flag alone so the hint cannot stick.
+            if self.deck and (diagnostic.get('error') or diagnostic.get('stale_read') or
+                              diagnostic.get('code') in READ_FAILURES):self.stale=True
             return
         if state.mode:self.mode=state.mode
         if state.slot in ('HERO','HERO_POWER'):
