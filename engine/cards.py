@@ -98,6 +98,9 @@ class Cards:
         self.source=i18n.t('cards.source',locale=self.language)
         self.generation=0;self.cache_lock=threading.Lock();self.image_error=''
         self.attempted=0;self.image_attempts={};self.queue=queue.Queue(maxsize=128);self.pending=set()
+        self.batch_queue=queue.Queue(maxsize=128)   # low priority: full-download work
+        # Batch downloads wait here; the on-demand queue above is always drained
+        # first, so cards visible in the game are never stuck behind a full run.
         # Automatic (re)download may be switched off when the user clears the
         # selected database; an explicit retry or a language switch turns it on.
         self.auto_download=True
@@ -214,7 +217,7 @@ class Cards:
 
     def _fill_queue(self):
         """Move pending batch work into the download queue without rescanning it."""
-        while self.batch_stream and not self.queue.full():
+        while self.batch_stream and not self.batch_queue.full():
             cid=self.batch_stream.popleft()
             if self.tiles.exists(cid):
                 self.batch_remaining.discard(cid);self.image_batch['skipped']+=1
@@ -225,7 +228,7 @@ class Cards:
                 continue
             if cid in self.pending:
                 self.batch_stream.appendleft(cid);break   # already queued elsewhere
-            self.pending.add(cid);self.queue.put_nowait(cid)
+            self.pending.add(cid);self.batch_queue.put_nowait(cid)
 
     def begin_image_download(self,ids,retry_failed=True):
         """Start (or resume) one batch. Already cached files are never fetched again."""
@@ -271,6 +274,27 @@ class Cards:
         batch['done']=min(batch['total'],batch['success']+batch['failed']+batch['missing']+batch['skipped'])
         return batch
 
+    def cancel_image_download(self):
+        """Stop a running batch: keep downloaded tiles, drop the rest of the batch.
+
+        The low-priority queue is drained, so nothing else from the batch is
+        fetched; on-demand requests for cards on screen keep their own queue and
+        continue unaffected.
+        """
+        with self.cache_lock:
+            self.batch_stream.clear();self.batch_remaining.clear();self.batch_failed.clear()
+            self.batch_retried=0
+            while True:
+                try:cid=self.batch_queue.get_nowait()
+                except queue.Empty:break
+                self.batch_queue.task_done()
+                # Release the queue slot's reservation, or a later batch would
+                # see the card as "already queued" and stall forever.
+                self.pending.discard(cid)
+            batch=self.batch_view();batch['status']='cancelled'
+            self.image_batch=batch
+        return dict(self.image_batch)
+
     def image_usage(self):
         """Cache size on disk plus how many Card IDs the database offers."""
         cached=0;size=0
@@ -288,9 +312,10 @@ class Cards:
             self.batch_stream.clear();self.batch_remaining.clear();self.batch_failed.clear()
             self.batch_retried=0
             self.image_batch=dict(status='idle',total=0,success=0,failed=0,missing=0,skipped=0,retried=0)
-            while True:
-                try:self.queue.get_nowait();self.queue.task_done()
-                except queue.Empty:break
+            for q in (self.queue,self.batch_queue):
+                while True:
+                    try:q.get_nowait();q.task_done()
+                    except queue.Empty:break
             self.pending.clear();self.image_attempts.clear();self.image_errors.clear()
             # Only PNG tiles in the current cache; JSON databases, settings and
             # stray files are left alone. A legacy images/manual/ directory from
@@ -402,7 +427,8 @@ class Cards:
             self.source=i18n.t('cards.source',locale=self.language)
             self._phase('prepare')
             self.need_download=True
-            self.image_attempts.clear();self.pending.clear();self.queue=queue.Queue(maxsize=128)
+            self.image_attempts.clear();self.pending.clear()
+            self.queue=queue.Queue(maxsize=128);self.batch_queue=queue.Queue(maxsize=128)
             self.batch_remaining.clear();self.batch_stream.clear();self.batch_failed.clear();self.batch_retried=0
             self.image_errors.clear()
             self.image_missing.clear()
@@ -413,7 +439,7 @@ class Cards:
     async def worker(self, stop=None, run_io=asyncio.to_thread):
         # Cooperative shutdown waits for in-flight thread I/O before cache deletion.
         while stop is None or not stop.is_set():
-            now=time.time();quiet=self.queue.empty() and not self.batch_remaining
+            now=time.time();quiet=self.queue.empty() and self.batch_queue.empty() and not self.batch_remaining
             # 7-day refresh of what we already have, or an explicit language whose
             # cache is missing. Both keep the original retry spacing (one attempt
             # per minute without data, per hour with data) so a failing network
@@ -425,11 +451,14 @@ class Cards:
                 record=await run_io(self.refresh)
                 self.apply(record)
             if stop is not None and stop.is_set():break
+            source=self.queue                      # on-demand cards go first
             try:
                 cid=self.queue.get_nowait()
             except queue.Empty:
-                await asyncio.sleep(.2)
-                continue
+                try:cid=self.batch_queue.get_nowait();source=self.batch_queue
+                except queue.Empty:
+                    await asyncio.sleep(.2)
+                    continue
             self.image_attempts[cid]=time.time()
             if len(self.image_attempts)>1024:
                 self.image_attempts.pop(next(iter(self.image_attempts)))
@@ -448,7 +477,7 @@ class Cards:
                 in_batch=cid in self.batch_remaining
                 if in_batch:self.batch_remaining.discard(cid)
                 # Release the id before the batch may re-queue it for a retry.
-                self.pending.discard(cid);self.queue.task_done()
+                self.pending.discard(cid);source.task_done()
                 if in_batch:
                     # A failure is only counted once it is final, so a retry that
                     # succeeds contributes to `success` alone.

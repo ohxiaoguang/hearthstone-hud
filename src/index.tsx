@@ -1,5 +1,5 @@
 import {
-  ButtonItem, ConfirmModal, DialogButton, DropdownItem, PanelSection, PanelSectionRow,
+  ButtonItem, DialogButton, DropdownItem, PanelSection, PanelSectionRow,
   SliderField, ToggleField,
 } from '@decky/ui';
 import { callable, definePlugin } from '@decky/api';
@@ -25,6 +25,7 @@ const stop=callable<[],Status>('stop_hud');
 const retryDatabase=callable<[],Status>('retry_card_database');
 const downloadAllImages=callable<[],Status>('download_all_images');
 const clearImages=callable<[],Status>('clear_card_images');
+const cancelImageDownload=callable<[],Status>('cancel_image_download');
 const clearDatabase=callable<[locale:string],Status>('clear_card_database');
 const diagnosticText=callable<[],string>('diagnostic_text');
 
@@ -122,11 +123,13 @@ function Content(){
   <span style={{flex:'1 1 160px'}}>{t('imagesCached',{cached:usage?.cached??0,total:usage?.total??0})}</span>
   <span style={{opacity:.8}}>{t('imagesOnDisk',{size:size(usage?.bytes??0)})}</span>
  </div>
- {(batchRunning||(batch?.status==='complete'&&(batch?.total??0)>0))&&<PanelSectionRow><div role="status" style={box}>
+ {batchRunning&&<PanelSectionRow><div role="status" style={box}>
   <progress aria-label={t('downloadAria')} value={batch?.total?done/batch.total:0} style={{width:'100%'}}/>
-  {batchRunning
-    ?t('imageBatchRunning',{done,total:batch?.total??0,failed:batch?.failed??0,missing:batch?.missing??0,retried:batch?.retried??0})
-    :t('imageBatchDone',{total:batch?.total??0,success:batch?.success??0,failed:batch?.failed??0,missing:batch?.missing??0,skipped:batch?.skipped??0})}
+  {t('imageBatchRunning',{done,total:batch?.total??0,failed:batch?.failed??0,missing:batch?.missing??0,retried:batch?.retried??0})}
+  <div style={{marginTop:'6px'}}><SmallButton disabled={busy} onClick={()=>background(t('applying'),cancelImageDownload)}>{t('cancel')}</SmallButton></div>
+ </div></PanelSectionRow>}
+ {batch?.status==='complete'&&<PanelSectionRow><div role="status" style={box}>
+  {t('imageBatchDone',{total:batch?.total??0,success:batch?.success??0,failed:batch?.failed??0,missing:batch?.missing??0,skipped:batch?.skipped??0})}
  </div></PanelSectionRow>}
  <PanelSectionRow><div style={row}>
   <SmallButton disabled={busy||batchRunning||!cards?.count} onClick={()=>background(t('applying'),downloadAllImages)}>{t('downloadAllImages')}</SmallButton>
@@ -148,11 +151,14 @@ function Content(){
  {copyState&&<PanelSectionRow><div role="status" style={box}>{copyState}</div></PanelSectionRow>}
  {manualCopy&&<textarea aria-label={t('manualAria')} readOnly value={manualCopy} onFocus={e=>e.currentTarget.select()} style={{width:'100%',height:180,fontSize:12,userSelect:'text',boxSizing:'border-box'}}/>}
  </>}
- {confirm&&<ConfirmModal
-   strTitle={confirm.kind==='database'?t('confirmDeleteDatabase',{language:databaseLabel(confirm.code)}):t('confirmClearImages')}
-   strDescription={confirm.kind==='database'?t('confirmDeleteDatabaseBody'):t('confirmClearImagesBody')}
-   strOKButtonText={t('delete')} strCancelButtonText={t('cancel')}
-   bDestructiveWarning onOK={finishConfirm} onCancel={()=>setConfirm(null)}/>}
+ {confirm&&<PanelSectionRow><div role="alertdialog" style={box}>
+  <div>{confirm.kind==='database'?t('confirmDeleteDatabase',{language:databaseLabel(confirm.code)}):t('confirmClearImages')}</div>
+  <div style={{marginTop:'4px',opacity:.8}}>{confirm.kind==='database'?t('confirmDeleteDatabaseBody'):t('confirmClearImagesBody')}</div>
+  <div style={{...row,marginTop:'8px'}}>
+   <SmallButton disabled={busy} onClick={finishConfirm}>{confirm.kind==='database'?t('delete'):t('clearImages')}</SmallButton>
+   <SmallButton disabled={busy} onClick={()=>setConfirm(null)}>{t('cancel')}</SmallButton>
+  </div>
+ </div></PanelSectionRow>}
  </PanelSection>;
 }
 export default definePlugin(()=>({name:'Hearthstone HUD',titleView:<div>Hearthstone HUD</div>,content:<Content/>,icon:<FaLayerGroup/>}));

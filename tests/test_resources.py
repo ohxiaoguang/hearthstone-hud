@@ -1,9 +1,11 @@
 """Resource management: per-language databases, full art downloads, clearing."""
 import asyncio
 import contextlib
+from collections import deque
 import json
 import ssl
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -18,7 +20,9 @@ def rows(count=MIN_CARDS,prefix='CARD_'):
     return [dict(id=f'{prefix}{i}',dbfId=i+1,name=f'{prefix}{i}',cost=i % 8,type='MINION') for i in range(count)]
 
 
-class ResourceTests(unittest.TestCase):
+class ResourceHelpers:
+    """Shared fixtures; no test methods, so inheriting adds nothing to the run."""
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.folder=Path(self.tmp.name)/'cache'
@@ -47,6 +51,10 @@ class ResourceTests(unittest.TestCase):
                     await asyncio.sleep(.01)
                 stop.set();await task
         asyncio.run(main())
+
+
+class ResourceTests(ResourceHelpers,unittest.TestCase):
+    pass
 
     def test_databases_report_presence_size_and_active_locale(self):
         path=self.cache('enUS')
@@ -241,3 +249,61 @@ class ResourceTests(unittest.TestCase):
         cards=Cards(self.folder)
         with self.assertRaises(ValueError):cards.clear_language('xxXX')
         with self.assertRaises(ValueError):cards.clear_language('en')
+
+
+class BatchControlTests(ResourceHelpers,unittest.TestCase):
+    """Cancel keeps the art; the on-demand queue always jumps the batch queue."""
+
+    def test_cancelling_keeps_downloaded_art_and_stops_the_batch(self):
+        self.cache('enUS')
+        cards=Cards(self.folder)
+        calls=[];release=threading.Event();started=threading.Event()
+        def download(cid):
+            calls.append(cid)
+            if len(calls)>=4:                       # let a few tiles land, then hold
+                started.set();release.wait(5)
+            (cards.images/(cid+'.png')).write_bytes(tile_png())
+        cards.begin_image_download(cards.all_card_ids())
+        stop=asyncio.Event()
+        def run():
+            async def main():
+                with patch.object(cards,'download_image',side_effect=download):
+                    await cards.worker(stop)
+            asyncio.run(main())
+        thread=threading.Thread(target=run);thread.start()
+        try:
+            self.assertTrue(started.wait(5))
+            cards.cancel_image_download()
+        finally:
+            release.set();stop.set();thread.join(5)
+        batch=cards.batch_view()
+        self.assertEqual(batch['status'],'cancelled')
+        self.assertEqual(cards.batch_remaining,set());self.assertEqual(cards.batch_stream,deque())
+        self.assertEqual(cards.batch_queue.qsize(),0)
+        self.assertGreaterEqual(cards.image_usage()['cached'],4)     # downloaded tiles kept
+        # A later batch resumes cleanly: cached tiles are skipped, the rest finishes.
+        cards.begin_image_download(cards.all_card_ids())
+        self.worker(cards,download=lambda cid:(cards.images/(cid+'.png')).write_bytes(tile_png()),
+                    seconds=40,until=lambda:cards.image_batch['status']=='complete')
+        self.assertEqual(cards.image_batch['status'],'complete')
+        self.assertEqual(cards.image_usage()['cached'],MIN_CARDS)
+
+    def test_ondemand_requests_jump_ahead_of_the_running_batch(self):
+        self.cache('enUS')
+        cards=Cards(self.folder)
+        calls=[]
+        def download(cid):
+            calls.append(cid);(cards.images/(cid+'.png')).write_bytes(tile_png())
+        stop=asyncio.Event()
+        async def main():
+            with patch.object(cards,'download_image',side_effect=download):
+                cards.begin_image_download(['CARD_0','CARD_1','CARD_2','CARD_3','CARD_4'])
+                cards.request_images(['CARD_29'])               # visible in the game right now
+                task=asyncio.create_task(cards.worker(stop))
+                deadline=time.time()+5
+                while time.time()<deadline and len(calls)<2:
+                    await asyncio.sleep(.01)
+                stop.set();await task
+        asyncio.run(main())
+        self.assertEqual(calls[0],'CARD_29')                    # the on-demand card went first
+        self.assertIn(calls[1],[f'CARD_{i}' for i in range(5)])

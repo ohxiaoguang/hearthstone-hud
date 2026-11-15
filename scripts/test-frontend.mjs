@@ -30,7 +30,9 @@ assert.doesNotMatch(ui, /clear_card_cache|cardLanguage|followUi|download_missing
 assert.match(ui, /t\('languageOptions'\)/);
 assert.match(ui, /t\('resources'\)/);
 assert.match(ui, /t\('about'\)/);
-assert.match(ui, /ConfirmModal/);
+assert.doesNotMatch(ui, /ConfirmModal/);          // inline confirmation, no modal
+assert.match(ui, /role=\"alertdialog\"/);
+assert.match(ui, /cancel_image_download|cancelImageDownload/);
 assert.match(ui, /download_all_images|downloadAllImages/);
 console.log('Settings page: language options, download resources and about wired');
 

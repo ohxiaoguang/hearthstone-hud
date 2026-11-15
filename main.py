@@ -381,6 +381,13 @@ class Plugin:
         return await self.status()
 
     @active_operation
+    async def cancel_image_download(self):
+        """Stop the running batch; downloaded art is kept, on-demand requests continue."""
+        await self._io(self.cards.cancel_image_download)
+        self._publish()
+        return await self.status()
+
+    @active_operation
     async def clear_card_images(self):
         """Delete downloaded art after stopping the worker that writes it."""
         async with self.media_lock:

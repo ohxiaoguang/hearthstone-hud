@@ -2,6 +2,18 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
+## Unreleased
+
+- Full card-art downloads can be cancelled from the settings panel. Cancelling keeps every
+  tile already on disk, drops the rest of the batch, and leaves the on-demand requests for
+  cards visible in the game untouched.
+- Card art now uses two download queues: cards currently visible in the game (deck, plays,
+  arena) go first, and the full download only fills the low-priority queue, so game art
+  never waits behind a bulk run.
+- The resource panel no longer uses modal dialogs: deleting a database or clearing card art
+  asks for confirmation inline, with Confirm/Cancel buttons next to the resource, and the
+  running download shows a Cancel button.
+
 ## v1.0.1
 
 - Download-failure messages no longer mention the removed offline import: the failure text
