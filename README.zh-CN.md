@@ -6,7 +6,7 @@
 Linux 掌机上为《炉石传说》绘制常驻悬浮层：己方剩余牌库、双方已打出的卡牌，以及带有评分的
 竞技场选牌面板。
 
-当前版本：**v0.7.1** · [更新记录](CHANGELOG.md) · [English](README.md)
+当前版本：**v0.7.2** · [更新记录](CHANGELOG.md) · [English](README.md)
 
 > 这是非官方社区项目，与暴雪娱乐、HearthSim 均无隶属或背书关系。《炉石传说》及其卡牌数据、
 > 卡图版权归暴雪娱乐所有。
@@ -30,7 +30,7 @@ Linux 掌机上为《炉石传说》绘制常驻悬浮层：己方剩余牌库�
 
 ## 安装
 
-1. 从[最新 Release](https://github.com/ohxiaoguang/hearthstone-hud/releases/latest) 下载 `hearthstone-hud-0.7.1.zip`。
+1. 从[最新 Release](https://github.com/ohxiaoguang/hearthstone-hud/releases/latest) 下载 `hearthstone-hud-0.7.2.zip`。
 2. 打开 Decky Loader → **设置（⚙）→ 通用 → 从文件安装插件**，选择该 ZIP。
 3. 打开快捷菜单（⋯ 键），选择 **Hearthstone HUD**。
 

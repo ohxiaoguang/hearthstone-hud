@@ -6,7 +6,7 @@ A [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin that 
 always-on overlay for Hearthstone on SteamOS and other Linux handhelds: your remaining
 deck, both players' played cards, and an arena drafting panel with card ratings.
 
-Current release: **v0.7.1** · [Changelog](CHANGELOG.md) · [中文说明](README.zh-CN.md)
+Current release: **v0.7.2** · [Changelog](CHANGELOG.md) · [中文说明](README.zh-CN.md)
 
 > This is an unofficial community project. It is not affiliated with, endorsed by, or
 > sponsored by Blizzard Entertainment or HearthSim. Hearthstone and its card data and art
@@ -33,7 +33,7 @@ Current release: **v0.7.1** · [Changelog](CHANGELOG.md) · [中文说明](READM
 
 ## Installation
 
-1. Download `hearthstone-hud-0.7.1.zip` from the [latest release](https://github.com/ohxiaoguang/hearthstone-hud/releases/latest).
+1. Download `hearthstone-hud-0.7.2.zip` from the [latest release](https://github.com/ohxiaoguang/hearthstone-hud/releases/latest).
 2. Open Decky Loader → **Settings (⚙) → General → Install plugin from file** and pick the ZIP.
 3. Open the Quick Access Menu (⋯ button) and select **Hearthstone HUD**.
 

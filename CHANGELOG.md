@@ -2,7 +2,7 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
-## Unreleased
+## v0.7.2
 
 - Card art download counts each card once: a card that fails and then succeeds on the retry
   is reported as a success, a card without art (HTTP 404) is listed separately and never
