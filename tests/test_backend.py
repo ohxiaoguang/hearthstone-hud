@@ -360,7 +360,7 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         status=await self.plugin.status()
         self.assertEqual(status['settings']['panel_width'],440)
         self.assertFalse(status['settings']['own_played'])
-        self.assertEqual(status['storage']['database'],str(self.plugin.runtime/'cache/cards.json'))
+        self.assertEqual(status['storage']['database'],str(self.plugin.cards.cache_path()))
         self.assertEqual(status['storage']['manual_images'],str(self.plugin.runtime/'cache/images/manual'))
         with self.assertRaises(ValueError):await self.plugin.configure({'panel_width':100})
         with self.assertRaises(ValueError):await self.plugin.configure({'show_summary':'no'})
@@ -486,3 +486,47 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         (self.plugin.settings_dir/'settings.json').write_text(json.dumps(dict(arena_memory='true')))
         await self.plugin._main()
         self.assertFalse(self.plugin.settings['arena_memory']);self.assertIsNone(self.plugin.memory_watch.thread)
+
+    async def test_resource_management_rpcs_and_status_payload(self):
+        """Per-database files, full art download and independent clearing."""
+        import json
+        from unittest.mock import patch
+        sys.path.insert(0,str(Path(__file__).resolve().parent))
+        from image_support import tile_png
+        rows=[dict(id=f'CARD_{i}',dbfId=i+1,name=f'Card {i}',cost=i % 5,type='MINION') for i in range(12)]
+        self.plugin.cards.install(rows)
+        (self.plugin.cards.directory/'cards-enUS.json').write_text(json.dumps(dict(updated=1,source='t',locale='enUS',cards=rows)))
+        (self.plugin.cards.directory/'cards-zhCN.json').write_text(json.dumps(dict(updated=1,source='t',locale='zhCN',cards=rows)))
+        status=await self.plugin.status()
+        self.assertEqual(status['repository'],'https://github.com/ohxiaoguang/hearthstone-hud')
+        databases=status['cards']['databases']
+        self.assertEqual(sorted(databases),['enUS','zhCN'])
+        self.assertTrue(databases['enUS']['active']);self.assertTrue(databases['zhCN']['exists'])
+        self.assertEqual(status['cards']['image_usage']['total'],12)
+        downloaded=[]
+        def fake(cid):
+            downloaded.append(cid)
+            (self.plugin.cards.images/(cid+'.png')).write_bytes(tile_png())
+        with patch.object(self.plugin.cards,'download_image',side_effect=fake):
+            await self.plugin.download_all_images()
+            for _ in range(200):
+                if self.plugin.cards.image_batch['status']=='complete':break
+                await asyncio.sleep(.02)
+        self.assertEqual(self.plugin.cards.image_batch['status'],'complete')
+        self.assertEqual(sorted(downloaded),sorted(r['id'] for r in rows))
+        self.assertEqual(self.plugin.cards.image_usage()['cached'],12)
+        # Clearing art leaves both databases and all card names in place.
+        await self.plugin.clear_card_images()
+        self.assertEqual(list(self.plugin.cards.images.glob('*.png')),[])
+        self.assertEqual((self.plugin.cards.directory/'cards-enUS.json').exists(),True)
+        self.assertEqual(self.plugin.cards.info('CARD_1')['name'],'Card 1')
+        # Clearing one database leaves the other file untouched.
+        await self.plugin.clear_card_database('zhCN')
+        self.assertFalse((self.plugin.cards.directory/'cards-zhCN.json').exists())
+        self.assertTrue((self.plugin.cards.directory/'cards-enUS.json').exists())
+        await self.plugin.clear_card_database('enUS')          # active database
+        self.assertFalse((self.plugin.cards.directory/'cards-enUS.json').exists())
+        self.assertEqual(self.plugin.cards.by_id,{})
+        self.assertEqual((await self.plugin.status())['cards']['databases']['enUS']['exists'],False)
+        with self.assertRaises(ValueError):await self.plugin.clear_card_database('deDE')
+        with self.assertRaises(ValueError):await self.plugin.download_all_images()   # no database

@@ -74,7 +74,7 @@ class Cards:
         self.images=self.directory/'images'
         self.images.mkdir(parents=True,exist_ok=True)
         self.tiles=TileStore(self.images)
-        self.image_batch=dict(status='idle',total=0,success=0,failed=0,skipped=0)
+        self.image_batch=dict(status='idle',total=0,success=0,failed=0,skipped=0,retried=0)
         self.batch_remaining=set();self.image_errors=deque(maxlen=10)
         self.image_totals=dict(success=0,failed=0,skipped=0)
         self.image_verify_tls=True
@@ -88,6 +88,10 @@ class Cards:
         self.source=i18n.t('cards.source',locale=self.language)
         self.generation=0;self.cache_lock=threading.Lock();self.image_error=''
         self.attempted=0;self.image_attempts={};self.queue=queue.Queue(maxsize=128);self.pending=set()
+        # Automatic (re)download may be switched off when the user clears the
+        # selected database; an explicit retry or a language switch turns it on.
+        self.auto_download=True
+        self.batch_stream=deque();self.batch_failed=[];self.batch_retried=0
         self._load_cached(self.language)
 
     # -- cache files -------------------------------------------------------
@@ -158,6 +162,7 @@ class Cards:
             self.error=''
             self.attempted=0            # The new locale is due right away.
             self.need_download=True     # Cleared by `_load_cached` on a cache hit.
+            self.auto_download=True     # An explicit switch always wants the file.
         if self._load_cached(locale):
             self._phase('ok')
             return True
@@ -195,27 +200,111 @@ class Cards:
 
     # -- images ------------------------------------------------------------
     def request_images(self,ids):
+        """Queue art for cards currently on screen (one attempt per hour)."""
         for cid in ids:
-            if not valid_id(cid) or self.tiles.path(cid) or cid in self.pending or (cid not in self.batch_remaining and time.time()-self.image_attempts.get(cid,0)<3600):
-                continue
+            # Validation happens here so a damaged tile is fetched again.
+            if not valid_id(cid) or cid in self.pending or self.tiles.path(cid):continue
+            if cid not in self.batch_remaining and time.time()-self.image_attempts.get(cid,0)<3600:continue
             if self.queue.full():break
             self.pending.add(cid);self.queue.put_nowait(cid)
 
-    def begin_image_download(self,ids):
+    def all_card_ids(self):
+        """Every unique Card ID in the loaded database, for a full art download."""
+        return [cid for cid in self.by_id if valid_id(cid)]
+
+    def _fill_queue(self):
+        """Move pending batch work into the download queue without rescanning it."""
+        while self.batch_stream and not self.queue.full():
+            cid=self.batch_stream.popleft()
+            if self.tiles.exists(cid):
+                self.batch_remaining.discard(cid);self.image_batch['skipped']+=1
+                continue
+            if cid in self.pending:
+                self.batch_stream.appendleft(cid);break   # already queued elsewhere
+            self.pending.add(cid);self.queue.put_nowait(cid)
+
+    def begin_image_download(self,ids,retry_failed=True):
+        """Start (or resume) one batch. Already cached files are never fetched again."""
         if self.batch_remaining:return dict(self.image_batch)
-        unique=set(ids)
-        self.image_batch=dict(status='running',total=len(unique),success=0,failed=0,skipped=0)
-        self.batch_remaining=set()
-        for cid in unique:
-            if not valid_id(cid) or self.tiles.path(cid):self.image_batch['skipped']+=1
-            else:self.batch_remaining.add(cid)
-        self.request_images(sorted(self.batch_remaining))
+        unique={cid for cid in ids if valid_id(cid)}
+        missing=sorted(cid for cid in unique if not self.tiles.exists(cid))
+        self.image_batch=dict(status='running',total=len(unique),success=0,failed=0,
+                              skipped=len(unique)-len(missing),retried=0)
+        self.batch_stream=deque(missing);self.batch_remaining=set(missing)
+        self.batch_failed=[];self.batch_retried=0
+        if retry_failed:
+            # A user-initiated download should not wait out the one-hour backoff
+            # that on-demand requests use.
+            for cid in missing:self.image_attempts.pop(cid,None)
+        self._fill_queue()
         if not self.batch_remaining:self.image_batch['status']='complete'
         return dict(self.image_batch)
 
-    def import_images(self,path):
-        self.import_result=self.tiles.import_zip(path)
-        return self.import_result
+    def _finish_batch(self):
+        """One retry pass for failures, then report the batch as complete."""
+        if self.batch_failed and not self.batch_retried:
+            retry=list(dict.fromkeys(self.batch_failed));self.batch_failed.clear()
+            self.batch_retried=1;self.image_batch['retried']=len(retry)
+            for cid in retry:self.image_attempts.pop(cid,None)
+            self.batch_stream.extend(retry);self.batch_remaining=set(retry)
+            self.image_batch['status']='running'
+            self._fill_queue();return
+        self.image_batch['status']='complete'
+
+    def image_usage(self):
+        """Cache size on disk plus how many Card IDs the database offers."""
+        cached=0;size=0
+        for path in self.images.glob('*.png'):
+            try:size+=path.stat().st_size;cached+=1
+            except OSError:continue
+        return dict(cached=cached,bytes=size,total=len(self.by_id),batch=dict(self.image_batch),
+                    downloading=self.image_batch['status']=='running')
+
+    def clear_images(self):
+        """Delete downloaded art only. The card databases are left untouched."""
+        removed=0
+        with self.cache_lock:
+            self.batch_stream.clear();self.batch_remaining.clear();self.batch_failed.clear()
+            self.batch_retried=0
+            self.image_batch=dict(status='idle',total=0,success=0,failed=0,skipped=0,retried=0)
+            while True:
+                try:self.queue.get_nowait();self.queue.task_done()
+                except queue.Empty:break
+            self.pending.clear();self.image_attempts.clear();self.image_errors.clear()
+            for path in self.images.glob('*.png'):
+                try:path.unlink();removed+=1
+                except OSError:pass
+            self.tiles=TileStore(self.images)
+            self.image_error=''
+        return removed
+
+    # -- databases ---------------------------------------------------------
+    def language_files(self):
+        """Size and presence of the two managed databases, for the settings page."""
+        out={}
+        for code in i18n.MANAGED_CARD_LANGUAGES:
+            info=dict(code=code,active=code==self.language,exists=False,bytes=0,updated=0)
+            try:
+                st=self.cache_path(code).stat()
+                info.update(exists=True,bytes=st.st_size,updated=st.st_mtime)
+            except OSError:pass
+            out[code]=info
+        return out
+
+    def clear_language(self,locale):
+        """Delete one language's database file; clearing the active one empties names."""
+        if locale not in i18n.CARD_CODES:
+            raise ValueError('unsupported card language: %s'%locale)
+        with self.cache_lock:
+            self.cache_path(locale).unlink(missing_ok=True)
+            if locale!=self.language:return False
+            self.generation+=1
+            self.by_id={};self.by_dbf={};self.updated=0;self.data_language=''
+            self.need_download=False;self.auto_download=False;self.error=''
+            self.source=i18n.t('cards.source',locale=locale)
+            self.attempted=time.time()
+            self._phase('idle')
+            return True
 
     # -- download and import ------------------------------------------------
     def _commit(self,rows,source,expected=None,locale=None):
@@ -279,15 +368,6 @@ class Cards:
         data=fetch(IMAGE_URL.format(card_id=cid),MAX_IMAGE,verify=self.image_verify_tls)
         validate_png(data)
         atomic_image(p,data)
-        self.prune_images()
-
-    def prune_images(self):
-        # Flat automatic cache only. Never traverse/delete images/manual/.
-        files=sorted(self.images.glob('*.png'),key=lambda f:f.stat().st_mtime,reverse=True)
-        size=0
-        for i,f in enumerate(files):
-            size+=f.stat().st_size
-            if i>=256 or size>32*1024*1024:f.unlink(missing_ok=True)
 
     def clear_cache(self):
         """Called after the media worker drains; delete only plugin-owned caches."""
@@ -307,8 +387,10 @@ class Cards:
             self._phase('prepare')
             self.need_download=True
             self.image_attempts.clear();self.pending.clear();self.queue=queue.Queue(maxsize=128)
-            self.batch_remaining.clear();self.image_errors.clear();self.import_result=None
-            self.image_batch=dict(status='idle',total=0,success=0,failed=0,skipped=0)
+            self.batch_remaining.clear();self.batch_stream.clear();self.batch_failed.clear();self.batch_retried=0
+            self.image_errors.clear();self.import_result=None
+            self.auto_download=True
+            self.image_batch=dict(status='idle',total=0,success=0,failed=0,skipped=0,retried=0)
             self.image_totals=dict(success=0,failed=0,skipped=0)
 
     async def worker(self, stop=None, run_io=asyncio.to_thread):
@@ -322,7 +404,7 @@ class Cards:
             retry=60 if not self.by_id else 3600
             stale=(not self.by_id or quiet) and now-self.updated>7*86400 and now-self.attempted>retry
             switching=self.need_download and now-self.attempted>retry
-            if stale or switching:
+            if self.auto_download and (stale or switching):
                 record=await run_io(self.refresh)
                 self.apply(record)
             if stop is not None and stop.is_set():break
@@ -343,11 +425,15 @@ class Cards:
                 self.image_errors.append(cid+': '+self.image_error)
             finally:
                 self.image_totals[outcome]+=1
+                finished=False
                 if cid in self.batch_remaining:
                     self.batch_remaining.discard(cid);self.image_batch[outcome]+=1
-                    if not self.batch_remaining:self.image_batch['status']='complete'
+                    if outcome=='failed':self.batch_failed.append(cid)
+                    finished=not self.batch_remaining
+                # Release the id before the batch may re-queue it for a retry.
                 self.pending.discard(cid);self.queue.task_done()
-                self.request_images(sorted(self.batch_remaining))
+                if finished:self._finish_batch()
+                else:self._fill_queue()
 
     def diagnostic(self):
         return dict(database_tls_verify=self.database_verify_tls,image_tls_verify=self.image_verify_tls,tls=tls_diagnostic(),
@@ -358,4 +444,5 @@ class Cards:
                     download_state=self.download_state,download_phase=self.download_phase,
                     image_error=self.image_error,images_pending=len(self.pending),image_cache=self.tiles.counts(),
                     image_batch=dict(self.image_batch),image_totals=dict(self.image_totals),image_import=self.import_result,
-                    image_errors=list(self.image_errors))
+                    image_errors=list(self.image_errors),image_usage=self.image_usage(),
+                    databases=self.language_files(),managed_languages=list(i18n.MANAGED_CARD_LANGUAGES))

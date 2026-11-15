@@ -179,7 +179,7 @@ class PluginLanguageTests(unittest.IsolatedAsyncioTestCase):
     async def test_defaults_are_english_and_card_locale_follows_it(self):
         status=await self.plugin.status()
         self.assertEqual(status['settings']['ui_language'],'en')
-        self.assertEqual(status['settings']['card_language'],'auto')
+        self.assertNotIn('card_language',status['settings'])   # the card database follows the UI
         self.assertEqual(self.plugin.cards.language,'enUS')
         self.assertEqual(status['match_status'],'No match identified yet')
         state=self.state()
@@ -196,26 +196,30 @@ class PluginLanguageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status['match_status'],'尚未识别对局')
         self.assertIn('竞技场',json.dumps(status['arena'],ensure_ascii=False))
 
-    async def test_card_language_can_differ_from_the_interface(self):
-        await self.plugin.configure({'ui_language':'zh-CN','card_language':'jaJP'})
-        self.assertEqual(self.plugin.cards.language,'jaJP')
-        self.assertEqual(self.state()['labels']['arena_card'],'竞技场 · 卡牌选择')
-        await self.plugin.configure({'card_language':'auto'})
+    async def test_card_database_follows_the_interface_language(self):
+        await self.plugin.configure({'ui_language':'zh-CN'})
         self.assertEqual(self.plugin.cards.language,'zhCN')
+        self.assertEqual(self.state()['labels']['arena_card'],'竞技场 · 卡牌选择')
         await self.plugin.configure({'ui_language':'en'})
         self.assertEqual(self.plugin.cards.language,'enUS')
+        self.assertEqual([d['code'] for d in self.plugin.cards.diagnostic()['databases'].values()],['enUS','zhCN'])
+        # The engine still knows every HearthstoneJSON locale for later expansion.
+        self.assertEqual(len(i18n.CARD_CODES),14)
 
     async def test_unknown_languages_are_rejected(self):
         with self.assertRaises(ValueError):await self.plugin.configure({'ui_language':'deDE'})
-        with self.assertRaises(ValueError):await self.plugin.configure({'card_language':'xxXX'})
         with self.assertRaises(ValueError):await self.plugin.configure({'ui_language':1})
+        # The retired per-database setting is not accepted any more.
+        with self.assertRaises(ValueError):await self.plugin.configure({'card_language':'jaJP'})
         self.assertEqual(self.plugin.settings['ui_language'],'en')
 
-    async def test_settings_survive_a_reload_and_old_flag_is_migrated(self):
-        await self.plugin.configure({'ui_language':'zh-CN','card_language':'frFR'})
+    async def test_settings_survive_a_reload_and_old_keys_are_migrated(self):
+        await self.plugin.configure({'ui_language':'zh-CN'})
         settings=json.loads((self.plugin.settings_dir/'settings.json').read_text())
-        self.assertEqual((settings['ui_language'],settings['card_language']),('zh-CN','frFR'))
-        saved=dict(settings);saved.pop('show_card_names',None);saved['chinese_names']=False
+        self.assertEqual(settings['ui_language'],'zh-CN')
+        saved=dict(settings);saved.pop('show_card_names',None)
+        saved['chinese_names']=False
+        saved['card_language']='frFR'      # written by an older version
         (self.plugin.settings_dir/'settings.json').write_text(json.dumps(saved))
         await self.plugin._unload()
         spec=importlib.util.spec_from_file_location('hud_lang2',Path(__file__).resolve().parents[1]/'main.py')
@@ -223,10 +227,10 @@ class PluginLanguageTests(unittest.IsolatedAsyncioTestCase):
         reloaded=module.Plugin();await reloaded._main()
         try:
             self.assertEqual(reloaded.settings['ui_language'],'zh-CN')
-            self.assertEqual(reloaded.settings['card_language'],'frFR')
             self.assertFalse(reloaded.settings['show_card_names'])
             self.assertNotIn('chinese_names',reloaded.settings)
-            self.assertEqual(reloaded.cards.language,'frFR')
+            self.assertNotIn('card_language',reloaded.settings)   # dropped, not honoured
+            self.assertEqual(reloaded.cards.language,'zhCN')
         finally:await reloaded._unload()
 
 

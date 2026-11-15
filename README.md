@@ -19,8 +19,7 @@ Current release: **v0.7.1** · [Changelog](CHANGELOG.md) · [中文说明](READM
 | Deck tracker | Your remaining deck with per-card counts, plus "your plays" and "opponent plays" driven by Hearthstone's own `Power.log`. |
 | Arena panel | The three candidates with arena ratings (best pick highlighted) and your drafted cards as one list sorted by mana cost. |
 | Card art | Tiles are downloaded on demand for the cards you actually see, never as a full set. |
-| 14 card languages | Card names, candidates, deck lists and search use any HearthstoneJSON locale. |
-| 2 interface languages | English (default) and Simplified Chinese, independent of the card language. |
+| Bilingual interface | English (default) and Simplified Chinese. The card database follows the interface language. |
 | Read-only arena memory | Optional. Reads the game's own draft objects to show what you have already picked. |
 
 ## Requirements
@@ -29,8 +28,8 @@ Current release: **v0.7.1** · [Changelog](CHANGELOG.md) · [中文说明](READM
 - Hearthstone installed and run through Proton.
 - The **Linux x86_64** build from the Releases page. The HUD is a native OpenGL program;
   Windows builds are not provided.
-- About 40 MB for the plugin, plus a card cache of roughly 2–4 MB per language you use and
-  up to 32 MB of card art.
+- About 40 MB for the plugin, plus roughly 2–4 MB per cached card database. Card art is
+  stored without a size cap, so a full download takes noticeably more space.
 
 ## Installation
 
@@ -58,36 +57,36 @@ enables logging the next time Hearthstone starts.
 
 | Setting | What it changes |
 | --- | --- |
-| Interface language | English or 简体中文. Applies immediately to this panel and to the HUD. |
-| Card language | Card database locale: follow the interface language, or any of the 14 HearthstoneJSON languages. |
+| Language options | English or 简体中文. Applies immediately to this panel and to the HUD; the card database follows it (enUS / zhCN) and is loaded from cache or downloaded. |
 | Enable plugin | Master switch. Turning it off stops all background work and keeps settings and caches. |
 | Show HUD | Starts or stops the overlay renderer. |
 | Arena helper | Opt-in read-only process memory access for the arena panel. |
-| Card name font size | 14–30 px. |
-| Panel width | 180–640 px. |
-| Display | Your remaining deck, opponent plays, your plays, match header, hide exhausted cards. |
-| Overall scale / opacity | Size and transparency of all panels. |
-| Panel positions | X/Y for the left and right panel groups. |
-| Download missing card art | Fetches art for cards currently on screen. |
-| Clear and re-download card data | Deletes cached card JSON and images, then downloads again. Settings are kept. |
-| Copy diagnostics | Copies a redacted report for bug reports. |
+| Display (fold) | Card name font size (14–30 px), panel width (180–640 px), overall scale, opacity, panel positions, and which panels are shown. |
+| Download resources (fold) | Per-database state and size with a delete button for each language, plus card art statistics, a full art download and a delete button. |
+| Copy diagnostics | Small button at the bottom; copies a redacted report for bug reports. |
+| About | Small button at the bottom; plugin name, summary, version and repository address. |
 
 ## Card data, languages and caching
 
-- Card metadata comes from [HearthstoneJSON](https://hearthstonejson.com/): one `cards.json`
-  per locale, fetched from `https://api.hearthstonejson.com/v1/latest/<locale>/cards.json`.
-- Supported locales: `enUS`, `zhCN`, `zhTW`, `deDE`, `esES`, `esMX`, `frFR`, `itIT`, `jaJP`,
-  `koKR`, `plPL`, `ptBR`, `ruRU`, `thTH`.
-- Every language is cached separately as `cache/cards-<locale>.json`. Switching language
-  reloads that file from disk; it only downloads when the language has no cache yet, so no
-  data is downloaded twice.
-- Card art is language independent. Tiles live in `cache/images/` and are shared by all
-  languages; the cache is trimmed to 256 files / 32 MiB.
-- Until a newly selected language finishes downloading, the HUD keeps showing the previous
+- Card metadata comes from [HearthstoneJSON](https://hearthstonejson.com/): one database per
+  locale, fetched from `https://api.hearthstonejson.com/v1/latest/<locale>/cards.json`.
+- The settings page manages two databases: **English (enUS)** and **Simplified Chinese
+  (zhCN)**. The interface language selects which one is used; the engine still understands
+  all fourteen HearthstoneJSON locales, so more interface languages can be added later.
+- Each database is cached as `cache/cards-<locale>.json` and reported with its size and
+  state in *Download resources*. Switching language reloads a cached file; it only downloads
+  when that language has no cache yet, so no data is downloaded twice.
+- Card art is language independent. Tiles live in `cache/images/`, are shared by every
+  language and are never evicted by a size cap. *Download all card art* fetches every unique
+  Card ID in the loaded database, skips files already on disk (so an interrupted run resumes
+  where it stopped), ignores duplicates and retries failures once.
+- Each database and the art cache have their own delete button with a confirmation prompt.
+  Deleting one database keeps the other one and all art; deleting art keeps both databases.
+- Until a newly selected database finishes downloading, the HUD keeps showing the previous
   language's names instead of falling back to raw card IDs. Switching again while a download
   is still running discards that download, so an older language can never overwrite the one
   you just picked.
-- Reloading the plugin keeps the selected languages and never re-downloads existing caches.
+- Reloading the plugin keeps the selected language and never re-downloads existing caches.
 
 The HUD renderer builds one font atlas that covers Latin, Cyrillic, Chinese, Japanese, Korean
 and Thai so that card names from any locale render correctly.
@@ -147,8 +146,8 @@ on other systems starting it fails with a message. Renderer output is written to
 `renderer.log` in the plugin's runtime directory, and *Copy diagnostics* includes its tail.
 
 **Cards show their IDs instead of names.**
-The card database is not loaded yet: wait for the first download, press *Retry card data
-download*, or pick a different card language. The plugin still tracks cards correctly with IDs.
+The card database is not loaded yet: wait for the first download, or press *Retry card data
+download* in *Download resources*. The plugin still tracks cards correctly with IDs.
 
 **`Selected X/30 (count unconfirmed)` stays visible.**
 A memory read failed and the last known list is being shown. The diagnostics section
@@ -164,8 +163,12 @@ Hearthstone must be fully restarted after the plugin edits `log.config`. Close t
 completely (not just the match) and start it again.
 
 **Names appear in the wrong language.**
-*Card language* is set to a specific locale. Set it to *Same as interface language*, or change
-the interface language as well.
+The card database follows the interface language. Change *Language options*, or delete the
+wrongly loaded database in *Download resources* so it is fetched again.
+
+**Art takes a lot of disk space.**
+There is no cache size cap any more. Delete the art in *Download resources*; the next cards
+you see are downloaded again on demand.
 
 **Diagnostics contain some Chinese text.**
 The panel and HUD follow your interface language. Diagnostics are a technical report: field

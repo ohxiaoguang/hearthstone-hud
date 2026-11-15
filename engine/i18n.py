@@ -25,6 +25,9 @@ CARD_LANGUAGES=(
 )
 CARD_CODES=tuple(code for code,_,_ in CARD_LANGUAGES)
 CARD_FOR_UI={'en':'enUS','zh-CN':'zhCN'}
+# The settings page manages exactly these two databases today; the engine still
+# understands all fourteen so another interface language can be added later.
+MANAGED_CARD_LANGUAGES=('enUS','zhCN')
 
 MESSAGES={
     'en':{
@@ -50,6 +53,9 @@ MESSAGES={
         'cards.source':'HearthstoneJSON {locale}',
         'cards.source_import':'HearthstoneJSON {locale} offline import: {name}',
         'cards.unknown':'Unknown card',
+        'cards.no_database':'Load a card database before downloading all card art',
+        'cards.unmanaged_language':'Only the English and Simplified Chinese databases are managed here',
+        'cards.clear_images':'Card art deleted',
         # Tracking labels.
         'track.waiting_new':'Waiting for a new match',
         'track.waiting_log':'Waiting for the active log',
@@ -195,6 +201,9 @@ MESSAGES={
         'cards.source':'HearthstoneJSON {locale}',
         'cards.source_import':'HearthstoneJSON {locale} 离线导入：{name}',
         'cards.unknown':'未知卡牌',
+        'cards.no_database':'请先加载卡牌数据库，再下载全部卡图',
+        'cards.unmanaged_language':'这里只管理英文与简体中文两个数据库',
+        'cards.clear_images':'卡图已清理',
         'track.waiting_new':'等待新对局',
         'track.waiting_log':'等待活动日志',
         'track.unsupported':'不支持的游戏模式',

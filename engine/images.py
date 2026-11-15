@@ -87,6 +87,11 @@ class TileStore:
                 self._checked[key]=False
             return False
 
+    def exists(self,cid):
+        """Cheap presence check for batching; `path()` still validates the PNG."""
+        if not valid_id(cid):return False
+        return (self.manual/(cid+'.png')).is_file() or (self.root/(cid+'.png')).is_file()
+
     def path(self,cid):
         if not valid_id(cid):return None
         for p in (self.manual/(cid+'.png'),self.root/(cid+'.png')):

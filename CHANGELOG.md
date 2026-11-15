@@ -2,6 +2,18 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
+## Unreleased
+
+- Settings are simpler: one *Language options* control drives both the interface and the card
+  database (English → enUS, Chinese → zhCN); the separate card-language picker is gone.
+- New *Download resources* section: per-database status, file size and delete button, plus
+  card art statistics, a resumable "download all card art" run and an art-only delete button.
+  Card art is no longer capped at 256 files / 32 MiB.
+- Font size and panel width moved into *Display*; the old "clear and re-download card data"
+  button and manual image import were removed.
+- *Copy diagnostics* and *About* are now small buttons side by side at the bottom; About shows
+  the name, summary, version and repository.
+
 ## v0.7.1
 
 - Switching the card language while a download is running now discards that download: the

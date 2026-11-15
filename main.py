@@ -26,12 +26,13 @@ from engine.diagnostics import format_diagnostics
 from engine.logconfig import ensure_power, ensure_decks, ensure_arena, inspect_config, diagnostic_state
 
 ROOT = Path(__file__).resolve().parent
+REPOSITORY = 'https://github.com/ohxiaoguang/hearthstone-hud'
 VERSION = json.loads((ROOT/'package.json').read_text())['version']
 DEFAULTS = dict(enabled=True,game_dir='/home/deck/Games/battlegame/Hearthstone',
     proton_prefix='',
     log_dir='', display=':0', x=40, y=80, scale=1.0, opacity=0.85,
     visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=True, right_x=1540, right_y=80, card_images=True, show_card_names=True, image_tls_verify=False, database_tls_verify=False, own_played=True, opponent_played=True, show_summary=True, panel_width=320, font_size=22, hide_exhausted=False, arena_memory=False, auto_logs=False,
-    ui_language=i18n.DEFAULT_UI, card_language='auto')
+    ui_language=i18n.DEFAULT_UI)
 
 
 def active_operation(method):
@@ -64,9 +65,9 @@ class Plugin:
         # is applied before the card database or any view is created.
         i18n.set_ui_language(self.settings.get('ui_language'))
         self.settings['ui_language'] = i18n.ui_language()
-        if not isinstance(self.settings.get('card_language'),str):self.settings['card_language']='auto'
-        if self.settings['card_language'] not in i18n.CARD_CODES:self.settings['card_language']='auto'
-        self.settings['card_language'] = self.settings['card_language']
+        # The card database now follows the interface language; the retired
+        # setting is dropped instead of being silently honoured.
+        self.settings.pop('card_language',None)
         # Only an explicit boolean opt-in can enable process memory access.
         if type(self.settings.get('arena_memory')) is not bool:self.settings['arena_memory']=False
         # Migrate the former pair to one switch without silently opting into memory.
@@ -132,8 +133,8 @@ class Plugin:
         if self.settings['enabled']:await self._start_services()
 
     def card_locale(self):
-        """Card database locale: an explicit choice, or the one matching the UI."""
-        return i18n.card_language(self.settings.get('card_language','auto'),self.settings.get('ui_language'))
+        """Card database locale, derived from the interface language."""
+        return i18n.card_language('auto',self.settings.get('ui_language'))
 
     async def _io(self,method,*args):
         if self.io_pool is None:raise RuntimeError(i18n.t('plugin.stopped_error'))
@@ -190,9 +191,6 @@ class Plugin:
             if key=='ui_language':
                 if value not in dict(i18n.UI_LANGUAGES):
                     raise ValueError('unsupported interface language')
-            elif key=='card_language':
-                if value!='auto' and value not in i18n.CARD_CODES:
-                    raise ValueError('unsupported card language')
             elif expected in (int, float):
                 value = float(value)
                 low, high = {'x':(0,7680),'y':(0,4320),'scale':(.5,3),'opacity':(.1,1),'right_x':(0,7680),'right_y':(0,4320),'panel_width':(180,640),'font_size':(14,30)}[key]
@@ -215,9 +213,10 @@ class Plugin:
                     if self.io_pool is not None:await self._io(self.memory_watch.join)
                     else:self.memory_watch.join()
             self.settings.update(checked)
-        if 'ui_language' in checked or 'card_language' in checked:
-            # Apply the interface language before any view or status is built.
-            if 'ui_language' in checked:i18n.set_ui_language(checked['ui_language'])
+        if 'ui_language' in checked:
+            # Apply the interface language before any view or status is built; the
+            # card database follows it, reusing a cache when one exists.
+            i18n.set_ui_language(checked['ui_language'])
             target=self.card_locale()
             if target!=self.cards.language:self.cards.set_language(target)
             if self.settings['enabled']:self._ensure_media_worker()
@@ -335,6 +334,7 @@ class Plugin:
     async def retry_card_database(self):
         # Same single worker handles first use, retries and images.
         if self.cards.download_phase!='running':
+            self.cards.auto_download=True     # An explicit retry always downloads.
             self.cards.attempted=0
             self.cards.updated=0
             self.cards._phase('prepare')
@@ -379,9 +379,36 @@ class Plugin:
         return await self.status()
 
     @active_operation
-    async def import_card_images(self,path: str):
+    async def download_all_images(self):
+        """Fetch art for every Card ID in the loaded database (resumable)."""
+        ids=self.cards.all_card_ids()
+        if not ids:raise ValueError(i18n.t('cards.no_database'))
+        self.cards.begin_image_download(ids)
+        self._ensure_media_worker()
+        self._publish()
+        return await self.status()
+
+    @active_operation
+    async def clear_card_images(self):
+        """Delete downloaded art after stopping the worker that writes it."""
         async with self.media_lock:
-            await self._io(self.cards.import_images,path)
+            self.cache_resetting=True
+            try:
+                self.media_stop.set()
+                if self.media_task:await self.media_task
+                await self._io(self.cards.clear_images)
+            finally:
+                self.cache_resetting=False
+                self._ensure_media_worker()
+            self._publish()
+        return await self.status()
+
+    @active_operation
+    async def clear_card_database(self,locale: str):
+        """Delete one language's JSON file; the other language and art stay."""
+        if locale not in i18n.MANAGED_CARD_LANGUAGES:
+            raise ValueError(i18n.t('cards.unmanaged_language'))
+        await self._io(self.cards.clear_language,locale)
         self._publish()
         return await self.status()
 
@@ -462,7 +489,7 @@ class Plugin:
             diag = json.loads((self.runtime / 'diagnostic.json').read_text())
         except (OSError, ValueError):
             pass
-        return dict(version=VERSION,settings=self.settings,storage=dict(runtime=str(self.runtime),database=str(self.cards.directory/'cards.json'),images=str(self.cards.images),manual_images=str(self.cards.images/'manual'),retained_on_uninstall=True), running=bool(self.proc and self.proc.returncode is None),
+        return dict(version=VERSION,repository=REPOSITORY,settings=self.settings,storage=dict(runtime=str(self.runtime),database=str(self.cards.cache_path()),images=str(self.cards.images),manual_images=str(self.cards.images/'manual'),retained_on_uninstall=True), running=bool(self.proc and self.proc.returncode is None),
                     lifecycle=self.lifecycle_state,
                     background=dict(log_monitor=bool(self.task and not self.task.done()),downloads=bool(self.media_task and not self.media_task.done()),memory=self.memory_watch.thread is not None,io_pool=self.io_pool is not None),
                     error=self.error, diagnostic=diag, log_path=str(self.log_path or ''),

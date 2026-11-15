@@ -82,15 +82,19 @@ def format_diagnostics(data,version,recent=(),renderer_tail=''):
     field('Loaded Language',cards.get('data_language') or 'none')
     field('Cached Languages',', '.join(cards.get('cached_languages',[])) or 'none')
     field('Card Count',cards.get('count',0));field('Last Updated',stamp(cards.get('updated')))
+    for code,info in (cards.get('databases') or {}).items():
+        field('Database '+code,f"{'present' if info.get('exists') else 'missing'}; {info.get('bytes',0)} bytes; active={info.get('active')}")
     field('Download',cards.get('download_state','unknown'));field('Last Error',cards.get('error',''))
     storage=data.get('storage',{})
     section('Storage')
     for key in ('runtime','database','images','manual_images'):field(key,storage.get(key,'unknown'))
     field('Uninstall','cache retained; imported source files untouched')
-    section('Card Images');counts=cards.get('image_cache',{});batch=cards.get('image_batch',{})
+    section('Card Images');counts=cards.get('image_cache',{});batch=cards.get('image_batch',{});usage=cards.get('image_usage',{})
     field('Cached Images',f"manual={counts.get('manual',0)}, automatic={counts.get('automatic',0)}")
+    field('Cache Size',f"{usage.get('cached',0)} of {usage.get('total',0)} cards, {usage.get('bytes',0)} bytes")
     field('Pending Downloads',cards.get('images_pending',0));field('Batch Status',batch.get('status','unknown'))
-    field('Total/Success/Failed/Skipped',f"{batch.get('total',0)} / {batch.get('success',0)} / {batch.get('failed',0)} / {batch.get('skipped',0)}")
+    field('Total/Success/Failed/Skipped/Retried',
+          f"{batch.get('total',0)} / {batch.get('success',0)} / {batch.get('failed',0)} / {batch.get('skipped',0)} / {batch.get('retried',0)}")
     field('Last Error',cards.get('image_error',''))
     imported=cards.get('image_import')
     if imported:

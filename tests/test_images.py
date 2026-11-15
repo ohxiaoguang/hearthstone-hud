@@ -21,13 +21,18 @@ class ImageTests(unittest.TestCase):
         self.assertTrue(validate_png(tile_png()))
         for data in [b'',tile_png()[:-1],tile_png(96,96),tile_png()[:40]+b'broken'+tile_png()[46:]]:
             with self.assertRaises(ValueError):validate_png(data)
-    def test_manual_priority_idempotent_and_auto_cleanup(self):
+    def test_manual_priority_idempotent_and_no_size_cap(self):
         result=self.store.import_zip(self.archive([('CARD_A.png',tile_png()),('CARD_B.png',tile_png())]))
         self.assertEqual(result['imported'],2);self.assertEqual(self.store.import_zip(self.root/'tiles.zip')['skipped'],2)
         cards=Cards(self.root/'cache');cards.tiles=self.store;cards.images=self.store.root
         (cards.images/'CARD_A.png').write_bytes(tile_png(color=8));self.assertEqual(cards.info('CARD_A')['image'],str(self.store.manual/'CARD_A.png'))
         for i in range(260):(cards.images/f'AUTO_{i}.png').write_bytes(tile_png())
-        cards.prune_images();self.assertTrue((self.store.manual/'CARD_A.png').exists());self.assertLessEqual(len(list(cards.images.glob('*.png'))),256)
+        before=len(list(cards.images.glob('*.png')))
+        (cards.images/'CARD_C.png').write_bytes(tile_png())
+        # The cache keeps every downloaded tile now: no 256-file or 32 MiB cap.
+        self.assertTrue((self.store.manual/'CARD_A.png').exists())
+        self.assertEqual(len(list(cards.images.glob('*.png'))),before+1)
+        self.assertEqual(cards.image_usage()['cached'],before+1)
     def test_paths_bad_id_corruption_and_limits(self):
         result=self.store.import_zip(self.archive([('../outside.png',tile_png()),('123.png',tile_png()),('CARD_A.png',b'broken'),('ok/CARD_B.png',tile_png())]))
         self.assertEqual(result['imported'],0);self.assertEqual(result['format_errors'],1);self.assertEqual(result['invalid_ids'],1);self.assertEqual(result['other_failures'],2)
@@ -92,13 +97,16 @@ class DownloadTests(unittest.IsolatedAsyncioTestCase):
                 for _ in range(100):
                     if cards.image_batch['status']=='complete':break
                     await asyncio.sleep(.01)
-                self.assertEqual(cards.image_batch['total'],2);self.assertEqual(cards.image_batch['success'],1);self.assertEqual(cards.image_batch['failed'],1)
+                # One failure is retried once by the batch itself, then reported.
+                self.assertEqual(cards.image_batch['total'],2);self.assertEqual(cards.image_batch['success'],1)
+                self.assertEqual(cards.image_batch['failed'],2);self.assertEqual(cards.image_batch['retried'],1)
                 cards.request_images(['FAIL']);self.assertNotIn('FAIL',cards.pending)
                 cards.begin_image_download(['CARD_A','FAIL']);self.assertEqual(cards.image_batch['skipped'],1)
                 for _ in range(100):
                     if cards.image_batch['status']=='complete':break
                     await asyncio.sleep(.01)
-                self.assertEqual(calls.count('FAIL'),2);self.assertEqual(calls.count('CARD_A'),1)
+                # Each batch retries a failure once: two batches, two attempts each.
+                self.assertEqual(calls.count('FAIL'),4);self.assertEqual(calls.count('CARD_A'),1)
                 worker.cancel()
                 with self.assertRaises(asyncio.CancelledError):await worker
 

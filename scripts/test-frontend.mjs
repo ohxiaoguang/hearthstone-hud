@@ -25,6 +25,15 @@ assert.match(ui, /ButtonItem layout="below" onClick=\{\(\)=>setOpen\(value=>!val
 assert.match(ui, /open&&<div/);
 console.log('Fold controls use Decky ButtonItem and React state; no native details/summary');
 
+// The retired controls must be gone, and the new resource/about entries present.
+assert.doesNotMatch(ui, /clear_card_cache|cardLanguage|followUi|download_missing_images/);
+assert.match(ui, /t\('languageOptions'\)/);
+assert.match(ui, /t\('resources'\)/);
+assert.match(ui, /t\('about'\)/);
+assert.match(ui, /ConfirmModal/);
+assert.match(ui, /download_all_images|downloadAllImages/);
+console.log('Settings page: language options, download resources and about wired');
+
 // Interface strings must stay in sync between English and Chinese, and every
 // key used by the panel has to exist.
 const catalog=readFileSync(new URL('../src/i18n.ts',import.meta.url),'utf8');

@@ -1,20 +1,36 @@
-import { ButtonItem, DropdownItem, PanelSection, PanelSectionRow, SliderField, ToggleField } from '@decky/ui';
+import {
+  ButtonItem, ConfirmModal, DialogButton, DropdownItem, PanelSection, PanelSectionRow,
+  SliderField, ToggleField,
+} from '@decky/ui';
 import { callable, definePlugin } from '@decky/api';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { FaLayerGroup } from 'react-icons/fa';
 import { copyText } from './clipboard';
-import { CARD_LANGUAGES, UI_LANGUAGES, tr, type UiLang } from './i18n';
-type Settings = {enabled:boolean;visible:boolean;own_deck:boolean;arena:boolean;arena_memory:boolean;font_size:number;panel_width:number;scale:number;opacity:number;x:number;y:number;right_x:number;right_y:number;own_played:boolean;opponent_played:boolean;show_summary:boolean;hide_exhausted:boolean;ui_language:UiLang;card_language:string};
-type Status = {lifecycle:string;version:string;settings:Settings;running:boolean;error:string;process:{found?:boolean};power_config:{enabled?:boolean;restart_required?:boolean};decks_config:{enabled?:boolean;restart_required?:boolean};arena_config:{enabled?:boolean;restart_required?:boolean};arena:{memory?:{status?:string}};cards:{count:number;download_state:string;download_phase:string;error:string;language?:string;data_language?:string;cached_languages?:string[];image_batch:{status:string;total:number;success:number;failed:number;skipped:number}}};
+import { UI_LANGUAGES, tr, type UiLang } from './i18n';
+
+type Settings = {enabled:boolean;visible:boolean;own_deck:boolean;arena:boolean;arena_memory:boolean;font_size:number;panel_width:number;scale:number;opacity:number;x:number;y:number;right_x:number;right_y:number;own_played:boolean;opponent_played:boolean;show_summary:boolean;hide_exhausted:boolean;ui_language:UiLang};
+type Database = {code:string;active:boolean;exists:boolean;bytes:number;updated:number};
+type Batch = {status:string;total:number;success:number;failed:number;skipped:number;retried?:number};
+type Cards = {count:number;download_state:string;download_phase:string;error:string;language?:string;data_language?:string;
+  databases?:Record<string,Database>;image_usage?:{cached:number;bytes:number;total:number;downloading:boolean};image_batch:Batch};
+type Status = {lifecycle:string;version:string;repository?:string;settings:Settings;running:boolean;error:string;
+  process:{found?:boolean};power_config:{enabled?:boolean;restart_required?:boolean};
+  decks_config:{enabled?:boolean;restart_required?:boolean};arena_config:{enabled?:boolean;restart_required?:boolean};
+  arena:{memory?:{status?:string}};cards:Cards};
+
 const getStatus=callable<[],Status>('status');
 const configure=callable<[values:Partial<Settings>],Status>('configure');
 const start=callable<[],Status>('start_hud');
 const stop=callable<[],Status>('stop_hud');
-const clearCache=callable<[],Status>('clear_card_cache');
 const retryDatabase=callable<[],Status>('retry_card_database');
-const downloadImages=callable<[],Status>('download_missing_images');
+const downloadAllImages=callable<[],Status>('download_all_images');
+const clearImages=callable<[],Status>('clear_card_images');
+const clearDatabase=callable<[locale:string],Status>('clear_card_database');
 const diagnosticText=callable<[],string>('diagnostic_text');
+
 const box={fontSize:13,lineHeight:1.45,padding:'6px 2px',overflowWrap:'anywhere' as const};
+const row={display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap' as const,fontSize:12,lineHeight:1.5,padding:'4px 2px'};
+
 function Fold({title,openLabel,closeLabel,children}:{title:string;openLabel:string;closeLabel:string;children:ReactNode}){
  const [open,setOpen]=useState(false);
  return <div style={{margin:'6px 0'}}>
@@ -22,10 +38,23 @@ function Fold({title,openLabel,closeLabel,children}:{title:string;openLabel:stri
   {open&&<div style={box}>{children}</div>}
  </div>;
 }
+function SmallButton({children,onClick,disabled}:{children:ReactNode;onClick:()=>void;disabled?:boolean}){
+ return <DialogButton disabled={disabled} onClick={onClick}
+   style={{width:'auto',minWidth:0,padding:'6px 14px',fontSize:12,lineHeight:1.2}}>{children}</DialogButton>;
+}
+function size(bytes:number){
+ if(!bytes)return '0 B';
+ if(bytes<1024)return `${bytes} B`;
+ if(bytes<1024*1024)return `${(bytes/1024).toFixed(0)} KB`;
+ return `${(bytes/1024/1024).toFixed(1)} MB`;
+}
+type Confirm={kind:'database';code:string}|{kind:'images'}|null;
+
 function Content(){
  const [data,setData]=useState<Status>();const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);const [action,setAction]=useState('');
  const [copyState,setCopyState]=useState('');const [manualCopy,setManualCopy]=useState('');
+ const [confirm,setConfirm]=useState<Confirm>(null);const [about,setAbout]=useState(false);
  const revision=useRef(0);const pending=useRef(0);
  const lang=data?.settings.ui_language??'en';
  const t=(key:Parameters<typeof tr>[1],values?:Record<string,string|number>)=>tr(lang,key,values);
@@ -38,16 +67,27 @@ function Content(){
   try{text=await diagnosticText();await copyText(text);setCopyState(t('copied'));setManualCopy('');}
   catch(e){setCopyState(t('copyFailed',{error:String(e)}));setManualCopy(text||`Hearthstone HUD Diagnostic\n[Plugin]\nVersion: ${data?.version??'unknown'}\nStatus: ${data?.running?'running':'stopped'}\n[Recent Errors]\nBackend diagnostic retrieval failed; full diagnostic unavailable.`);}
  };
- const downloading=!!data&&(data.cards.download_phase==='prepare'||data.cards.download_phase==='running');
- const batch=data?.cards.image_batch;
- const cardOptions=[{data:'auto',label:t('followUi')},...CARD_LANGUAGES.map(entry=>({data:entry.code,label:entry.label}))];
- const cardSelected=data?.settings.card_language??'auto';
+ const cards=data?.cards;const databases=cards?.databases??{};const usage=cards?.image_usage;const batch=cards?.image_batch;
+ const done=(batch?.success??0)+(batch?.failed??0)+(batch?.skipped??0);
+ const downloading=cards?.download_phase==='prepare'||cards?.download_phase==='running';
+ const batchRunning=batch?.status==='running';
+ const databaseLabel=(code:string)=>code==='enUS'?t('databaseEnglish'):t('databaseChinese');
+ const databaseState=(info:Database)=>{
+  if(info.exists)return info.active?t('databaseActive'):t('databaseReady');
+  return info.active&&downloading?t('databasePending'):t('databaseMissing');
+ };
+ const finishConfirm=async()=>{
+  const job=confirm;
+  setConfirm(null);
+  if(!job)return;
+  if(job.kind==='database')await background(t('applying'),()=>clearDatabase(job.code));
+  else await background(t('applying'),clearImages);
+ };
  return <PanelSection title={t('title',{version:data?.version??'…'})}>
  <PanelSectionRow><div style={box}>{data?.running?t('hudOn'):t('hudOff')}{(error||data?.error)&&<div role="alert" style={{color:'#ffbdad'}}>{error||data?.error}</div>}</div></PanelSectionRow>
  {data&&<>
- <DropdownItem label={t('uiLanguage')} rgOptions={UI_LANGUAGES.map(entry=>({data:entry.code,label:entry.label}))} selectedOption={data.settings.ui_language} onChange={option=>change({ui_language:option.data as UiLang})}/>
- <DropdownItem label={t('cardLanguage')} rgOptions={cardOptions} selectedOption={cardSelected} onChange={option=>change({card_language:String(option.data)})}/>
- <PanelSectionRow><div style={box}>{t('cardLanguageNote')}</div></PanelSectionRow>
+ <DropdownItem label={t('languageOptions')} rgOptions={UI_LANGUAGES.map(entry=>({data:entry.code,label:entry.label}))} selectedOption={data.settings.ui_language} onChange={option=>change({ui_language:option.data as UiLang})}/>
+ <PanelSectionRow><div style={box}>{t('languageNote')}</div></PanelSectionRow>
  <ToggleField label={t('enable')} description={t('enableDesc')} checked={data.settings.enabled} disabled={busy||data.lifecycle==='stopping'||data.lifecycle==='starting'} onChange={enabled=>background(enabled?t('restoring'):t('stopping'),()=>configure({enabled}))}/>
  {action&&<PanelSectionRow><div role="status" style={box}>{action}</div></PanelSectionRow>}
  {data.settings.enabled?<>
@@ -56,25 +96,63 @@ function Content(){
  {data.running&&(data.power_config.restart_required||data.decks_config.restart_required||data.arena_config.restart_required)&&<PanelSectionRow><div role="status" style={box}>{t('logsRestart')}</div></PanelSectionRow>}
  {data.running&&data.process.found&&(!data.decks_config.enabled||!data.arena_config.enabled)&&<PanelSectionRow><div role="alert" style={box}>{t('logsPending')}</div></PanelSectionRow>}
  {data.settings.arena_memory&&data.arena.memory?.status&&<PanelSectionRow><div style={box}>{data.arena.memory.status}</div></PanelSectionRow>}
- {(downloading&&!action)&&<PanelSectionRow><div role="status" style={box}><progress aria-label={t('downloadAria')} style={{width:'100%'}}/>{data.cards.download_state}</div></PanelSectionRow>}
- {!downloading&&!data.cards.count&&<><PanelSectionRow><div role="alert" style={box}>{t('cardsMissing')}</div></PanelSectionRow><ButtonItem layout="below" disabled={busy} onClick={()=>run(retryDatabase)}>{t('retry')}</ButtonItem></>}
+ {(downloading&&!action)&&<PanelSectionRow><div role="status" style={box}><progress aria-label={t('downloadAria')} style={{width:'100%'}}/>{cards?.download_state}</div></PanelSectionRow>}
+ {!downloading&&!cards?.count&&<><PanelSectionRow><div role="alert" style={box}>{t('cardsMissing')}</div></PanelSectionRow><ButtonItem layout="below" disabled={busy} onClick={()=>run(retryDatabase)}>{t('retry')}</ButtonItem></>}
+ <Fold title={t('display')} openLabel={t('expand')} closeLabel={t('collapse')}>
  <SliderField label={t('fontSize')} value={data.settings.font_size} min={14} max={30} step={1} onChange={font_size=>change({font_size})}/>
  <SliderField label={t('panelWidth')} value={data.settings.panel_width} min={180} max={640} step={10} onChange={panel_width=>change({panel_width})}/>
- <Fold title={t('display')} openLabel={t('expand')} closeLabel={t('collapse')}>
- {(['own_deck','opponent_played','own_played','show_summary','hide_exhausted'] as const).map((key,i)=><ToggleField key={key} label={[t('ownDeck'),t('opponentPlayed'),t('ownPlayed'),t('summary'),t('hideExhausted')][i]} checked={data.settings[key]} onChange={v=>change({[key]:v})}/>)}
  <SliderField label={t('scale')} value={data.settings.scale} min={.5} max={3} step={.1} onChange={scale=>change({scale})}/>
  <SliderField label={t('opacity')} value={data.settings.opacity} min={.1} max={1} step={.05} onChange={opacity=>change({opacity})}/>
+ {(['own_deck','opponent_played','own_played','show_summary','hide_exhausted'] as const).map((key,i)=><ToggleField key={key} label={[t('ownDeck'),t('opponentPlayed'),t('ownPlayed'),t('summary'),t('hideExhausted')][i]} checked={data.settings[key]} onChange={v=>change({[key]:v})}/>)}
  {(['x','y','right_x','right_y'] as const).map((key,i)=><SliderField key={key} label={[t('leftX'),t('leftY'),t('rightX'),t('rightY')][i]} value={data.settings[key]} min={0} max={[1920,1080,1920,1080][i]} step={10} onChange={v=>change({[key]:v})}/>)}
  </Fold>
- <ButtonItem layout="below" disabled={busy||batch?.status==='running'} onClick={()=>run(downloadImages)}>{t('downloadImages')}</ButtonItem>
- {batch?.status==='running'&&<PanelSectionRow><div role="status" style={box}>{t('imageProgress',{done:batch.success+batch.failed+batch.skipped,total:batch.total})}</div></PanelSectionRow>}
- <ButtonItem layout="below" disabled={busy} onClick={()=>background(t('clearCache'),clearCache)}>{t('clearCache')}</ButtonItem>
- <PanelSectionRow><div style={box}>{t('clearNote')}</div></PanelSectionRow>
+ <Fold title={t('resources')} openLabel={t('expand')} closeLabel={t('collapse')}>
+ <div style={{fontWeight:600,padding:'4px 2px'}}>{t('databases')}</div>
+ {(['enUS','zhCN'] as const).map(code=>{
+  const info=databases[code];if(!info)return null;
+  return <div key={code} style={row}>
+   <span style={{flex:'1 1 140px'}}>{databaseLabel(code)}</span>
+   <span style={{opacity:.8}}>{info.exists?size(info.bytes):'—'}</span>
+   <span style={{opacity:.8}}>{databaseState(info)}</span>
+   <SmallButton disabled={busy||!info.exists} onClick={()=>setConfirm({kind:'database',code})}>{t('delete')}</SmallButton>
+  </div>;
+ })}
+ <div style={{fontWeight:600,padding:'8px 2px 4px'}}>{t('images')}</div>
+ <div style={row}>
+  <span style={{flex:'1 1 160px'}}>{t('imagesCached',{cached:usage?.cached??0,total:usage?.total??0})}</span>
+  <span style={{opacity:.8}}>{t('imagesOnDisk',{size:size(usage?.bytes??0)})}</span>
+ </div>
+ {batchRunning&&<PanelSectionRow><div role="status" style={box}>
+  <progress aria-label={t('downloadAria')} value={batch?.total?done/batch.total:0} style={{width:'100%'}}/>
+  {t('imageBatchRunning',{done,total:batch?.total??0,failed:batch?.failed??0,retried:batch?.retried??0})}
+ </div></PanelSectionRow>}
+ <PanelSectionRow><div style={row}>
+  <SmallButton disabled={busy||batchRunning||!cards?.count} onClick={()=>background(t('applying'),downloadAllImages)}>{t('downloadAllImages')}</SmallButton>
+  <SmallButton disabled={busy||!(usage?.cached??0)} onClick={()=>setConfirm({kind:'images'})}>{t('clearImages')}</SmallButton>
+ </div></PanelSectionRow>
+ <PanelSectionRow><div style={box}>{t('imagesNote')}</div></PanelSectionRow>
+ </Fold>
  </>:<PanelSectionRow><div style={box}>{data.lifecycle==='disabled'?t('disabled'):t('stopping')}</div></PanelSectionRow>}
- <ButtonItem layout="below" onClick={copyDiagnostic}>{t('copyDiagnostic')}</ButtonItem>
+ <PanelSectionRow><div style={row}>
+  <SmallButton onClick={copyDiagnostic}>{t('copyDiagnostic')}</SmallButton>
+  <SmallButton onClick={()=>setAbout(true)}>{t('about')}</SmallButton>
+ </div></PanelSectionRow>
  {copyState&&<PanelSectionRow><div role="status" style={box}>{copyState}</div></PanelSectionRow>}
  {manualCopy&&<textarea aria-label={t('manualAria')} readOnly value={manualCopy} onFocus={e=>e.currentTarget.select()} style={{width:'100%',height:180,fontSize:12,userSelect:'text',boxSizing:'border-box'}}/>}
  </>}
+ {confirm&&<ConfirmModal
+   strTitle={confirm.kind==='database'?t('confirmDeleteDatabase',{language:databaseLabel(confirm.code)}):t('confirmClearImages')}
+   strDescription={confirm.kind==='database'?t('confirmDeleteDatabaseBody'):t('confirmClearImagesBody')}
+   strOKButtonText={t('delete')} strCancelButtonText={t('cancel')}
+   bDestructiveWarning onOK={finishConfirm} onCancel={()=>setConfirm(null)}/>}
+ {about&&<ConfirmModal
+   strTitle={t('aboutTitle')}
+   strDescription={<div style={box}>
+    <div>{t('aboutBody')}</div>
+    <div style={{marginTop:'8px'}}>{t('version',{version:data?.version??'—'})}</div>
+    <div style={{marginTop:'4px'}}>{t('repository')}: {data?.repository??'https://github.com/ohxiaoguang/hearthstone-hud'}</div>
+   </div>}
+   strOKButtonText={t('close')} bAlertDialog onOK={()=>setAbout(false)} onCancel={()=>setAbout(false)}/>}
  </PanelSection>;
 }
 export default definePlugin(()=>({name:'Hearthstone HUD',titleView:<div>Hearthstone HUD</div>,content:<Content/>,icon:<FaLayerGroup/>}));

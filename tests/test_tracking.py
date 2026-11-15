@@ -156,7 +156,7 @@ class CardTests(unittest.TestCase):
             cards.request_images('CARD_'+str(i) for i in range(500))
             self.assertEqual(cards.queue.qsize(),128)
 
-    def test_image_download_validates_and_limits_disk_entries(self):
+    def test_image_download_validates_and_keeps_every_downloaded_tile(self):
         with tempfile.TemporaryDirectory() as folder:
             cards=Cards(folder)
             with patch('engine.cards.fetch',return_value=b'not png'):
@@ -165,7 +165,7 @@ class CardTests(unittest.TestCase):
             image=tile_png()
             for i in range(256):(cards.images/(str(i)+'.png')).write_bytes(image)
             with patch('engine.cards.fetch',return_value=image):cards.download_image('TEST_A')
-            self.assertLessEqual(len(list(cards.images.glob('*.png'))),256)
+            self.assertEqual(len(list(cards.images.glob('*.png'))),257)   # no cache-size eviction
             self.assertTrue(cards.info('TEST_A')['image'])
 
 class ClockTests(unittest.TestCase):
