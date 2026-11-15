@@ -2,6 +2,14 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
+## Unreleased
+
+- Releases now contain only the install ZIPs: a versioned `hearthstone-hud-<version>.zip`
+  and a fixed `hearthstone-hud.zip` for the permanent download address
+  `https://github.com/ohxiaoguang/hearthstone-hud/releases/latest/download/hearthstone-hud.zip`.
+  Releases are stable (no longer pre-releases); the build reports stay in the Actions
+  artifacts.
+
 ## v0.7.2
 
 - Card art download counts each card once: a card that fails and then succeeds on the retry

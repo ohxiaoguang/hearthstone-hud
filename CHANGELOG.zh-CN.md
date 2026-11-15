@@ -2,6 +2,13 @@
 
 各版本的用户可见变化。English: [CHANGELOG.md](CHANGELOG.md)
 
+## 未发布
+
+- Release 页面只保留安装 ZIP：带版本号的 `hearthstone-hud-<版本>.zip` 与固定名称的
+  `hearthstone-hud.zip`，固定下载地址为
+  `https://github.com/ohxiaoguang/hearthstone-hud/releases/latest/download/hearthstone-hud.zip`。
+  Release 改为正式版（不再是 Pre-release）；构建检查报告只保留在 Actions 产物中。
+
 ## v0.7.2
 
 - 卡图下载每张卡只计一次：首次失败、重试成功的只记成功；服务器没有卡图（HTTP 404）的单列

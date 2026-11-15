@@ -33,7 +33,9 @@ Current release: **v0.7.2** · [Changelog](CHANGELOG.md) · [中文说明](READM
 
 ## Installation
 
-1. Download `hearthstone-hud-0.7.2.zip` from the [latest release](https://github.com/ohxiaoguang/hearthstone-hud/releases/latest).
+1. Download the plugin ZIP from the [latest release](https://github.com/ohxiaoguang/hearthstone-hud/releases/latest),
+   or always the newest one from the fixed address:
+   `https://github.com/ohxiaoguang/hearthstone-hud/releases/latest/download/hearthstone-hud.zip`.
 2. Open Decky Loader → **Settings (⚙) → General → Install plugin from file** and pick the ZIP.
 3. Open the Quick Access Menu (⋯ button) and select **Hearthstone HUD**.
 
