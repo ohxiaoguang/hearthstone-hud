@@ -58,7 +58,7 @@ public:
 };
 static std::string number(const json& value){return value.is_number_integer()?std::to_string(value.get<int>()):"?";}
 static constexpr auto flags=ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoInputs|ImGuiWindowFlags_NoFocusOnAppearing;
-static void panel(const char* id,const std::string& title,const json& rows,bool own,float x,float y,float scale,float opacity,bool images,bool chinese,TextureCache& textures,unsigned long frame,float width,float height,float font_size){
+static void panel(const char* id,const std::string& title,const json& rows,bool own,float x,float y,float scale,float opacity,bool images,bool show_names,const json& labels,TextureCache& textures,unsigned long frame,float width,float height,float font_size){
     if(rows.empty())return;
     const float row_height=std::max(32.f,font_size+8)*scale;
     const auto seconds=std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -70,7 +70,7 @@ static void panel(const char* id,const std::string& title,const json& rows,bool 
     ImGui::Begin(id,nullptr,flags & ~ImGuiWindowFlags_AlwaysAutoResize);
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,ImVec2(0,2*scale));ImGui::SetWindowFontScale(scale*.8f);
     ImGui::TextUnformatted(title.c_str());if(pages>1)ImGui::Text("%d / %d",page+1,pages);
-    if(rows.empty())ImGui::TextUnformatted(own?"无剩余行或等待日志证据":"尚无出牌记录");
+    if(rows.empty())ImGui::TextUnformatted(labels.value(own?"empty_own":"empty_other",own?"No remaining cards or waiting for log evidence":"No plays recorded yet").c_str());
     auto* draw=ImGui::GetWindowDrawList();
     for(size_t i=page*per_page;i<rows.size() && i<size_t((page+1)*per_page);++i){
         const auto& row=rows[i];
@@ -80,7 +80,7 @@ static void panel(const char* id,const std::string& title,const json& rows,bool 
             draw->AddText(pos,IM_COL32(255,215,135,255),row.value("name","").c_str());continue;
         }
         const bool event=row.value("event",false),deck=row.value("deck_row",false),arena=row.value("arena_row",false);
-        const auto label=arena?row.value("rating_label","暂无评分"):event?"":card_count_label(row,deck);
+        const auto label=arena?row.value("rating_label",labels.value("no_rating","No rating")):event?"":card_count_label(row,deck);
         const float rating_width=ImGui::GetFont()->CalcTextSizeA(24*scale,FLT_MAX,0,label.c_str()).x+12*scale;
         const float count_width=arena?std::min(width*.45f,std::max(36*scale,rating_width)):label.empty()?0:36*scale;
         const bool exhausted=deck && row.value("remaining",json())==json(0);
@@ -102,7 +102,7 @@ static void panel(const char* id,const std::string& title,const json& rows,bool 
             const auto extent=ImGui::GetFont()->CalcTextSizeA(size,FLT_MAX,0,cost.c_str());
             draw->AddText(ImGui::GetFont(),size,{center.x-extent.x*.5f,center.y-extent.y*.5f},white,cost.c_str());
         }
-        const auto name=hero&&chinese?row.value("class_name",row.value("name","")):row.value(chinese?"name":"id","");
+        const auto name=hero&&show_names?row.value("class_name",row.value("name","")):row.value(show_names?"name":"id","");
         const ImVec2 name_pos(pos.x+name_left,pos.y+(row_height-font_size*scale)*.5f);
         draw->AddText(ImGui::GetFont(),font_size*scale,{name_pos.x+scale,name_pos.y+scale},IM_COL32(0,0,0,230),name.c_str(),nullptr,0,&clip);
         draw->AddText(ImGui::GetFont(),font_size*scale,name_pos,white,name.c_str(),nullptr,0,&clip);
@@ -147,9 +147,26 @@ int main(int argc,char** argv){
     glfwMakeContextCurrent(w); glfwSwapInterval(1);
     ImGui::CreateContext(); auto& io=ImGui::GetIO(); io.IniFilename=nullptr;
     std::string assets=argv[2];
-    if(!io.Fonts->AddFontFromFileTTF((assets+"/fonts/NotoSansCJKsc-Regular.otf").c_str(),24,nullptr,io.Fonts->GetGlyphRangesChineseFull())) {
-        std::cerr<<"Missing Chinese font\n"; ImGui::DestroyContext();glfwDestroyWindow(w);glfwTerminate();return 6;
+    // Card names may arrive in any HearthstoneJSON locale, so the atlas has to
+    // cover Latin, Cyrillic, CJK and Hangul. Thai is not part of Noto Sans CJK
+    // and is merged from its own Noto file. Measured at 22px this is 33216
+    // glyphs in a 4096x4096 atlas (64 MB), the same cost as the old CJK-only
+    // atlas; 24px would double it, so the base size follows the default 22px.
+    static ImVector<ImWchar> glyph_ranges;
+    {
+        ImFontGlyphRangesBuilder builder;
+        builder.AddRanges(io.Fonts->GetGlyphRangesChineseFull());
+        static const ImWchar extra[]={0x0400,0x04FF,0x1100,0x11FF,0xAC00,0xD7A3,0x0E00,0x0E7F,0};
+        builder.AddRanges(extra);
+        builder.BuildRanges(&glyph_ranges);
     }
+    const float base_font_size=22.f;
+    if(!io.Fonts->AddFontFromFileTTF((assets+"/fonts/NotoSansCJKsc-Regular.otf").c_str(),base_font_size,nullptr,glyph_ranges.Data)) {
+        std::cerr<<"Missing CJK font\n"; ImGui::DestroyContext();glfwDestroyWindow(w);glfwTerminate();return 6;
+    }
+    ImFontConfig thai_config; thai_config.MergeMode=true;
+    if(!io.Fonts->AddFontFromFileTTF((assets+"/fonts/NotoSansThai-Regular.ttf").c_str(),base_font_size,&thai_config,glyph_ranges.Data))
+        std::cerr<<"Missing Thai font; Thai card names will show placeholders\n";
     ImGui_ImplGlfw_InitForOpenGL(w,false); ImGui_ImplOpenGL3_Init("#version 130");
     TextureCache textures{std::filesystem::path(argv[1])};
     json state; bool shown=false; auto last=std::chrono::steady_clock::now();
@@ -173,6 +190,9 @@ int main(int argc,char** argv){
         int sw,sh;glfwGetWindowSize(w,&sw,&sh);
         const auto& tracking=state["tracking"];
         const float font_size=std::clamp(state.value("font_size",22.f),14.f,30.f);
+        // Every label is supplied by the backend in the selected interface
+        // language; the English defaults below keep an old state.json usable.
+        const auto labels=state.value("labels",json::object());
         const float width=std::min(std::max(1.f,sw-20.f),std::clamp(state.value("panel_width",320.f),180.f,640.f)*scale);
         const float maxx=std::max(0.f,sw-width-20),maxy=std::max(0.f,sh-180*scale);
         const float lx=std::clamp(state.value("x",40.f),0.f,maxx),ly=std::clamp(state.value("y",80.f),0.f,maxy);
@@ -184,30 +204,33 @@ int main(int argc,char** argv){
             const auto stage=arena.value("stage","");
             const bool hero=stage=="hero_selection",power=stage=="hero_power_selection";
             const bool show_count=arena.value("show_count",true)&&!hero&&!power;
-            const std::string title=hero?"竞技场 · 英雄选择":power?"竞技场 · 英雄技能选择":"竞技场 · 卡牌选择"+(show_count?" · "+count:"");
+            const std::string base=hero?labels.value("arena_hero","Arena · Hero selection")
+                :power?labels.value("arena_hero_power","Arena · Hero power selection")
+                :labels.value("arena_card","Arena · Card selection");
+            const std::string title=arena.value("offer_title",base+(show_count?" · "+count:""));
             const float available=std::max(80.f,sh-ly-16*scale);
-            panel("arena-offer",title,arena_rows(arena,true),false,lx,ly,scale,opacity,state.value("card_images",true),state.value("chinese_names",true),textures,frames,width,std::min(available,230*scale),font_size);
-            if(show_count)panel("arena-picked",arena_picked_title(arena),arena_rows(arena,false),false,rx,ry,scale,opacity,state.value("card_images",true),state.value("chinese_names",true),textures,frames,width,std::max(80.f,sh-ry-16*scale),font_size);
+            panel("arena-offer",title,arena_rows(arena,true),false,lx,ly,scale,opacity,state.value("card_images",true),state.value("show_card_names",true),labels,textures,frames,width,std::min(available,230*scale),font_size);
+            if(show_count)panel("arena-picked",arena.value("picked_title",arena_picked_title(arena)),arena_rows(arena,false),false,rx,ry,scale,opacity,state.value("card_images",true),state.value("show_card_names",true),labels,textures,frames,width,std::max(80.f,sh-ry-16*scale),font_size);
         }else{
         if(state.value("show_summary",true)){
         ImGui::SetNextWindowPos({sw*.5f,8},ImGuiCond_Always,{.5f,0});ImGui::SetNextWindowBgAlpha(opacity);
         ImGui::Begin("match",nullptr,flags);ImGui::SetWindowFontScale(scale*.8f);
-        std::string status=tracking.value("status","")=="playing"?"对局进行中":tracking.value("status","")=="identifying"?"识别玩家身份中":tracking.value("status","")=="unsupported"?"不支持的游戏模式":"等待新对局 / 活动日志";
-        std::string summary=status+" · 回合 "+number(tracking.value("turn",json()));
-        if(state.value("opponent_hand",true))summary+=" · 对手手牌 "+number(tracking.value("opponent_hand",json()));
-        summary+=" · 对手牌库 "+number(tracking.value("opponent_deck",json()));
-        ImGui::TextUnformatted(summary.c_str());ImGui::End();
+        std::string summary=tracking.value("status","")=="playing"?"Match in progress":tracking.value("status","")=="identifying"?"Identifying players":tracking.value("status","")=="unsupported"?"Unsupported game mode":"Waiting for a new match / activity log";
+        summary+=" · Turn "+number(tracking.value("turn",json()));
+        if(state.value("opponent_hand",true))summary+=" · Opponent hand "+number(tracking.value("opponent_hand",json()));
+        summary+=" · Opponent deck "+number(tracking.value("opponent_deck",json()));
+        ImGui::TextUnformatted(tracking.value("summary",summary).c_str());ImGui::End();
         }
         const auto opponent_rows=played_rows(tracking,"opponent_played"),own_rows=played_rows(tracking,"own_played");
         const auto left=left_regions(state.value("opponent_played",true)&&!opponent_rows.empty(),state.value("own_played",true)&&!own_rows.empty(),ly,std::max(80.f,sh-ly-16*scale),8*scale);
         const auto render=[&](const char* id,const std::string& title,const json& rows,bool deck,float x,float y,float height){
-            panel(id,title,rows,deck,x,y,scale,opacity,state.value("card_images",true),state.value("chinese_names",true),textures,frames,width,height,font_size);
+            panel(id,title,rows,deck,x,y,scale,opacity,state.value("card_images",true),state.value("show_card_names",true),labels,textures,frames,width,height,font_size);
         };
-        if(left.opponent.visible)render("opponent-played","对手已打出 · 最近在前",opponent_rows,false,lx,left.opponent.y,left.opponent.height);
+        if(left.opponent.visible)render("opponent-played",labels.value("opponent_played","Opponent played · newest first"),opponent_rows,false,lx,left.opponent.y,left.opponent.height);
         const auto tick=std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch()).count()/8;
         const float own_y=ly+(left.opponent.visible&&!opponent_rows.empty()?panel_layout(opponent_rows.size(),font_size,scale,left.opponent.height,tick,ImGui::GetStyle().WindowPadding.y*2).height+8*scale:0);
-        if(left.own.visible)render("own-played","我方已打出 · 最近在前",own_rows,false,lx,own_y,left.own.height);
-        if(state.value("own_deck",true))render("remaining","我方剩余牌库 · "+number(tracking.value("own_remaining",json())),deck_rows(tracking,state.value("hide_exhausted",false)),true,rx,ry,std::max(80.f,sh-ry-16*scale));
+        if(left.own.visible)render("own-played",labels.value("own_played","You played · newest first"),own_rows,false,lx,own_y,left.own.height);
+        if(state.value("own_deck",true))render("remaining",tracking.value("remaining_title","Your remaining deck · "+number(tracking.value("own_remaining",json()))),deck_rows(tracking,state.value("hide_exhausted",false)),true,rx,ry,std::max(80.f,sh-ry-16*scale));
         }
         } // Hidden HUD submits an empty transparent frame.
         ImGui::Render();int fw,fh;glfwGetFramebufferSize(w,&fw,&fh);glViewport(0,0,fw,fh);glClearColor(0,0,0,0);glClear(GL_COLOR_BUFFER_BIT);ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());glfwSwapBuffers(w);

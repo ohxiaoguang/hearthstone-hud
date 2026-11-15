@@ -1,5 +1,12 @@
 # 静态评分来源
 
+> **English summary.** Data source: HearthArena tier list (static snapshot), captured
+> 2026-11-14T17:30:34Z. 4240 scored entries across 11 classes plus neutral. Runtime loads only
+> `engine/arena_ratings.json`; the page is never fetched while the plugin runs. The snapshot
+> time is when this project captured the page, not an upstream update guarantee. HearthArena is
+> the data source; these numbers are not original work and are not relicensed under MIT.
+
+
 - 实际数据源：https://www.heartharena.com/tierlist
 - 数据名称：HearthArena tier list (static snapshot)
 - 抓取时间（UTC）：2026-11-14T17:30:34.293563+00:00

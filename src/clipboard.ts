@@ -1,8 +1,9 @@
-/** Decky SDK exposes file copying, but no supported text clipboard wrapper. */
+/** Decky SDK exposes file copying, but no supported text clipboard wrapper.
+ * Returns a stable code ('clipboard' or 'fallback') so callers can localize the status. */
 export async function copyText(text: string, clipboard = globalThis.navigator?.clipboard, doc = globalThis.document): Promise<string> {
   const errors: string[] = [];
   if (clipboard?.writeText) {
-    try { await clipboard.writeText(text); return '系统剪贴板'; }
+    try { await clipboard.writeText(text); return 'clipboard'; }
     catch (e) { errors.push(String(e)); }
   }
   if (doc?.body) {
@@ -13,10 +14,10 @@ export async function copyText(text: string, clipboard = globalThis.navigator?.c
     doc.body.appendChild(input);
     try {
       input.focus(); input.select();
-      if (doc.execCommand?.('copy')) return '兼容复制';
-      errors.push('兼容复制 API 返回失败');
+      if (doc.execCommand?.('copy')) return 'fallback';
+      errors.push('compat copy API returned false');
     } catch (e) { errors.push(String(e)); }
     finally { input.remove(); focus?.focus?.(); }
   }
-  throw new Error(errors.join('；') || '当前环境没有可用的文本剪贴板 API');
+  throw new Error(errors.join('; ') || 'no text clipboard API available');
 }

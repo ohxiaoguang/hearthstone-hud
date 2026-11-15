@@ -1,22 +1,26 @@
 """Opt-in worker: no event-loop blocking, cooperative stop, owned descriptors."""
 import threading
 import time
+from . import i18n
 from .arena_memory import HearthstoneMemory
 
-DISABLED=dict(code='disabled',status='内存读取未开启',pid=None,error='')
+
+def disabled():
+    """A fresh disabled diagnostic, translated at call time."""
+    return dict(code='disabled',status=i18n.t('mem.disabled'),pid=None,error='')
 
 class MemoryWatch:
     def __init__(self,factory=None,normal=.5,idle=3):
         self.factory=factory or (lambda stop:HearthstoneMemory(stop=stop))
         self.normal=normal;self.idle=idle;self.stop_event=threading.Event();self.lock=threading.Lock()
-        self.thread=None;self.state=None;self.diagnostic=dict(DISABLED);self.updated=0;self.updated_start=0;self.updated_wall=0
+        self.thread=None;self.state=None;self.diagnostic=disabled();self.updated=0;self.updated_start=0;self.updated_wall=0
         self.last_error_key=None;self.last_error_time=0;self.errors=0;self.suppressed=0;self.last_error='';self.last_error_at=0
         self.generation=0
 
     def start(self):
         if self.thread is not None:return
         self.stop_event.clear()
-        with self.lock:self.diagnostic=dict(code='reading',status='正在读取',pid=None,error='')
+        with self.lock:self.diagnostic=dict(code='reading',status=i18n.t('mem.reading'),pid=None,error='')
         self.thread=threading.Thread(target=self._run,name='arena-memory-readonly',daemon=True);self.thread.start()
 
     def _run(self):
@@ -26,7 +30,7 @@ class MemoryWatch:
             while not self.stop_event.is_set():
                 try:state,diag=reader.poll()
                 except Exception as exc:
-                    reader.close();state=None;diag=dict(code='read_error',status='内存读取失败',pid=None,error=str(exc)[:300])
+                    reader.close();state=None;diag=dict(code='read_error',status=i18n.t('mem.failed'),pid=None,error=str(exc)[:300])
                 if self.stop_event.is_set():break
                 now=time.monotonic()
                 # The reader stamps both bounds of its deck read: the start of
@@ -48,7 +52,7 @@ class MemoryWatch:
                 self.stop_event.wait(self.normal if diag.get('code') in ('reading','hero_selection','card_selection','hero_power_selection') else self.idle)
         except Exception as exc:
             with self.lock:
-                self.state=None;self.last_error=str(exc)[:300];self.last_error_at=time.time();self.diagnostic=dict(code='read_error',status='内存任务初始化失败',pid=None,error=self.last_error)
+                self.state=None;self.last_error=str(exc)[:300];self.last_error_at=time.time();self.diagnostic=dict(code='read_error',status=i18n.t('mem.failed'),pid=None,error=self.last_error)
         finally:
             if reader is not None:reader.close()
 
@@ -58,7 +62,7 @@ class MemoryWatch:
         thread=self.thread
         if thread is not None:thread.join()
         self.thread=None
-        with self.lock:self.state=None;self.updated=0;self.diagnostic=dict(DISABLED);self.generation+=1
+        with self.lock:self.state=None;self.updated=0;self.diagnostic=disabled();self.generation+=1
 
     def snapshot(self):
         with self.lock:
@@ -67,5 +71,5 @@ class MemoryWatch:
             diag=dict(self.diagnostic,observed_at=self.updated,observed_start=self.updated_start,observed_wall=self.updated_wall,enabled=self.thread is not None,errors=self.errors,suppressed_errors=self.suppressed,last_error=self.last_error,last_error_at=self.last_error_at)
             # A hung or exited worker still hands out nothing; the flag tells the
             # panel that the deck it keeps is no longer backed by a live read.
-            if not fresh and self.state is not None:diag.update(code='reading',status='候选已过期，等待新读取',stale_read=True)
+            if not fresh and self.state is not None:diag.update(code='reading',status=i18n.t('mem.expired'),stale_read=True)
             return self.state if fresh else None,diag

@@ -1,8 +1,8 @@
 {
   "name": "hearthstone-hud",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
-  "description": "Gamescope 炉石 HUD 与竞技场辅助测试版",
+  "description": "Hearthstone deck HUD and arena helper for Decky Loader on Linux / SteamOS",
   "license": "MIT",
   "scripts": {
     "build": "node scripts/build-frontend.mjs",

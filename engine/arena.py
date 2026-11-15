@@ -7,6 +7,7 @@ keeps parsing Arena.log for the manual/offer API and Decks.log deck binding.
 from collections import Counter, OrderedDict
 from datetime import datetime
 import re
+from . import i18n
 from .arena_ratings import ArenaRatings
 from .deckstring import decode
 
@@ -18,7 +19,8 @@ PICK=re.compile(r'Client chooses: .* \((\S+)\)$')
 MODE=re.compile(r'SetDraftMode - (\S+)')
 DECK_ID=re.compile(r'# Deck ID: (\d+)')
 HERO_CLASSES=dict(zip(range(1,12),('WARRIOR','SHAMAN','ROGUE','PALADIN','HUNTER','DRUID','WARLOCK','MAGE','PRIEST','DEMONHUNTER','DEATHKNIGHT')))
-CLASS_NAMES=dict(zip(HERO_CLASSES.values(),('战士','萨满','潜行者','圣骑士','猎人','德鲁伊','术士','法师','牧师','恶魔猎手','死亡骑士')))
+# Canonical (English) hero class labels; localized text comes from engine.i18n.
+CLASS_NAMES=i18n.CLASS_LABELS['en']
 CARD_TYPES={'MINION','SPELL','WEAPON','LOCATION'}
 
 class Arena:
@@ -215,7 +217,7 @@ class Arena:
     def rated(self,cid):
         rating=self.ratings.get(self.class_id(),cid)
         return dict(self.cards.info(cid),rating=rating,score=rating['score'] if rating else None,
-                    rating_label=str(rating['score']) if rating else '暂无评分',tier=rating['tier'] if rating else '',best=False)
+                    rating_label=str(rating['score']) if rating else i18n.t('arena.no_rating'),tier=rating['tier'] if rating else '',best=False)
 
     def search(self,query):
         if not isinstance(query,str) or len(query)>100:raise ValueError('搜索文字过长')
@@ -247,7 +249,7 @@ class Arena:
         for row in offer:row['best']=bool(scores) and row['score']==max(scores)
         overflow=max(0,sum(self._kind(cid)=='card' for _,cid in self.raw_choices.get(draft_phase,[]))-30)
         unresolved=sum(self._kind(cid)=='unknown' for phase,values in self.raw_choices.items() if self.phase_decks.get(phase)==self.deck_id for _,cid in values)
-        return dict(**self.context(),mode=self.mode,hero=self.hero,identity_source=self.identity_source,cls=cls,class_name=CLASS_NAMES.get(cls,'职业未识别'),
+        return dict(**self.context(),mode=self.mode,hero=self.hero,identity_source=self.identity_source,cls=cls,class_name=i18n.class_label(cls),
             drafting=self.drafting,count=len(rows),count_exact=bool(self.exact_dbf) or (self.fresh_draft and not unresolved and not overflow),
             picks=rows,redraft_picks=redraft,candidates=offer,offer_round=self.offer_round,
             exact=bool(self.exact_dbf),exact_phase=self.exact_phase,unresolved_choices=unresolved,overflow_choices=overflow,ratings=self.ratings.metadata(),

@@ -71,7 +71,7 @@ class DeckModelTests(unittest.TestCase):
         self.assertTrue(e['foreign']);self.assertEqual(e['origin'],'opponent')
         self.assertFalse(e['generated'])
         self.entity(9,'TEST_B','HAND',1);self.move(9,'PLAY')
-        self.assertEqual(self.view()['own_played'][1]['origin_label'],'非初始牌组')
+        self.assertEqual(self.view()['own_played'][1]['origin_label'],'Not in the initial deck')
 
     def test_copy_creator_tag_and_distinct_sources_not_merged(self):
         for eid,source in [(8,4),(9,5)]:

@@ -1,7 +1,12 @@
-"""HearthstoneJSON zhCN metadata and bounded asynchronous image cache.
+"""HearthstoneJSON card metadata in any of its fourteen locales, plus a bounded
+asynchronous image cache.
 
-Metadata approach follows hs-decktracker-linux/cards.py (MIT). Network work
-runs in a worker thread, never in log parsing or the OpenGL loop.
+Metadata approach follows hs-decktracker-linux/cards.py (MIT). Network work runs
+in a worker thread, never in log parsing or the OpenGL loop.
+
+Each locale keeps its own cache file (`cards-<locale>.json`) so switching
+languages never re-downloads data that is already on disk. Card art is language
+independent and stays in one shared directory.
 """
 import asyncio
 from collections import deque
@@ -9,19 +14,20 @@ import queue
 import json
 import re
 import shutil
-import struct
 import ssl
 import threading
 import time
 import urllib.request
 from pathlib import Path
+from . import i18n
 from .io import atomic_json
 from .tls import verified_context, diagnostic as tls_diagnostic
 from .images import TileStore, valid_id, validate_png, atomic_image, MAX_IMAGE
 
-DATA_URL='https://api.hearthstonejson.com/v1/latest/zhCN/cards.json'
+DATA_URL='https://api.hearthstonejson.com/v1/latest/{locale}/cards.json'
 IMAGE_URL='https://art.hearthstonejson.com/v1/tiles/{card_id}.png'
 FIELDS=('id','dbfId','name','cost','cardClass','type')
+LEGACY_CACHE='cards.json'
 
 
 def fetch(url, limit, verify=True):
@@ -32,9 +38,9 @@ def fetch(url, limit, verify=True):
         context=ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         context.check_hostname=False
         context.verify_mode=ssl.CERT_NONE
-    with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'Hearthstone-HUD/0.2.4'}),timeout=12,context=context) as r:
+    with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'Hearthstone-HUD'}),timeout=12,context=context) as r:
         data=r.read(limit+1)
-        if len(data)>limit:raise ValueError('下载超出大小限制')
+        if len(data)>limit:raise ValueError(i18n.t('cards.size_limit'))
         return data
 
 
@@ -44,26 +50,26 @@ MAX_JSON=64*1024*1024
 
 def validate_dataset(data):
     if not isinstance(data,list):
-        raise ValueError('卡牌 JSON 顶层必须是数组')
+        raise ValueError(i18n.t('cards.import_shape'))
     rows=[];seen=set()
     for c in data:
         if not isinstance(c,dict) or not isinstance(c.get('id'),str) or not re.fullmatch(r'[A-Za-z0-9_]+',c['id']):
-            raise ValueError('卡牌记录缺少有效 ID')
-        if c['id'] in seen:raise ValueError('卡牌 ID 重复')
+            raise ValueError(i18n.t('cards.import_card_id'))
+        if c['id'] in seen:raise ValueError(i18n.t('cards.import_duplicate'))
         seen.add(c['id'])
         if not isinstance(c.get('dbfId'),int) or isinstance(c['dbfId'],bool) or c['dbfId']<=0:
             continue
         if not isinstance(c.get('name'),str) or not c['name'].strip() or len(c['name'])>512:
             continue
         if c.get('cost') is not None and (not isinstance(c['cost'],int) or isinstance(c['cost'],bool)):
-            raise ValueError('卡牌法力值格式错误')
+            raise ValueError(i18n.t('cards.import_cost'))
         rows.append({k:c[k] for k in FIELDS if k in c})
-    if len(rows)<MIN_CARDS:raise ValueError('有效卡牌不足 %d 张，保留旧缓存'%MIN_CARDS)
+    if len(rows)<MIN_CARDS:raise ValueError(i18n.t('cards.import_min',min=MIN_CARDS))
     return rows
 
 
 class Cards:
-    def __init__(self, directory):
+    def __init__(self, directory, language=None):
         self.directory=Path(directory)
         self.images=self.directory/'images'
         self.images.mkdir(parents=True,exist_ok=True)
@@ -74,20 +80,91 @@ class Cards:
         self.image_verify_tls=True
         self.database_verify_tls=True
         self.import_result=None
-        self.by_id={};self.by_dbf={};self.updated=0;self.error='';self.source='HearthstoneJSON zhCN'
-        self.generation=0;self.cache_lock=threading.Lock();self.image_error='';self.download_state='尚未尝试'
+        self.by_id={};self.by_dbf={};self.updated=0;self.error=''
+        self.language=i18n.card_language(language,None) if language else i18n.card_language('auto',i18n.ui_language())
+        self.data_language=''
+        self.need_download=False
+        self.download_state=i18n.t('cards.download_idle');self.download_phase='idle'
+        self.source=i18n.t('cards.source',locale=self.language)
+        self.generation=0;self.cache_lock=threading.Lock();self.image_error=''
         self.attempted=0;self.image_attempts={};self.queue=queue.Queue(maxsize=128);self.pending=set()
-        try:
-            data=json.loads((self.directory/'cards.json').read_text())
-            self.install(validate_dataset(data['cards']));self.updated=float(data['updated']);self.source=data.get('source',self.source)
-        except (OSError,ValueError,KeyError,TypeError):
-            pass
+        self._load_cached(self.language)
 
+    # -- cache files -------------------------------------------------------
+    def cache_path(self,locale=None):
+        return self.directory/('cards-%s.json'%(locale or self.language))
+
+    def cached_languages(self):
+        found=[]
+        for code in i18n.CARD_CODES:
+            if self.cache_path(code).exists():found.append(code)
+        return found
+
+    def _phase(self,phase,**values):
+        """Set the structured download phase and its translated label together."""
+        self.download_phase=phase
+        keys=dict(idle='cards.download_idle',prepare='cards.download_prepare',running='cards.download_running',
+                  ok='cards.download_ok',skipped='cards.download_skipped',failed='cards.download_failed')
+        self.download_state=i18n.t(keys[phase],**values)
+
+    def _read_cache(self,path):
+        data=json.loads(path.read_text())
+        rows=validate_dataset(data['cards'])
+        return rows,float(data['updated']),data.get('source','')
+
+    def _load_cached(self,locale):
+        """Load this locale's cache. Returns True when rows were installed."""
+        path=self.cache_path(locale)
+        try:
+            rows,updated,source=self._read_cache(path)
+        except (OSError,ValueError,KeyError,TypeError):
+            rows=None
+        found=locale
+        if rows is None and (self.directory/LEGACY_CACHE).exists():
+            # Older builds wrote one language-neutral file name; adopt it once so
+            # an upgrade never blanks the card names.
+            try:
+                rows,updated,source=self._read_cache(self.directory/LEGACY_CACHE)
+                try:found=json.loads((self.directory/LEGACY_CACHE).read_text()).get('locale') or locale
+                except (OSError,ValueError,TypeError):found=locale
+            except (OSError,ValueError,KeyError,TypeError):rows=None
+        if rows is None:
+            # Nothing on disk for this locale. An empty database is already
+            # handled by the worker's staleness check, so only flag an explicit
+            # switch away from data we do have.
+            self.need_download=bool(self.by_id)
+            self._phase('prepare')
+            return False
+        self.install(rows);self.updated=updated;self.data_language=found
+        self.source=source or i18n.t('cards.source',locale=found)
+        self.need_download=found!=locale;self.download_phase='ok'
+        return True
+
+    def set_language(self,locale):
+        """Switch the card database locale, reusing any cache already on disk."""
+        if locale not in i18n.CARD_CODES:
+            raise ValueError('unsupported card language: %s'%locale)
+        if locale==self.language and (self.by_id or not self.need_download):return False
+        self.language=locale
+        self.error=''
+        if self._load_cached(locale):
+            self._phase('ok')
+            return True
+        # Keep the previously loaded names visible until the new file arrives;
+        # `data_language` records that they belong to another locale.
+        self.need_download=True
+        self._phase('prepare')
+        return True
+
+    # -- metadata ----------------------------------------------------------
     def install(self, data):
-        if not isinstance(data,list):raise ValueError('卡牌数据库格式错误')
+        if not isinstance(data,list):raise ValueError(i18n.t('cards.import_shape'))
         rows=[{k:c[k] for k in FIELDS if k in c} for c in data if isinstance(c,dict) and isinstance(c.get('id'),str)]
         self.by_id={c['id']:c for c in rows}
         self.by_dbf={c['dbfId']:c['id'] for c in rows if isinstance(c.get('dbfId'),int)}
+        # Rows are installed for whatever language they came from; callers that
+        # know better (`_load_cached`) may still request a download afterwards.
+        if rows:self.need_download=False
 
     def id_for_dbf(self,dbf):
         return self.by_dbf.get(dbf,'dbf:'+str(dbf))
@@ -100,8 +177,10 @@ class Cards:
     def info(self,cid):
         card=self.by_id.get(cid,{})
         image=self.tiles.path(cid)
-        return dict(id=cid,name=card.get('name') if isinstance(card.get('name'),str) else cid or '未知卡牌',cost=card.get('cost') if isinstance(card.get('cost'),int) else None,image=str(image) if image and image.exists() else '')
+        return dict(id=cid,name=card.get('name') if isinstance(card.get('name'),str) else cid or i18n.t('cards.unknown'),
+                    cost=card.get('cost') if isinstance(card.get('cost'),int) else None,image=str(image) if image and image.exists() else '')
 
+    # -- images ------------------------------------------------------------
     def request_images(self,ids):
         for cid in ids:
             if not valid_id(cid) or self.tiles.path(cid) or cid in self.pending or (cid not in self.batch_remaining and time.time()-self.image_attempts.get(cid,0)<3600):
@@ -125,50 +204,56 @@ class Cards:
         self.import_result=self.tiles.import_zip(path)
         return self.import_result
 
-    def _commit(self,rows,source,expected=None):
+    # -- download and import ------------------------------------------------
+    def _commit(self,rows,source,expected=None,locale=None):
+        locale=locale or self.language
         with self.cache_lock:
             if expected is not None and expected!=self.generation:
                 return None  # A manual import/newer refresh won the race.
             updated=time.time()
-            atomic_json(self.directory/'cards.json',dict(updated=updated,source=source,locale='zhCN',cards=rows))
-            self.generation+=1
-            return dict(rows=rows,updated=updated,source=source,generation=self.generation)
+            atomic_json(self.cache_path(locale),dict(updated=updated,source=source,locale=locale,cards=rows))
+            if locale==self.language:self.generation+=1
+            return dict(rows=rows,updated=updated,source=source,locale=locale,generation=self.generation)
 
     def apply(self,record):
         with self.cache_lock:
             if record and record['generation']==self.generation:
-                self.install(record['rows']);self.updated=record['updated'];self.source=record['source'];self.error=''
+                self.install(record['rows']);self.updated=record['updated'];self.source=record['source']
+                self.data_language=record.get('locale',self.language);self.need_download=False;self.error=''
 
     def import_file(self,path):
         path=Path(path).expanduser()
-        if not path.is_absolute():raise ValueError('请输入离线 JSON 的绝对路径')
+        if not path.is_absolute():raise ValueError(i18n.t('cards.import_path'))
         with path.open('rb') as f:data=f.read(MAX_JSON+1)
-        if len(data)>MAX_JSON:raise ValueError('离线 JSON 超出 64MiB')
+        if len(data)>MAX_JSON:raise ValueError(i18n.t('cards.import_size'))
         value=json.loads(data)
+        locale=self.language
         if isinstance(value,dict):
-            if value.get('locale','zhCN')!='zhCN':raise ValueError('离线缓存语言必须为 zhCN')
+            locale=value.get('locale') or locale
+            if locale!=self.language:
+                raise ValueError(i18n.t('cards.import_locale',found=locale,wanted=self.language))
             value=value.get('cards')
         rows=validate_dataset(value)
-        return self._commit(rows,'HearthstoneJSON zhCN 离线导入：'+path.name)
+        return self._commit(rows,i18n.t('cards.source_import',locale=locale,name=path.name),locale=locale)
 
     def refresh(self):
-        self.attempted=time.time();expected=self.generation
+        self.attempted=time.time();expected=self.generation;locale=self.language
         for attempt in range(2):
-            self.download_state='正在下载（第 %d/2 次）'%(attempt+1)
+            self._phase('running',attempt=attempt+1)
             try:
-                rows=validate_dataset(json.loads(fetch(DATA_URL,MAX_JSON,verify=self.database_verify_tls)))
-                record=self._commit(rows,'HearthstoneJSON zhCN HTTPS',expected)
-                self.download_state='下载校验通过' if record else '已有较新缓存，跳过旧下载'
+                rows=validate_dataset(json.loads(fetch(DATA_URL.format(locale=locale),MAX_JSON,verify=self.database_verify_tls)))
+                record=self._commit(rows,i18n.t('cards.source',locale=locale),expected,locale=locale)
+                self._phase('ok' if record else 'skipped')
                 return record
             except (OSError,ValueError,TypeError) as exc:
                 self.error=str(exc)
                 if attempt==0:time.sleep(1)
-        self.download_state='自动下载失败；可重试或离线导入'
+        self._phase('failed')
         return None
 
     def download_image(self,cid):
         p=self.image_path(cid)
-        if p is None:raise ValueError('非法 Card ID')
+        if p is None:raise ValueError('invalid Card ID')
         data=fetch(IMAGE_URL.format(card_id=cid),MAX_IMAGE,verify=self.image_verify_tls)
         validate_png(data)
         atomic_image(p,data)
@@ -186,7 +271,8 @@ class Cards:
         """Called after the media worker drains; delete only plugin-owned caches."""
         with self.cache_lock:
             self.generation+=1  # Discard any obsolete refresh/import result.
-            (self.directory/'cards.json').unlink(missing_ok=True)
+            for path in self.directory.glob('cards*.json'):
+                path.unlink(missing_ok=True)
             if self.images.is_symlink():
                 self.images.unlink()
             elif self.images.exists():
@@ -194,8 +280,10 @@ class Cards:
             self.images.mkdir(parents=True,exist_ok=True)
             self.tiles=TileStore(self.images)
             self.by_id={};self.by_dbf={};self.updated=0;self.attempted=0
-            self.error='';self.image_error='';self.source='HearthstoneJSON zhCN'
-            self.download_state='准备下载'
+            self.error='';self.image_error='';self.data_language=''
+            self.source=i18n.t('cards.source',locale=self.language)
+            self._phase('prepare')
+            self.need_download=True
             self.image_attempts.clear();self.pending.clear();self.queue=queue.Queue(maxsize=128)
             self.batch_remaining.clear();self.image_errors.clear();self.import_result=None
             self.image_batch=dict(status='idle',total=0,success=0,failed=0,skipped=0)
@@ -204,7 +292,8 @@ class Cards:
     async def worker(self, stop=None, run_io=asyncio.to_thread):
         # Cooperative shutdown waits for in-flight thread I/O before cache deletion.
         while stop is None or not stop.is_set():
-            if (not self.by_id or self.queue.empty() and not self.batch_remaining) and time.time()-self.updated>7*86400 and time.time()-self.attempted>(60 if not self.by_id else 3600):
+            due=(self.need_download or not self.by_id or self.queue.empty() and not self.batch_remaining) and time.time()-self.updated>7*86400 and time.time()-self.attempted>(60 if not self.by_id else 3600)
+            if self.need_download or due:
                 record=await run_io(self.refresh)
                 self.apply(record)
             if stop is not None and stop.is_set():break
@@ -232,8 +321,12 @@ class Cards:
                 self.request_images(sorted(self.batch_remaining))
 
     def diagnostic(self):
-        return dict(database_tls_verify=self.database_verify_tls,image_tls_verify=self.image_verify_tls,tls=tls_diagnostic(),source=self.source,updated=self.updated,count=len(self.by_id),error=self.error,
-                    state='卡牌数据库可用' if self.by_id else '卡牌数据库不可用；显示卡牌 ID',download_state=self.download_state,
+        return dict(database_tls_verify=self.database_verify_tls,image_tls_verify=self.image_verify_tls,tls=tls_diagnostic(),
+                    source=self.source,language=self.language,language_name=i18n.card_language_name(self.language),
+                    data_language=self.data_language,cached_languages=self.cached_languages(),
+                    updated=self.updated,count=len(self.by_id),error=self.error,
+                    state=i18n.t('cards.state_ready') if self.by_id else i18n.t('cards.state_missing'),
+                    download_state=self.download_state,download_phase=self.download_phase,
                     image_error=self.image_error,images_pending=len(self.pending),image_cache=self.tiles.counts(),
                     image_batch=dict(self.image_batch),image_totals=dict(self.image_totals),image_import=self.import_result,
                     image_errors=list(self.image_errors))

@@ -41,20 +41,20 @@ class PatchTests(unittest.TestCase):
     def test_offline_import_validates_before_replacing_cache(self):
         cards=Cards(self.root/'cache');path=self.root/'zhCN.json';path.write_text(json.dumps(dataset()))
         cards.apply(cards.import_file(path));self.assertEqual(len(cards.by_id),100)
-        before=(cards.directory/'cards.json').read_bytes()
-        for value in ({'locale':'enUS','cards':dataset()},dataset()[:99],[{'broken':True}]*100):
+        before=(cards.cache_path()).read_bytes()
+        for value in ({'locale':'deDE','cards':dataset()},dataset()[:99],[{'broken':True}]*100):  # A file for another locale is rejected.
             path.write_text(json.dumps(value))
             with self.assertRaises(ValueError):cards.import_file(path)
-            self.assertEqual((cards.directory/'cards.json').read_bytes(),before)
+            self.assertEqual((cards.cache_path()).read_bytes(),before)
             self.assertEqual(len(cards.by_id),100)
         self.assertEqual(Cards(cards.directory).info('SAMPLE_0')['name'],'离线样本0')
 
     def test_ssl_eof_retries_without_losing_offline_cache(self):
         cards=Cards(self.root/'cache');path=self.root/'zhCN.json';path.write_text(json.dumps(dataset()))
-        cards.apply(cards.import_file(path));before=(cards.directory/'cards.json').read_bytes()
+        cards.apply(cards.import_file(path));before=(cards.cache_path()).read_bytes()
         with patch('engine.cards.fetch',side_effect=ssl.SSLError('UNEXPECTED_EOF_WHILE_READING')) as download, patch('engine.cards.time.sleep'):
             self.assertIsNone(cards.refresh());self.assertEqual(download.call_count,2)
-        self.assertEqual((cards.directory/'cards.json').read_bytes(),before)
+        self.assertEqual((cards.cache_path()).read_bytes(),before)
         self.assertEqual(len(cards.by_id),100);self.assertIn('EOF',cards.error)
 
     def test_https_certificate_verification_is_enabled(self):
@@ -69,7 +69,7 @@ class PatchTests(unittest.TestCase):
         path=self.root/'zhCN.json';path.write_text(json.dumps(dataset()))
         cards.apply(cards.import_file(path))
         self.assertIsNone(cards._commit(dataset(),'old download',generation))
-        self.assertIn('离线',cards.source)
+        self.assertIn('offline import',cards.source)
 
     def test_power_only_known_ids_and_late_deck_binding(self):
         decks=DeckLog();tracker=Tracker(decks);cards=Cards(self.root/'cache')

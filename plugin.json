@@ -1,1 +1,1 @@
-{"name":"Hearthstone HUD","author":"Hearthstone HUD contributors","flags":[],"api_version":1,"publish":{"tags":["utility"],"description":"炉石 Gamescope HUD，第一阶段实机验证版"}}
+{"name":"Hearthstone HUD","author":"Hearthstone HUD contributors","flags":[],"api_version":1,"publish":{"tags":["utility"],"description":"Hearthstone deck HUD and arena helper for SteamOS / Linux (read-only, local only)"}}

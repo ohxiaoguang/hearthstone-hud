@@ -36,7 +36,7 @@ class ArenaTests(unittest.TestCase):
         ts=ts or START+timedelta(seconds=200)
         for line in [header,'### ',f'# Deck ID: {deck_id}',encode(DeckDefinition([637],counts or {1:2,2:28}))]:self.a.feed_decks(ts,line)
     def test_01_new_arena_and_class(self):
-        self.begin();v=self.a.view();self.assertTrue(v['drafting']);self.assertEqual(v['deck_id'],'42');self.assertEqual(v['class_name'],'法师');self.assertEqual(v['count'],0)
+        self.begin();v=self.a.view();self.assertTrue(v['drafting']);self.assertEqual(v['deck_id'],'42');self.assertEqual(v['class_name'],'Mage');self.assertEqual(v['count'],0)
     def test_02_hero_and_hero_power_are_not_card_picks(self):
         self.begin();self.pick('CS2_034');self.pick('HERO_08bp');self.assertEqual(self.a.view()['count'],0)
     def test_03_same_card_in_different_rounds_and_exact_duplicate(self):
@@ -60,7 +60,7 @@ class ArenaTests(unittest.TestCase):
         self.block(header='Finding Game With Deck:',deck_id='42');self.assertFalse(self.a.exact_dbf)
     def test_07_candidates_do_not_count_and_tied_recommendations(self):
         self.begin();self.a.set_offer('42',self.a.phase,1,['TEST_A','TEST_B','TEST_D'])
-        v=self.a.view();self.assertEqual(v['count'],0);self.assertEqual([r['best'] for r in v['candidates']],[True,True,False]);self.assertEqual(v['candidates'][2]['rating_label'],'暂无评分')
+        v=self.a.view();self.assertEqual(v['count'],0);self.assertEqual([r['best'] for r in v['candidates']],[True,True,False]);self.assertEqual(v['candidates'][2]['rating_label'],'No rating')
         self.a.clear_offer();self.assertEqual(self.a.view()['candidates'],[])
     def test_08_manual_and_delayed_log_same_round_reconcile(self):
         self.begin();self.a.manual_pick('42',self.a.phase,1,'TEST_A');self.a.manual_pick('42',self.a.phase,1,'TEST_A')

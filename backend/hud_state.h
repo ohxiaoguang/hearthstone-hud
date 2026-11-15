@@ -31,11 +31,22 @@ inline bool valid_arena_state(const nlohmann::json& a){
     }
     return true;
 }
+inline bool valid_language(const nlohmann::json& s){
+    if(s.contains("ui_language") && (!s["ui_language"].is_string() || (s["ui_language"]!="en" && s["ui_language"]!="zh-CN")))return false;
+    // `show_card_names` supersedes the former `chinese_names` flag; either may be
+    // present so an older state.json still parses.
+    if(s.contains("show_card_names") && !s["show_card_names"].is_boolean())return false;
+    if(s.contains("chinese_names") && !s["chinese_names"].is_boolean())return false;
+    if(s.contains("labels") && !s["labels"].is_object())return false;
+    return true;
+}
+
 inline bool valid_hud_state(const nlohmann::json& s) {
     if(!s.is_object() || !s.contains("updated") || !s["updated"].is_number())return false;
+    if(!valid_language(s))return false;
     for(const auto* k:{"scale","opacity","x","y","right_x","right_y","panel_width","font_size"})
         if(s.contains(k) && (!s[k].is_number() || !std::isfinite(s[k].get<double>())))return false;
-    for(const auto* k:{"visible","own_deck","opponent_deck","opponent_hand","card_images","chinese_names","own_played","opponent_played","show_summary","hide_exhausted"})
+    for(const auto* k:{"visible","own_deck","opponent_deck","opponent_hand","card_images","own_played","opponent_played","show_summary","hide_exhausted"})
         if(s.contains(k) && !s[k].is_boolean())return false;
     if(s.contains("arena_state")&&!valid_arena_state(s["arena_state"]))return false;
     if(!s.contains("tracking") || !s["tracking"].is_object())return false;
@@ -109,12 +120,12 @@ inline LeftRegions left_regions(bool opponent,bool own,float y,float height,floa
 }
 
 inline std::string arena_picked_title(const nlohmann::json& a){
+    // English fallback only: the backend normally supplies a localized
+    // `picked_title`. The count is exact only while the last snapshot was read
+    // successfully, and a deck kept after a failed read must say so.
     const auto count=a.value("count",nlohmann::json());
-    std::string title="已选牌 "+(count.is_number_integer()?std::to_string(count.get<int>()):"?")+"/30";
-    // The count is exact only while the last snapshot was read successfully. A
-    // deck kept after a failed read must say so, and the hint disappears on its
-    // own once a good snapshot sets count_exact back to true.
-    if(!a.value("count_exact",true))title+="（份数待确认）";
+    std::string title="Selected "+(count.is_number_integer()?std::to_string(count.get<int>()):"?")+"/30";
+    if(!a.value("count_exact",true))title+=" (count unconfirmed)";
     return title;
 }
 

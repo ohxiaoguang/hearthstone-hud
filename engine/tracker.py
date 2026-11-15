@@ -3,6 +3,7 @@
 Decks.log headers/deck-code format follow hs-decktracker-linux/decks.py.
 Never infer an opponent's unknown card identity or use played cards as a deck.
 """
+from . import i18n
 from collections import Counter, OrderedDict, deque
 from datetime import datetime
 import re
@@ -94,8 +95,7 @@ class Tracker(PowerParser):
         copied = bool(ent.tags.get('COPIED_FROM_ENTITY_ID','').isdigit() and int(ent.tags['COPIED_FROM_ENTITY_ID']))
         origin = ('opponent' if foreign else 'transformed' if transformed else 'starting' if original else 'copied' if copied else
                   'generated' if generated else 'non_initial' if ent.in_starting_deck is False else 'unknown')
-        label = dict(opponent='对手获得', starting='原始牌', transformed='变形原牌', copied='复制', generated='效果生成',
-                     non_initial='非初始牌组', unknown='来源未知')[origin]
+        label = i18n.t('track.origin_'+origin)
         returned = bool(ent.arrival and ent.arrival.origin in ('PLAY', 'SECRET', 'GRAVEYARD'))
         return dict(in_starting_deck=original, starting_card_id=ent.known_id if original else '',
                     transformed=transformed, generated=generated, foreign=foreign,
@@ -183,9 +183,9 @@ class Tracker(PowerParser):
     def view(self, cards):
         game = self.game
         if game is None or game.complete:
-            return dict(status='waiting',turn=0,own=[],own_added=[],own_played=[],opponent=[],opponent_seen=[],opponent_played=[],own_label='等待新对局',opponent_hand=None,opponent_deck=None)
+            return dict(status='waiting',turn=0,own=[],own_added=[],own_played=[],opponent=[],opponent_seen=[],opponent_played=[],own_label=i18n.t('track.waiting_new'),opponent_hand=None,opponent_deck=None)
         if game.game_type.startswith(('GT_BATTLEGROUNDS','GT_MERCENARIES')):
-            return dict(status='unsupported',turn=0,own=[],own_added=[],own_played=[],opponent=[],opponent_seen=[],opponent_played=[],own_label='不支持的游戏模式',opponent_hand=None,opponent_deck=None)
+            return dict(status='unsupported',turn=0,own=[],own_added=[],own_played=[],opponent=[],opponent_seen=[],opponent_played=[],own_label=i18n.t('track.unsupported'),opponent_hand=None,opponent_deck=None)
         # Cross-file buffers can expose a queue-time deck block after CREATE_GAME.
         # Bind only a deck timestamped before this game, after the previous one.
         if not self.initial_dbf:
@@ -194,7 +194,7 @@ class Tracker(PowerParser):
             self.initial_dbf = self.arena.definition_for_game(datetime.fromisoformat(game.key))
         me,opp = game.friendly,game.opponent
         result = dict(status='playing' if me and opp else 'identifying',turn=(game.turn+1)//2,
-                      own=[],own_added=[],own_played=[],opponent=[],opponent_seen=[],opponent_played=[],own_label='牌组未知',opponent_hand=None,opponent_deck=None,
+                      own=[],own_added=[],own_played=[],opponent=[],opponent_seen=[],opponent_played=[],own_label=i18n.t('track.deck_unknown'),opponent_hand=None,opponent_deck=None,
                       own_class=game.hero_class(me) if me else '',opponent_class=game.hero_class(opp) if opp else '')
         if not me or not opp:
             return result
@@ -224,7 +224,7 @@ class Tracker(PowerParser):
         transformed=Counter(e.known_id for e in mine if e.zone=='DECK' and e.controller==me.player_id and e.card_id and e.card_id!=e.known_id)
         drawn=Counter(e.known_id for e in mine if e.id in self.drawn and e.known_id)
         used=Counter(e['card_id'] for e in self.used if e['player_id']==me.player_id and e['in_starting_deck'])
-        result['own_label']='原始牌库（Decks.log）' if starting else '部分原始牌；完整牌组未知'
+        result['own_label']=i18n.t('track.deck_full') if starting else i18n.t('track.deck_partial')
         # Without a deck definition, show only confirmed starting entities. Never
         # use arbitrary visible cards or plays to manufacture a deck definition.
         original_ids = starting.keys() if starting else accounted.keys()
@@ -234,12 +234,12 @@ class Tracker(PowerParser):
             exact=initial is not None and not cid.startswith('dbf:') and not uncertain_slots and accounted[cid]<=initial
             remaining=max(0,(initial or 0)-departed[cid]-transformed[cid]) if exact else None
             lower=sum(1 for e in mine if e.zone=='DECK' and e.controller==me.player_id and e.card_id==cid and e.known_id==cid)
-            reason=('初始牌组与实体证据一致' if exact else
-                    '初始牌组未知' if not starting else
-                    '该牌 dbfId 尚未映射' if cid.startswith('dbf:') else
-                    '可能属于该牌的原始实体缺失或离库身份未知' if uncertain_slots else
-                    '原始实体数超过该牌初始数量' if accounted[cid]>(initial or 0) else
-                    '该牌不在已识别初始牌组中')
+            reason=(i18n.t('count.exact') if exact else
+                    i18n.t('count.start_unknown') if not starting else
+                    i18n.t('count.unmapped') if cid.startswith('dbf:') else
+                    i18n.t('count.uncertain') if uncertain_slots else
+                    i18n.t('count.over') if accounted[cid]>(initial or 0) else
+                    i18n.t('count.not_initial'))
             self_row=dict(cards.info(cid),initial=initial,
                 remaining=remaining,known_in_deck=lower,remaining_lower_bound=lower if remaining is None and lower>0 else None,
                 count_confidence='exact' if exact else 'lower_bound' if lower>0 else 'unknown',count_reason=reason,
@@ -257,12 +257,12 @@ class Tracker(PowerParser):
                 continue
             provenance = self._provenance(ent, me.player_id)
             if original:
-                provenance.update(origin='transformed',origin_label='变形原牌')
+                provenance.update(origin='transformed',origin_label=i18n.t('track.origin_transformed'))
             key = (ent.card_id, provenance['origin'], provenance['source_entity_id'])
             if key not in added:
                 added[key] = dict(cards.info(ent.card_id), **provenance,
                     initial=None, remaining=0, count=0, count_confidence='exact',
-                    known_in_deck=0, count_reason='当前 DECK 区域的非原始身份实体')
+                    known_in_deck=0, count_reason=i18n.t('count.zone'))
             added[key]['remaining'] += 1
             added[key]['count'] += 1
             added[key]['known_in_deck'] += 1

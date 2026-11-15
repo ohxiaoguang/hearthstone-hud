@@ -1,0 +1,138 @@
+/** Interface strings for the Decky panel. English is the default language. */
+export type UiLang = 'en' | 'zh-CN';
+
+type Dict = Record<string, string>;
+
+const en: Dict = {
+  title: 'Hearthstone HUD · {version}',
+  hudOn: 'HUD is on',
+  hudOff: 'HUD is off',
+  enable: 'Enable plugin',
+  enableDesc: 'Turning this off stops all background work and keeps your settings and caches.',
+  hud: 'Show HUD',
+  arena: 'Arena helper',
+  arenaDesc: 'Reads the game process (read-only) to detect candidates and the cards you have drafted.',
+  logsRestart: 'Logs were enabled automatically. Fully exit and restart Hearthstone.',
+  logsPending: 'Log settings are incomplete. Copy the diagnostics if this keeps happening.',
+  downloading: 'Downloading card data, please wait…',
+  downloadAria: 'Card data preparation progress',
+  cardsMissing: 'Card data is unavailable. Retry the download; the HUD can still show card IDs.',
+  retry: 'Retry card data download',
+  fontSize: 'Card name font size',
+  panelWidth: 'Panel width',
+  display: 'Display',
+  ownDeck: 'Your remaining deck',
+  opponentPlayed: 'Opponent plays',
+  ownPlayed: 'Your plays',
+  summary: 'Match header',
+  hideExhausted: 'Hide exhausted cards',
+  scale: 'Overall scale',
+  opacity: 'Panel opacity',
+  leftX: 'Left panel X',
+  leftY: 'Left panel Y',
+  rightX: 'Right panel X',
+  rightY: 'Right panel Y',
+  downloadImages: 'Download missing card art',
+  imageProgress: 'Downloading art · {done}/{total}',
+  clearCache: 'Clear and re-download card data',
+  clearNote: 'Clears the cached JSON and images, then downloads again. Display settings and imported files are kept; art is fetched for the current deck and candidates.',
+  disabled: 'Plugin is disabled; background work is stopped. Re-enable it to restore the previous settings.',
+  stopping: 'Stopping background work, please wait…',
+  copyDiagnostic: 'Copy diagnostics',
+  copying: 'Preparing diagnostics…',
+  copied: 'Diagnostics copied',
+  copyFailed: 'Copy failed: {error}',
+  manualAria: 'Diagnostics text for manual copy',
+  expand: 'Show',
+  collapse: 'Hide',
+  uiLanguage: 'Interface language',
+  cardLanguage: 'Card language',
+  followUi: 'Same as interface language',
+  cardLanguageNote: 'Card names, arena candidates, search results and deck lists use this language. Each language is cached separately and reused after switching.',
+  restartToggleNote: 'Language changes apply immediately; no restart is needed.',
+  applying: 'Applying…',
+  restoring: 'Restoring the plugin…',
+};
+
+const zhCN: Dict = {
+  title: '炉石记牌器 · {version}',
+  hudOn: 'HUD 已开启',
+  hudOff: 'HUD 已关闭',
+  enable: '启用插件',
+  enableDesc: '关闭将停止所有后台功能，保留配置与缓存。',
+  hud: '启用 HUD',
+  arena: '竞技场辅助',
+  arenaDesc: '只读游戏内存，自动识别候选并显示已选牌与评分。',
+  logsRestart: '日志已自动启用，请完全退出并重启炉石。',
+  logsPending: '日志设置尚未完成；若持续出现，请复制诊断。',
+  downloading: '正在下载卡牌数据，首次使用请稍候…',
+  downloadAria: '卡牌数据准备进度',
+  cardsMissing: '卡牌数据暂不可用，可以重试下载；HUD 仍可显示卡牌 ID。',
+  retry: '重试下载卡牌数据',
+  fontSize: '卡牌名称字号',
+  panelWidth: '面板宽度',
+  display: '显示设置',
+  ownDeck: '己方剩余牌库',
+  opponentPlayed: '对手已打出',
+  ownPlayed: '我方已打出',
+  summary: '顶部对局信息',
+  hideExhausted: '隐藏已耗尽卡牌',
+  scale: '整体缩放',
+  opacity: '面板不透明度',
+  leftX: '左侧横向位置',
+  leftY: '左侧纵向位置',
+  rightX: '右侧横向位置',
+  rightY: '右侧纵向位置',
+  downloadImages: '下载缺失卡图',
+  imageProgress: '卡图下载中 · {done}/{total}',
+  clearCache: '清理并重新下载卡牌数据',
+  clearNote: '清理缓存的 JSON 和图片后自动重新下载，保留显示设置和原始导入文件。卡图按当前牌组与候选下载。',
+  disabled: '插件已停用，后台任务已停止。重新开启可恢复之前的设置。',
+  stopping: '正在停止后台任务，请稍候…',
+  copyDiagnostic: '复制诊断',
+  copying: '正在整理诊断…',
+  copied: '诊断已复制',
+  copyFailed: '复制失败：{error}',
+  manualAria: '手动复制诊断文本',
+  expand: '展开',
+  collapse: '收起',
+  uiLanguage: '界面语言',
+  cardLanguage: '卡牌语言',
+  followUi: '跟随界面语言',
+  cardLanguageNote: '卡牌名称、竞技场候选、搜索结果与牌库列表使用该语言。每种语言独立缓存，切换后直接复用。',
+  restartToggleNote: '语言切换立即生效，无需重启。',
+  applying: '正在应用…',
+  restoring: '正在恢复插件…',
+};
+
+export const dicts: Record<UiLang, Dict> = { en, 'zh-CN': zhCN };
+
+/** Every locale HearthstoneJSON publishes for card data. */
+export const CARD_LANGUAGES: { code: string; label: string }[] = [
+  { code: 'enUS', label: 'English' },
+  { code: 'zhCN', label: '简体中文' },
+  { code: 'zhTW', label: '繁體中文' },
+  { code: 'deDE', label: 'Deutsch' },
+  { code: 'esES', label: 'Español (España)' },
+  { code: 'esMX', label: 'Español (Latinoamérica)' },
+  { code: 'frFR', label: 'Français' },
+  { code: 'itIT', label: 'Italiano' },
+  { code: 'jaJP', label: '日本語' },
+  { code: 'koKR', label: '한국어' },
+  { code: 'plPL', label: 'Polski' },
+  { code: 'ptBR', label: 'Português (Brasil)' },
+  { code: 'ruRU', label: 'Русский' },
+  { code: 'thTH', label: 'ไทย' },
+];
+
+export const UI_LANGUAGES: { code: UiLang; label: string }[] = [
+  { code: 'en', label: 'English' },
+  { code: 'zh-CN', label: '简体中文' },
+];
+
+export function tr(lang: string | undefined, key: keyof typeof en, values?: Record<string, string | number>): string {
+  const table = dicts[(lang === 'zh-CN' ? 'zh-CN' : 'en') as UiLang];
+  const template = table[key] ?? en[key] ?? String(key);
+  if (!values) return template;
+  return template.replace(/\{(\w+)\}/g, (match, name: string) => (name in values ? String(values[name]) : match));
+}

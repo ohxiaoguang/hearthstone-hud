@@ -316,7 +316,7 @@ class PreviewTests(unittest.TestCase):
         v=self.view(self.state(deck=('CARD_C',)))
         self.assertEqual(v['stage'],'card_selection')
         self.assertEqual([r['best'] for r in v['candidates']],[True,True,False])
-        self.assertEqual(v['candidates'][2]['rating_label'],'暂无评分')
+        self.assertEqual(v['candidates'][2]['rating_label'],'No rating')
         self.assertEqual(v['count'],1);self.assertEqual([r['id'] for r in v['picks']],['CARD_C'])
 
     def test_30_selected_cards_and_count_come_from_the_memory_deck(self):

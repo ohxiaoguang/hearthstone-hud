@@ -6,7 +6,8 @@ replaces the previous deck instead of being merged into it. Selected cards are
 ordered by mana cost, then by name, so the panel is stable while drafting.
 """
 import re
-from .arena import CLASS_NAMES,HERO_CLASSES
+from . import i18n
+from .arena import HERO_CLASSES
 from .arena_memory import DECK_UNREADABLE
 
 # Diagnostic codes that mean the read itself failed, as opposed to a successful
@@ -76,23 +77,23 @@ class ArenaPreview:
     def _row(self,cards,ratings,cls,cid):
         rating=ratings.get(cls,cid)
         return dict(cards.info(cid),rating=rating,score=rating['score'] if rating else None,
-                    rating_label=str(rating['score']) if rating else '暂无评分',
+                    rating_label=str(rating['score']) if rating else i18n.t('arena.no_rating'),
                     tier=rating['tier'] if rating else '',best=False)
 
     def _candidates(self,cards,ratings,cls,state):
         rows=[]
         for choice in state.choices:
-            row=dict(cards.info(choice.card_id),rating=None,score=None,best=False,tier='',rating_label='暂无评分',
+            row=dict(cards.info(choice.card_id),rating=None,score=None,best=False,tier='',rating_label=i18n.t('arena.no_rating'),
                      package=[cards.info(cid) for cid in choice.package],hero_row=state.slot=='HERO')
             if state.slot=='HERO':
                 hero_cls=hero_class(cards,choice.card_id);stats=self.class_ratings.get(state.underground,hero_cls)
-                row.update(class_id=hero_cls,class_name=CLASS_NAMES.get(hero_cls,'职业未知'),hero_stats=stats)
+                row.update(class_id=hero_cls,class_name=i18n.class_label(hero_cls,'arena.class_unknown'),hero_stats=stats)
                 if stats:row.update(score=stats['winrate']*100,rating_label=f"{stats['winrate']*100:.1f}%",
-                                    tier=f"排名 {stats['rank']}/{stats['of']} · {stats['games']} 场")
+                                    tier=i18n.t('arena.rank',rank=stats['rank'],**{'of':stats['of']},games=stats['games']))
             elif state.slot=='CARD':
                 rating=ratings.get(cls,choice.card_id)
                 if rating:row.update(rating=rating,score=rating['score'],rating_label=str(rating['score']),tier=rating['tier'])
-                if choice.package:row['tier']+=f" · 附带 {len(choice.package)} 张"
+                if choice.package:row['tier']+=i18n.t('arena.package',count=len(choice.package))
             rows.append(row)
         scores=[r['score'] for r in rows if r['score'] is not None]
         ranks=[r['hero_stats']['rank'] for r in rows if r.get('hero_stats')]
@@ -115,11 +116,15 @@ class ArenaPreview:
             drafting=slot=='CARD' and state.mode in ('DRAFTING','REDRAFTING')
             if len(state.choices)==3:candidates=self._candidates(cards,ratings,cls,state)
         count=len(picks)
-        return dict(stage=stage,slot=slot,source='memory',
+        title_key='arena.hero' if slot=='HERO' else 'arena.hero_power' if slot=='HERO_POWER' else 'arena.card'
+        show_count=bool(picks) or (state is not None and slot=='CARD' and not self.stale)
+        offer_title=i18n.t(title_key)+((' · %d/30'%count) if show_count else '')
+        picked_title=i18n.t('arena.picked_uncertain' if self.stale else 'arena.picked',count=count)
+        return dict(stage=stage,slot=slot,source='memory',offer_title=offer_title,picked_title=picked_title,
                     show_count=bool(picks) or (state is not None and slot=='CARD' and not self.stale),
-                    source_note='候选与已选牌都来自只读内存；已选牌按费用排序，候选不计入',
+                    source_note=i18n.t('arena.source_note'),
                     deck_id=self.deck_id,phase=('draft:'+self.deck_id) if self.deck_id else '',round=0,
-                    mode=self.mode,class_name=CLASS_NAMES.get(cls,'职业未识别'),
+                    mode=self.mode,class_name=i18n.class_label(cls,'arena.class_unidentified'),
                     count=count,count_exact=not self.stale,drafting=drafting,exact=False,
                     picks=picks,redraft_picks=[],candidates=candidates,deck_stale=bool(self.stale),
                     ratings=ratings.metadata(),class_ratings=self.class_ratings.metadata(),memory=diagnostic)

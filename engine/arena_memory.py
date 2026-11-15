@@ -4,6 +4,7 @@
 from dataclasses import dataclass, field
 import time
 from .mono_memory import T_CLASS,T_GENERICINST,T_OBJECT,T_VALUETYPE,T_I4,T_I8,T_BOOLEAN,Mono, Obj, Process, MemoryReadError, UnsupportedLayout, MonoMissing, NotReady, Cancelled, MissingField
+from . import i18n
 from .proton import discover_process
 from .images import valid_id
 
@@ -255,23 +256,24 @@ class HearthstoneMemory:
 
     def poll(self):
         try:
-            if not self.connect():return None,dict(code='not_running',status='Hearthstone 未运行',pid=None,error='')
+            if not self.connect():return None,dict(code='not_running',status=i18n.t('mem.not_running'),pid=None,error='')
             state=self.draft_state()
             stage=state.slot if state and state.choices else ''
             code={'HERO':'hero_selection','CARD':'card_selection','HERO_POWER':'hero_power_selection'}.get(stage,'reading')
-            message={'hero_selection':'英雄选择识别成功','card_selection':'卡牌选择识别成功','hero_power_selection':'英雄技能选择识别成功'}.get(code,'正在读取；当前无完整候选')
+            message={'hero_selection':i18n.t('mem.hero'),'card_selection':i18n.t('mem.card'),
+                     'hero_power_selection':i18n.t('mem.hero_power')}.get(code,i18n.t('mem.reading'))
             return state,dict(code=code,status=message,pid=self.pid,error='',profile='Unity 6000.3 x64 / Assembly-CSharp',unity_version='.'.join(map(str,self.mono.version)),process_instance=str(self.identity),
                               deck_object=bool(state and state.deck_object),deck_slots=int(state.deck_slots) if state else 0,
                               deck_parsed=len(state.deck) if state else 0,deck_reason=(state.deck_reason if state else ''),
                               deck_note=(state.deck_note if state else ''),observed_start=(self.snapshot_start if state else 0),
                               observed_wall=(self.snapshot_wall if state else 0))
         except Cancelled:
-            self.close();return None,dict(code='disabled',status='内存读取未开启',pid=None,error='')
+            self.close();return None,dict(code='disabled',status=i18n.t('mem.disabled'),pid=None,error='')
         except (OSError,MemoryReadError,UnicodeError,KeyError,TypeError,ValueError,AttributeError) as exc:
             code=('permission_denied' if isinstance(exc,PermissionError) else 'not_running' if isinstance(exc,ProcessLookupError) else
                   'mono_missing' if isinstance(exc,MonoMissing) else 'not_ready' if isinstance(exc,NotReady) else
                   'incompatible' if isinstance(exc,(UnsupportedLayout,UnicodeError,KeyError,TypeError,ValueError,AttributeError)) else 'read_error')
-            status={'permission_denied':'权限不足；未修改系统权限','not_running':'游戏进程已退出或重启','mono_missing':'找到进程但没有 Mono',
-                    'not_ready':'Mono / 选牌对象尚未就绪','incompatible':'Mono 版本或结构不兼容','read_error':'内存读取失败'}[code]
+            status={'permission_denied':i18n.t('mem.permission'),'not_running':i18n.t('mem.exited'),'mono_missing':i18n.t('mem.no_mono'),
+                    'not_ready':i18n.t('mem.not_ready'),'incompatible':i18n.t('mem.incompatible'),'read_error':i18n.t('mem.failed')}[code]
             pid=self.pid;self.close()
             return None,dict(code=code,status=status,pid=pid,error=str(exc)[:300],process_instance=str(self.observed_identity))

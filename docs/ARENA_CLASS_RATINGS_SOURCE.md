@@ -1,5 +1,11 @@
 # Firestone 职业胜率静态数据来源
 
+> **English summary.** Data source: Firestone / Zero-to-Heroes public arena statistics API,
+> captured 2026-11-14T18:45:23Z and stored as a static snapshot. Normal and underground arena
+> are aggregated separately. No network request is made at runtime. The upstream statistics
+> timestamp differs from our capture time, and the data is third-party, not original work.
+
+
 聚合快照保存时间（UTC）：2026-11-14T18:45:23.479756+00:00
 来源：Firestone / Zero-to-Heroes 公共统计 API；仅开发期下载，运行时无网络请求。
 
