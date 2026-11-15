@@ -4,6 +4,9 @@ User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-
 
 ## Unreleased
 
+- A card waiting in the bulk-download queue is promoted to the front when the game asks for
+  it, so scrolling a deck never waits behind a full run; it is still downloaded exactly once
+  and counted once in the batch progress.
 - Full card-art downloads can be cancelled from the settings panel. Cancelling keeps every
   tile already on disk, drops the rest of the batch, and leaves the on-demand requests for
   cards visible in the game untouched.

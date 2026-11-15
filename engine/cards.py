@@ -99,6 +99,7 @@ class Cards:
         self.generation=0;self.cache_lock=threading.Lock();self.image_error=''
         self.attempted=0;self.image_attempts={};self.queue=queue.Queue(maxsize=128);self.pending=set()
         self.batch_queue=queue.Queue(maxsize=128)   # low priority: full-download work
+        self.batch_queued=set()                     # cids currently inside batch_queue
         # Batch downloads wait here; the on-demand queue above is always drained
         # first, so cards visible in the game are never stuck behind a full run.
         # Automatic (re)download may be switched off when the user clears the
@@ -203,13 +204,39 @@ class Cards:
 
     # -- images ------------------------------------------------------------
     def request_images(self,ids):
-        """Queue art for cards currently on screen (one attempt per hour)."""
+        """Queue art for cards currently on screen (one attempt per hour).
+
+        A card that is only waiting in the low-priority batch queue is promoted
+        to this queue instead, so the game never waits behind a bulk run. It is
+        still the same batch task: it is downloaded once and counted once.
+        """
         for cid in ids:
             # Validation happens here so a damaged tile is fetched again.
-            if not valid_id(cid) or cid in self.pending or cid in self.image_missing or self.tiles.path(cid):continue
+            if not valid_id(cid) or cid in self.image_missing or self.tiles.path(cid):continue
+            if self._promote(cid):continue
+            if cid in self.pending:continue
             if cid not in self.batch_remaining and time.time()-self.image_attempts.get(cid,0)<3600:continue
             if self.queue.full():break
             self.pending.add(cid);self.queue.put_nowait(cid)
+
+    def _promote(self,cid):
+        """Move one batch-owned task to the on-demand queue. False if not ours."""
+        if cid in self.batch_stream:
+            self.batch_stream.remove(cid)
+        elif cid in self.batch_queued:
+            # Pull it out of the middle of the bounded queue by refilling it.
+            kept=deque()
+            while True:
+                try:other=self.batch_queue.get_nowait()
+                except queue.Empty:break
+                self.batch_queue.task_done()
+                if other!=cid:kept.append(other)
+            for other in kept:self.batch_queue.put_nowait(other)
+            self.batch_queued.discard(cid)
+        else:
+            return False   # in flight, failed-and-awaiting-retry, or not batch-owned
+        self.queue.put_nowait(cid)
+        return True
 
     def all_card_ids(self):
         """Every unique Card ID in the loaded database, for a full art download."""
@@ -228,7 +255,7 @@ class Cards:
                 continue
             if cid in self.pending:
                 self.batch_stream.appendleft(cid);break   # already queued elsewhere
-            self.pending.add(cid);self.batch_queue.put_nowait(cid)
+            self.pending.add(cid);self.batch_queue.put_nowait(cid);self.batch_queued.add(cid)
 
     def begin_image_download(self,ids,retry_failed=True):
         """Start (or resume) one batch. Already cached files are never fetched again."""
@@ -283,7 +310,7 @@ class Cards:
         """
         with self.cache_lock:
             self.batch_stream.clear();self.batch_remaining.clear();self.batch_failed.clear()
-            self.batch_retried=0
+            self.batch_retried=0;self.batch_queued.clear()
             while True:
                 try:cid=self.batch_queue.get_nowait()
                 except queue.Empty:break
@@ -316,6 +343,7 @@ class Cards:
                 while True:
                     try:q.get_nowait();q.task_done()
                     except queue.Empty:break
+            self.batch_queued.clear()
             self.pending.clear();self.image_attempts.clear();self.image_errors.clear()
             # Only PNG tiles in the current cache; JSON databases, settings and
             # stray files are left alone. A legacy images/manual/ directory from
@@ -428,7 +456,7 @@ class Cards:
             self._phase('prepare')
             self.need_download=True
             self.image_attempts.clear();self.pending.clear()
-            self.queue=queue.Queue(maxsize=128);self.batch_queue=queue.Queue(maxsize=128)
+            self.queue=queue.Queue(maxsize=128);self.batch_queue=queue.Queue(maxsize=128);self.batch_queued=set()
             self.batch_remaining.clear();self.batch_stream.clear();self.batch_failed.clear();self.batch_retried=0
             self.image_errors.clear()
             self.image_missing.clear()
@@ -455,7 +483,7 @@ class Cards:
             try:
                 cid=self.queue.get_nowait()
             except queue.Empty:
-                try:cid=self.batch_queue.get_nowait();source=self.batch_queue
+                try:cid=self.batch_queue.get_nowait();source=self.batch_queue;self.batch_queued.discard(cid)
                 except queue.Empty:
                     await asyncio.sleep(.2)
                     continue
@@ -475,7 +503,10 @@ class Cards:
             finally:
                 self.image_totals[outcome]+=1   # attempts, not final results
                 in_batch=cid in self.batch_remaining
-                if in_batch:self.batch_remaining.discard(cid)
+                if in_batch:
+                    self.batch_remaining.discard(cid)
+                    if outcome!='failed' and cid in self.batch_failed:
+                        self.batch_failed.remove(cid)   # already done via promotion
                 # Release the id before the batch may re-queue it for a retry.
                 self.pending.discard(cid);source.task_done()
                 if in_batch:

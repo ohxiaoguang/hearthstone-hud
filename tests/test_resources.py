@@ -307,3 +307,72 @@ class BatchControlTests(ResourceHelpers,unittest.TestCase):
         asyncio.run(main())
         self.assertEqual(calls[0],'CARD_29')                    # the on-demand card went first
         self.assertIn(calls[1],[f'CARD_{i}' for i in range(5)])
+
+
+class PromotionTests(ResourceHelpers,unittest.TestCase):
+    """A card the game asks for jumps its own batch queue, exactly once."""
+
+    def test_a_batch_queued_card_is_promoted_when_the_game_requests_it(self):
+        self.cache('enUS')
+        cards=Cards(self.folder)
+        calls=[]
+        def download(cid):
+            calls.append(cid);(cards.images/(cid+'.png')).write_bytes(tile_png())
+        cards.begin_image_download(cards.all_card_ids())     # 100 tiles, queue is full
+        self.assertGreater(cards.batch_queue.qsize(),10)     # the target sits deep inside it
+        cards.request_images(['CARD_50'])                    # the game shows it right now
+        self.assertIn('CARD_50',cards.pending)               # still one reservation, now high priority
+        self.assertNotIn('CARD_50',cards.batch_queued)
+        stop=asyncio.Event()
+        async def main():
+            with patch.object(cards,'download_image',side_effect=download):
+                task=asyncio.create_task(cards.worker(stop))
+                deadline=time.time()+10
+                while time.time()<deadline and len(calls)<3:
+                    await asyncio.sleep(.01)
+                stop.set();await task
+        asyncio.run(main())
+        self.assertEqual(calls[0],'CARD_50')                 # jumped ahead of the bulk run
+        self.assertEqual(calls.count('CARD_50'),1)           # never fetched twice
+        self.assertNotIn('CARD_50',cards.batch_remaining)
+        # Counted exactly once, as a success, even though the bulk run went on.
+        self.assertGreaterEqual(cards.image_batch['success'],1)
+        self.assertLess(cards.image_batch['success'],MIN_CARDS)
+        self.assertEqual(cards.batch_view()['done'],cards.image_batch['success'])
+
+    def test_a_promoted_card_is_downloaded_once_across_the_whole_batch(self):
+        self.cache('enUS')
+        cards=Cards(self.folder)
+        calls=[]
+        def download(cid):
+            calls.append(cid);(cards.images/(cid+'.png')).write_bytes(tile_png())
+        cards.begin_image_download(cards.all_card_ids())
+        cards.request_images(['CARD_7','CARD_50'])
+        self.worker(cards,download=download,seconds=40,
+                    until=lambda:cards.image_batch['status']=='complete')
+        batch=cards.batch_view()
+        self.assertEqual(batch['status'],'complete')
+        self.assertEqual(batch['success'],MIN_CARDS)         # every tile landed
+        self.assertEqual(batch['done'],MIN_CARDS)
+        self.assertEqual(len(calls),MIN_CARDS)               # each card exactly once
+        self.assertEqual(len(set(calls)),MIN_CARDS)
+        self.assertEqual(cards.image_usage()['cached'],MIN_CARDS)
+
+    def test_a_promoted_failure_still_counts_once(self):
+        self.cache('enUS')
+        cards=Cards(self.folder)
+        calls=[]
+        def download(cid):
+            calls.append(cid)
+            if cid=='CARD_9':raise ssl.SSLError('persistent')   # fails on promotion and on retry
+            (cards.images/(cid+'.png')).write_bytes(tile_png())
+        cards.begin_image_download(cards.all_card_ids())
+        cards.request_images(['CARD_9'])
+        self.worker(cards,download=download,seconds=40,
+                    until=lambda:cards.image_batch['status']=='complete')
+        batch=cards.batch_view()
+        self.assertEqual(batch['status'],'complete')
+        self.assertEqual(calls.count('CARD_9'),2)            # promoted attempt + one batch retry
+        self.assertEqual(batch['failed'],1)                  # final result, counted once
+        self.assertEqual(batch['success'],MIN_CARDS-1)
+        self.assertEqual(batch['done'],MIN_CARDS)
