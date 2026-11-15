@@ -376,3 +376,57 @@ class PromotionTests(ResourceHelpers,unittest.TestCase):
         self.assertEqual(batch['failed'],1)                  # final result, counted once
         self.assertEqual(batch['success'],MIN_CARDS-1)
         self.assertEqual(batch['done'],MIN_CARDS)
+
+
+class PromotionEdgeTests(ResourceHelpers,unittest.TestCase):
+    """Promotion never loses a task when the on-demand queue is full."""
+
+    def test_a_full_on_demand_queue_keeps_the_batch_slot_intact(self):
+        self.cache('enUS')
+        cards=Cards(self.folder)
+        calls=[]
+        def download(cid):
+            calls.append(cid);(cards.images/(cid+'.png')).write_bytes(tile_png())
+        cards.begin_image_download(cards.all_card_ids())
+        before_pending=set(cards.pending);before_queued=set(cards.batch_queued)
+        # Saturate the on-demand queue without touching batch bookkeeping.
+        overflow=['FULL_'+str(i) for i in range(200)]
+        cards.request_images(overflow)
+        self.assertTrue(cards.queue.full())
+        cards.request_images(['CARD_50'])                    # the game asks for a batch card
+        # Promotion was refused: nothing moved, nothing lost, no exception.
+        self.assertTrue(cards.queue.full())
+        self.assertEqual(calls,[])
+        self.assertIn('CARD_50',cards.batch_queued)          # still in the low-priority queue
+        self.assertIn('CARD_50',cards.pending)               # its reservation is intact
+        self.assertIn('CARD_50',cards.batch_remaining)       # still a batch task
+        # Drain the high queue, then run everything to completion: exactly one
+        # download per card, batch stats intact.
+        self.worker(cards,download=download,seconds=60,
+                    until=lambda:cards.image_batch['status']=='complete')
+        batch=cards.batch_view()
+        self.assertEqual(batch['status'],'complete')
+        self.assertEqual(batch['success'],MIN_CARDS)
+        queued_full=len([c for c in calls if c.startswith('FULL_')])
+        self.assertLessEqual(queued_full,128)                # the queue capacity held
+        self.assertEqual(len(calls),MIN_CARDS+queued_full)   # every task ran exactly once
+        self.assertEqual(len(set(calls)),len(calls))
+
+    def test_cancel_after_promotion_keeps_the_promoted_request(self):
+        self.cache('enUS')
+        cards=Cards(self.folder)
+        calls=[]
+        def download(cid):
+            calls.append(cid);(cards.images/(cid+'.png')).write_bytes(tile_png())
+        cards.begin_image_download(cards.all_card_ids())
+        cards.request_images(['CARD_50'])                    # promoted to the on-demand queue
+        self.assertNotIn('CARD_50',cards.batch_queued)
+        self.assertTrue(cards.batch_remaining & {'CARD_50'})
+        cards.cancel_image_download()                        # batch bookkeeping is dropped
+        self.assertEqual(cards.batch_remaining,set())
+        self.assertEqual(cards.batch_queued,set())
+        # The promoted card was requested by the game, so it still downloads;
+        # the rest of the batch does not.
+        self.worker(cards,download=download,seconds=6,until=lambda:cards.queue.empty())
+        self.assertEqual(calls,['CARD_50'])                  # game request kept, batch dropped
+        self.assertEqual(cards.image_usage()['cached'],1)

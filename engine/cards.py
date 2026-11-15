@@ -220,7 +220,13 @@ class Cards:
             self.pending.add(cid);self.queue.put_nowait(cid)
 
     def _promote(self,cid):
-        """Move one batch-owned task to the on-demand queue. False if not ours."""
+        """Move one batch-owned task to the on-demand queue. False if not ours.
+
+        The capacity check happens before anything is moved: when the on-demand
+        queue is full the card keeps its low-priority slot and its pending
+        reservation, so the download can never be lost to a promotion.
+        """
+        if self.queue.full():return False   # keep the batch slot; try again later
         if cid in self.batch_stream:
             self.batch_stream.remove(cid)
         elif cid in self.batch_queued:

@@ -2,7 +2,13 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
-## Unreleased
+## v1.0.2
+
+- Promoting a batch-queued card to the front of the download queue now checks the queue's
+  capacity first: when the on-demand queue is full, the card keeps its low-priority slot and
+  its reservation instead of raising an error, and no download task can be lost. A card
+  promoted after cancelling the batch still downloads, and every card is still fetched
+  exactly once.
 
 - A card waiting in the bulk-download queue is promoted to the front when the game asks for
   it, so scrolling a deck never waits behind a full run; it is still downloaded exactly once

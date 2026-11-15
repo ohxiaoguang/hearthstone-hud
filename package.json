@@ -1,6 +1,6 @@
 {
   "name": "hearthstone-hud",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "description": "Hearthstone deck HUD and arena helper for Decky Loader on Linux / SteamOS",
   "license": "MIT",
