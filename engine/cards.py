@@ -28,7 +28,6 @@ from .images import TileStore, valid_id, validate_png, atomic_image, MAX_IMAGE
 DATA_URL='https://api.hearthstonejson.com/v1/latest/{locale}/cards.json'
 IMAGE_URL='https://art.hearthstonejson.com/v1/tiles/{card_id}.png'
 FIELDS=('id','dbfId','name','cost','cardClass','type')
-LEGACY_CACHE='cards.json'
 
 
 def fetch(url, limit, verify=True):
@@ -91,7 +90,6 @@ class Cards:
         self.image_missing=set()
         self.image_verify_tls=True
         self.database_verify_tls=True
-        self.import_result=None
         self.by_id={};self.by_dbf={};self.updated=0;self.error=''
         self.language=i18n.card_language(language,None) if language else i18n.card_language('auto',i18n.ui_language())
         self.data_language=''
@@ -111,10 +109,8 @@ class Cards:
         return self.directory/('cards-%s.json'%(locale or self.language))
 
     def cached_languages(self):
-        found=[]
-        for code in i18n.CARD_CODES:
-            if self.cache_path(code).exists():found.append(code)
-        return found
+        """Which managed databases exist on disk (enUS / zhCN only)."""
+        return [code for code in i18n.MANAGED_CARD_LANGUAGES if self.cache_path(code).exists()]
 
     def _phase(self,phase,**values):
         """Set the structured download phase and its translated label together."""
@@ -136,14 +132,6 @@ class Cards:
         except (OSError,ValueError,KeyError,TypeError):
             rows=None
         found=locale
-        if rows is None and (self.directory/LEGACY_CACHE).exists():
-            # Older builds wrote one language-neutral file name; adopt it once so
-            # an upgrade never blanks the card names.
-            try:
-                rows,updated,source=self._read_cache(self.directory/LEGACY_CACHE)
-                try:found=json.loads((self.directory/LEGACY_CACHE).read_text()).get('locale') or locale
-                except (OSError,ValueError,TypeError):found=locale
-            except (OSError,ValueError,KeyError,TypeError):rows=None
         if rows is None:
             # Nothing on disk for this locale. An empty database is already
             # handled by the worker's staleness check, so only flag an explicit
@@ -284,13 +272,9 @@ class Cards:
         return batch
 
     def image_usage(self):
-        """Cache size on disk plus how many Card IDs the database offers.
-
-        Counts both the current cache and the legacy `manual/` directory, so the
-        settings page never reports fewer files than it can actually display.
-        """
+        """Cache size on disk plus how many Card IDs the database offers."""
         cached=0;size=0
-        for path in list(self.images.glob('*.png'))+list((self.images/'manual').glob('*.png')):
+        for path in self.images.glob('*.png'):
             try:size+=path.stat().st_size;cached+=1
             except OSError:continue
         batch=self.batch_view()
@@ -308,11 +292,13 @@ class Cards:
                 try:self.queue.get_nowait();self.queue.task_done()
                 except queue.Empty:break
             self.pending.clear();self.image_attempts.clear();self.image_errors.clear()
-            # Only PNG tiles, in both the current cache and the legacy manual
-            # directory; JSON databases, settings and stray files are left alone.
-            for path in list(self.images.glob('*.png'))+list((self.images/'manual').glob('*.png')):
+            # Only PNG tiles in the current cache; JSON databases, settings and
+            # stray files are left alone. A legacy images/manual/ directory from
+            # old builds is removed outright.
+            for path in self.images.glob('*.png'):
                 try:path.unlink();removed+=1
                 except OSError:pass
+            shutil.rmtree(self.images/'manual',ignore_errors=True)
             self.tiles=TileStore(self.images)
             self.image_error=''
         return removed
@@ -368,21 +354,6 @@ class Cards:
             self.data_language=record.get('locale',self.language);self.need_download=False;self.error=''
             return True
 
-    def import_file(self,path):
-        path=Path(path).expanduser()
-        if not path.is_absolute():raise ValueError(i18n.t('cards.import_path'))
-        with path.open('rb') as f:data=f.read(MAX_JSON+1)
-        if len(data)>MAX_JSON:raise ValueError(i18n.t('cards.import_size'))
-        value=json.loads(data)
-        locale=self.language
-        if isinstance(value,dict):
-            locale=value.get('locale') or locale
-            if locale!=self.language:
-                raise ValueError(i18n.t('cards.import_locale',found=locale,wanted=self.language))
-            value=value.get('cards')
-        rows=validate_dataset(value)
-        return self._commit(rows,i18n.t('cards.source_import',locale=locale,name=path.name),locale=locale)
-
     def refresh(self):
         """Download one locale. Progress and errors never leak into another one."""
         locale=self.language;expected=self.generation
@@ -433,7 +404,7 @@ class Cards:
             self.need_download=True
             self.image_attempts.clear();self.pending.clear();self.queue=queue.Queue(maxsize=128)
             self.batch_remaining.clear();self.batch_stream.clear();self.batch_failed.clear();self.batch_retried=0
-            self.image_errors.clear();self.import_result=None
+            self.image_errors.clear()
             self.image_missing.clear()
             self.auto_download=True
             self.image_batch=dict(status='idle',total=0,success=0,failed=0,missing=0,skipped=0,retried=0)
@@ -495,7 +466,7 @@ class Cards:
                     state=i18n.t('cards.state_ready') if self.by_id else i18n.t('cards.state_missing'),
                     download_state=self.download_state,download_phase=self.download_phase,
                     image_error=self.image_error,images_pending=len(self.pending),image_cache=self.tiles.counts(),
-                    image_batch=self.batch_view(),image_totals=dict(self.image_totals),image_import=self.import_result,
+                    image_batch=self.batch_view(),image_totals=dict(self.image_totals),
                     image_errors=list(self.image_errors),image_usage=self.image_usage(),
                     images_missing=len(self.image_missing),
                     databases=self.language_files(),managed_languages=list(i18n.MANAGED_CARD_LANGUAGES))

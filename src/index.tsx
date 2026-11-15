@@ -54,7 +54,7 @@ function Content(){
  const [data,setData]=useState<Status>();const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);const [action,setAction]=useState('');
  const [copyState,setCopyState]=useState('');const [manualCopy,setManualCopy]=useState('');
- const [confirm,setConfirm]=useState<Confirm>(null);const [about,setAbout]=useState(false);
+ const [confirm,setConfirm]=useState<Confirm>(null);
  const revision=useRef(0);const pending=useRef(0);
  const lang=data?.settings.ui_language??'en';
  const t=(key:Parameters<typeof tr>[1],values?:Record<string,string|number>)=>tr(lang,key,values);
@@ -134,10 +134,16 @@ function Content(){
  </div></PanelSectionRow>
  <PanelSectionRow><div style={box}>{t('imagesNote')}</div></PanelSectionRow>
  </Fold>
+ <Fold title={t('about')} openLabel={t('expand')} closeLabel={t('collapse')}>
+ <PanelSectionRow><div style={box}>
+  <div>{t('aboutBody')}</div>
+  <div style={{marginTop:'6px'}}>{t('version',{version:data?.version??'—'})}</div>
+  <div style={{marginTop:'4px'}}>{t('repository')}: {data?.repository??'https://github.com/ohxiaoguang/hearthstone-hud'}</div>
+ </div></PanelSectionRow>
+ </Fold>
  </>:<PanelSectionRow><div style={box}>{data.lifecycle==='disabled'?t('disabled'):t('stopping')}</div></PanelSectionRow>}
  <PanelSectionRow><div style={row}>
   <SmallButton onClick={copyDiagnostic}>{t('copyDiagnostic')}</SmallButton>
-  <SmallButton onClick={()=>setAbout(true)}>{t('about')}</SmallButton>
  </div></PanelSectionRow>
  {copyState&&<PanelSectionRow><div role="status" style={box}>{copyState}</div></PanelSectionRow>}
  {manualCopy&&<textarea aria-label={t('manualAria')} readOnly value={manualCopy} onFocus={e=>e.currentTarget.select()} style={{width:'100%',height:180,fontSize:12,userSelect:'text',boxSizing:'border-box'}}/>}
@@ -147,14 +153,6 @@ function Content(){
    strDescription={confirm.kind==='database'?t('confirmDeleteDatabaseBody'):t('confirmClearImagesBody')}
    strOKButtonText={t('delete')} strCancelButtonText={t('cancel')}
    bDestructiveWarning onOK={finishConfirm} onCancel={()=>setConfirm(null)}/>}
- {about&&<ConfirmModal
-   strTitle={t('aboutTitle')}
-   strDescription={<div style={box}>
-    <div>{t('aboutBody')}</div>
-    <div style={{marginTop:'8px'}}>{t('version',{version:data?.version??'—'})}</div>
-    <div style={{marginTop:'4px'}}>{t('repository')}: {data?.repository??'https://github.com/ohxiaoguang/hearthstone-hud'}</div>
-   </div>}
-   strOKButtonText={t('close')} bAlertDialog onOK={()=>setAbout(false)} onCancel={()=>setAbout(false)}/>}
  </PanelSection>;
 }
 export default definePlugin(()=>({name:'Hearthstone HUD',titleView:<div>Hearthstone HUD</div>,content:<Content/>,icon:<FaLayerGroup/>}));

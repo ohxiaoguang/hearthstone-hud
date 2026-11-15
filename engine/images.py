@@ -1,16 +1,12 @@
-"""Bounded, CRC/deflate-validated HearthstoneJSON 256x59 tile storage."""
+"""CRC/deflate-validated HearthstoneJSON 256x59 tile storage."""
 import os
 from pathlib import Path
 import re
-import stat
 import struct
 import tempfile
-import zipfile
 import zlib
 
 MAX_IMAGE=1024*1024
-MAX_FILES=512
-MAX_TOTAL=64*1024*1024
 
 
 def valid_id(cid):
@@ -70,7 +66,7 @@ def atomic_image(path,data):
 
 class TileStore:
     def __init__(self,root):
-        self.root=Path(root);self.manual=self.root/'manual';self.manual.mkdir(parents=True,exist_ok=True)
+        self.root=Path(root)
         self._checked={}
 
     def valid_file(self,path):
@@ -90,47 +86,12 @@ class TileStore:
     def exists(self,cid):
         """Cheap presence check for batching; `path()` still validates the PNG."""
         if not valid_id(cid):return False
-        return (self.manual/(cid+'.png')).is_file() or (self.root/(cid+'.png')).is_file()
+        return (self.root/(cid+'.png')).is_file()
 
     def path(self,cid):
         if not valid_id(cid):return None
-        for p in (self.manual/(cid+'.png'),self.root/(cid+'.png')):
-            if self.valid_file(p):return p
-        return None
+        p=self.root/(cid+'.png')
+        return p if self.valid_file(p) else None
 
     def counts(self):
-        return dict(manual=sum(1 for p in self.manual.glob('*.png') if self.valid_file(p)),
-                    automatic=sum(1 for p in self.root.glob('*.png') if self.valid_file(p)))
-
-    def import_zip(self,path):
-        result=dict(found=0,imported=0,skipped=0,format_errors=0,invalid_ids=0,other_failures=0,errors=[])
-        def error(category,name,why):
-            result[category]+=1
-            if len(result['errors'])<12:result['errors'].append(str(name)[:128]+': '+str(why)[:160])
-        try:
-            path=Path(path).expanduser()
-            if not path.is_absolute():raise ValueError('请输入 ZIP 绝对路径')
-            if path.stat().st_size>MAX_TOTAL:raise ValueError('ZIP 文件超过 64MiB')
-            with zipfile.ZipFile(path) as archive:
-                entries=archive.infolist()
-                result['found']=sum(not e.is_dir() and e.filename.lower().endswith('.png') for e in entries)
-                if len(entries)>MAX_FILES:raise ValueError('ZIP 条目超过 512')
-                if sum(e.file_size for e in entries)>MAX_TOTAL:raise ValueError('ZIP 解压总大小超过 64MiB')
-                for entry in entries:
-                    name=entry.filename
-                    if entry.is_dir():continue
-                    if '/' in name or '\\' in name or '..' in name or stat.S_ISLNK(entry.external_attr>>16):
-                        error('other_failures',name,'拒绝路径或软链接');continue
-                    cid=name[:-4] if name.endswith('.png') else ''
-                    if not valid_id(cid):error('invalid_ids',name,'需要 CardID.png，不能使用 dbfId');continue
-                    if entry.file_size>MAX_IMAGE or entry.file_size>max(1,entry.compress_size)*500:
-                        error('other_failures',name,'单图大小或压缩比超限');continue
-                    target=self.manual/name
-                    if self.valid_file(target):result['skipped']+=1;continue
-                    try:
-                        with archive.open(entry) as f:data=f.read(MAX_IMAGE+1)
-                        validate_png(data);atomic_image(target,data);result['imported']+=1
-                    except (ValueError,zlib.error):error('format_errors',name,'PNG 校验失败')
-                    except (OSError,RuntimeError,zipfile.BadZipFile) as exc:error('other_failures',name,exc)
-        except (OSError,ValueError,RuntimeError,zipfile.BadZipFile) as exc:error('other_failures','ZIP',exc)
-        return result
+        return dict(automatic=sum(1 for p in self.root.glob('*.png') if self.valid_file(p)))

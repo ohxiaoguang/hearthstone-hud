@@ -87,7 +87,7 @@ def format_diagnostics(data,version,recent=(),renderer_tail=''):
     field('Download',cards.get('download_state','unknown'));field('Last Error',cards.get('error',''))
     storage=data.get('storage',{})
     section('Storage')
-    for key in ('runtime','database','images','manual_images'):field(key,storage.get(key,'unknown'))
+    for key in ('runtime','database','images'):field(key,storage.get(key,'unknown'))
     field('Uninstall','cache retained; imported source files untouched')
     section('Card Images');counts=cards.get('image_cache',{});batch=cards.get('image_batch',{});usage=cards.get('image_usage',{})
     field('Cached Images',f"manual={counts.get('manual',0)}, automatic={counts.get('automatic',0)}")
@@ -101,12 +101,6 @@ def format_diagnostics(data,version,recent=(),renderer_tail=''):
                              f"no_art={totals.get('missing',0)}, skipped={totals.get('skipped',0)}")
     field('No Art Cards',f"{cards.get('images_missing',0)} not requested again this session")
     field('Last Error',cards.get('image_error',''))
-    imported=cards.get('image_import')
-    if imported:
-        for key in ('found','imported','skipped','format_errors','invalid_ids','other_failures'):
-            field('Import '+key,imported.get(key,0))
-        for error in imported.get('errors',[])[:5]:field('Import Error',error)
-    else:field('Import Result','none')
     section('Renderer');field('Status','running' if data.get('running') else 'stopped');field('Gamescope',data.get('gamescope_status','unknown'))
     diag=data.get('diagnostic',{})
     for key in ('window','external_overlay','mapped','frames','xshape_input_empty'):

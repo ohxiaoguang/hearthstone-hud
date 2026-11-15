@@ -4,7 +4,6 @@ import ssl
 import tempfile
 import unittest
 from unittest.mock import patch
-import zipfile
 from engine.cards import Cards
 from engine.images import TileStore,validate_png
 from image_support import tile_png
@@ -12,35 +11,21 @@ from image_support import tile_png
 class ImageTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name);self.store=TileStore(self.root/'images')
-    def archive(self,entries):
-        path=self.root/'tiles.zip'
-        with zipfile.ZipFile(path,'w',zipfile.ZIP_DEFLATED) as z:
-            for name,data in entries:z.writestr(name,data)
-        return path
     def test_valid_and_damaged_png(self):
         self.assertTrue(validate_png(tile_png()))
         for data in [b'',tile_png()[:-1],tile_png(96,96),tile_png()[:40]+b'broken'+tile_png()[46:]]:
             with self.assertRaises(ValueError):validate_png(data)
-    def test_manual_priority_idempotent_and_no_size_cap(self):
-        result=self.store.import_zip(self.archive([('CARD_A.png',tile_png()),('CARD_B.png',tile_png())]))
-        self.assertEqual(result['imported'],2);self.assertEqual(self.store.import_zip(self.root/'tiles.zip')['skipped'],2)
+    def test_cache_is_flat_and_never_evicted(self):
         cards=Cards(self.root/'cache');cards.tiles=self.store;cards.images=self.store.root
-        (cards.images/'CARD_A.png').write_bytes(tile_png(color=8));self.assertEqual(cards.info('CARD_A')['image'],str(self.store.manual/'CARD_A.png'))
+        cards.images.mkdir(parents=True,exist_ok=True)
         for i in range(260):(cards.images/f'AUTO_{i}.png').write_bytes(tile_png())
         before=len(list(cards.images.glob('*.png')))
         (cards.images/'CARD_C.png').write_bytes(tile_png())
-        # The cache keeps every downloaded tile now: no 256-file or 32 MiB cap.
-        self.assertTrue((self.store.manual/'CARD_A.png').exists())
+        # The cache keeps every downloaded tile: no 256-file or 32 MiB cap, and
+        # there is no manual override directory any more.
         self.assertEqual(len(list(cards.images.glob('*.png'))),before+1)
-        # Usage counts the root cache and the legacy manual directory together.
-        self.assertEqual(cards.image_usage()['cached'],before+1+len(list(self.store.manual.glob('*.png'))))
-    def test_paths_bad_id_corruption_and_limits(self):
-        result=self.store.import_zip(self.archive([('../outside.png',tile_png()),('123.png',tile_png()),('CARD_A.png',b'broken'),('ok/CARD_B.png',tile_png())]))
-        self.assertEqual(result['imported'],0);self.assertEqual(result['format_errors'],1);self.assertEqual(result['invalid_ids'],1);self.assertEqual(result['other_failures'],2)
-        self.assertFalse((self.root/'outside.png').exists())
-        many=self.archive([(f'CARD_{i}.png',b'') for i in range(513)])
-        self.assertEqual(self.store.import_zip(many)['imported'],0)
-        big=self.archive([('CARD_A.png',b'0'*(1024*1024+1))]);self.assertEqual(self.store.import_zip(big)['other_failures'],1)
+        self.assertEqual(cards.image_usage()['cached'],before+1)
+        self.assertFalse(hasattr(self.store,'manual'))
     def test_download_interrupted_does_not_replace_valid_cache(self):
         cards=Cards(self.root/'cache');target=cards.images/'CARD_A.png';target.write_bytes(tile_png())
         for error in [TimeoutError('timeout'),ssl.SSLError('EOF')]:
@@ -113,14 +98,6 @@ class DownloadTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(asyncio.CancelledError):await worker
 
 class ImportSafetyTests(unittest.TestCase):
-    def test_zip_bomb_metadata_rejected_before_decompression(self):
-        with tempfile.TemporaryDirectory() as folder:
-            path=Path(folder)/'bomb.zip'
-            with zipfile.ZipFile(path,'w') as z:z.writestr('CARD_A.png',tile_png())
-            entry=zipfile.ZipInfo('CARD_A.png');entry.file_size=65*1024*1024;entry.compress_size=10
-            with patch('engine.images.zipfile.ZipFile.infolist',return_value=[entry]),patch('engine.images.zipfile.ZipFile.open') as read:
-                result=TileStore(Path(folder)/'images').import_zip(path)
-            self.assertEqual(result['other_failures'],1);read.assert_not_called()
     def test_atomic_write_failure_keeps_previous_image(self):
         with tempfile.TemporaryDirectory() as folder:
             cards=Cards(folder);target=cards.images/'CARD_A.png';target.write_bytes(tile_png())

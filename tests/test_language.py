@@ -128,22 +128,18 @@ class CardLanguageTests(unittest.TestCase):
         self.assertEqual(cards.cached_languages(),[])
         self.assertTrue((folder/'images').is_dir())                 # art lives outside the per-language caches
 
-    def test_import_supports_the_active_language_only(self):
-        cards=Cards(self.root/'cache')
-        good=self.root/'zhCN-cards.json';good.write_text(json.dumps(localized('enUS','Card')))
-        cards.apply(cards.import_file(good))
-        self.assertEqual(cards.info('SAMPLE_1')['name'],'Card1')
-        other=self.root/'de-cards.json';other.write_text(json.dumps(localized('deDE','Karte')))
-        with self.assertRaises(ValueError):cards.import_file(other)
-        self.assertEqual(cards.info('SAMPLE_1')['name'],'Card1')    # rejected import changed nothing
-
-    def test_a_legacy_cache_file_is_adopted_once(self):
+    def test_a_legacy_cache_file_is_ignored(self):
         folder=self.root/'cache';folder.mkdir(parents=True)
         (folder/'cards.json').write_text(json.dumps(dict(updated=10,cards=dataset('旧'))))
         cards=Cards(folder)
-        self.assertEqual(cards.info('SAMPLE_1')['name'],'旧1')
-        self.assertEqual(cards.updated,10)
-        self.assertFalse(cards.need_download)
+        # The old language-neutral file name is no longer read: the plugin starts
+        # empty and downloads the managed database for its interface language.
+        self.assertEqual(cards.by_id,{})
+        self.assertEqual(cards.info('SAMPLE_1')['name'],'SAMPLE_1')
+        self.assertTrue(cards.auto_download)
+        # The legacy file itself is neither read nor modified.
+        self.assertEqual(json.loads((folder/'cards.json').read_text())['updated'],10)
+
 
     def test_validate_dataset_reports_english_errors_by_default(self):
         with self.assertRaises(ValueError) as caught:validate_dataset('nope')

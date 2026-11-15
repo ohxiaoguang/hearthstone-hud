@@ -40,7 +40,8 @@ Current release: **v1.0.0** · [Changelog](CHANGELOG.md) · [中文说明](READM
 3. Open the Quick Access Menu (⋯ button) and select **Hearthstone HUD**.
 
 Updating works the same way: install the newer ZIP over the old version. Settings, caches and
-downloaded art are kept.
+downloaded art are kept. Upgrading from a version older than v0.7.0 re-downloads the card
+database once, because the old language-neutral `cards.json` cache is no longer read.
 
 ## First run
 

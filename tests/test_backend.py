@@ -279,12 +279,13 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         source=Path(self.tmp.name)/'original.json';source.write_text('user import')
         (self.plugin.cards.directory/'cards.json').write_text('{}')
         (self.plugin.cards.images/'old.png').write_bytes(b'old')
-        (self.plugin.cards.tiles.manual/'manual.png').write_bytes(b'old')
+        legacy=self.plugin.cards.images/'manual';legacy.mkdir(parents=True,exist_ok=True)
+        (legacy/'manual.png').write_bytes(b'old')
         old_worker=self.plugin.media_task
         await self.plugin.clear_card_cache()
         self.assertTrue(old_worker.done());self.assertIsNot(old_worker,self.plugin.media_task)
         self.assertFalse((self.plugin.cards.images/'old.png').exists())
-        self.assertFalse((self.plugin.cards.tiles.manual/'manual.png').exists())
+        self.assertFalse(legacy.exists())
         self.assertEqual(self.plugin.settings['font_size'],26)
         self.assertEqual(game_log.read_text(),'private game data');self.assertEqual(source.read_text(),'user import')
 
@@ -361,7 +362,6 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status['settings']['panel_width'],440)
         self.assertFalse(status['settings']['own_played'])
         self.assertEqual(status['storage']['database'],str(self.plugin.cards.cache_path()))
-        self.assertEqual(status['storage']['manual_images'],str(self.plugin.runtime/'cache/images/manual'))
         with self.assertRaises(ValueError):await self.plugin.configure({'panel_width':100})
         with self.assertRaises(ValueError):await self.plugin.configure({'show_summary':'no'})
 

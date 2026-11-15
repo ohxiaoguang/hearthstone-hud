@@ -148,8 +148,8 @@ class CardTests(unittest.TestCase):
             with patch('engine.cards.fetch',side_effect=OSError('offline')):
                 self.assertIsNone(cards.refresh())
             self.assertIn('offline',cards.error)
-            (Path(folder)/'cards.json').write_text(json.dumps({'updated':10,'cards':[dict(id='A',dbfId=1,name='中文',cost=2)]+[dict(id='CACHE_'+str(i),dbfId=i+2,name='样本'+str(i),cost=1) for i in range(100)]}))
-            cached=Cards(folder);self.assertEqual(cached.info('A')['name'],'中文');self.assertEqual(cached.updated,10)
+            (Path(folder)/'cards-zhCN.json').write_text(json.dumps({'updated':10,'locale':'zhCN','cards':[dict(id='A',dbfId=1,name='中文',cost=2)]+[dict(id='CACHE_'+str(i),dbfId=i+2,name='样本'+str(i),cost=1) for i in range(100)]}))
+            cached=Cards(folder,language='zhCN');self.assertEqual(cached.info('A')['name'],'中文');self.assertEqual(cached.updated,10)
     def test_image_paths_and_queue_bounded(self):
         with tempfile.TemporaryDirectory() as folder:
             cards=Cards(folder);self.assertIsNone(cards.image_path('../secret'))

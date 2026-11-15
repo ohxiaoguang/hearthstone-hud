@@ -2,6 +2,20 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
+## Unreleased
+
+- The legacy language-neutral `cards.json` cache is no longer read or adopted. Databases
+  are exactly `cache/cards-enUS.json` and `cache/cards-zhCN.json`, following the interface
+  language; a fresh install downloads its language automatically, and upgrading from a
+  version older than v0.7.0 re-downloads the card names once.
+- The settings page scans only those two databases; other locales' leftover cache files are
+  ignored.
+- The unused offline card-database import and the manual card-art import machinery were
+  removed, including the legacy `cache/images/manual/` override directory: *Delete card
+  art* deletes that directory too, and tiles in it are no longer displayed.
+- *About* is now a fold inside the settings page (summary, version, repository) instead of
+  a dialog, avoiding modal layout glitches.
+
 ## v1.0.0
 
 First stable release. Everything implemented so far, in one place:

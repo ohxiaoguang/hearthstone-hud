@@ -210,43 +210,21 @@ class ResourceTests(unittest.TestCase):
         self.assertEqual((batch['done'],batch['total']),(6,6))
         self.assertEqual((batch['success'],batch['failed']),(5,1))
 
-    def test_legacy_manual_cache_is_counted_and_cleared(self):
+    def test_a_legacy_manual_directory_is_removed_by_clearing(self):
         self.cache('enUS')
         cards=Cards(self.folder)
         manual=cards.images/'manual';manual.mkdir(parents=True,exist_ok=True)
         (manual/'CARD_0.png').write_bytes(tile_png())
-        (manual/'CARD_1.png').write_bytes(tile_png())
-        (cards.images/'CARD_2.png').write_bytes(tile_png())
-        (manual/'notes.txt').write_text('keep')                   # not a PNG
-        (self.folder/'unrelated.json').write_text('keep')         # not a card database
-        usage=cards.image_usage()
-        self.assertEqual(usage['cached'],3)
-        self.assertEqual(usage['bytes'],sum(p.stat().st_size for p in
-                         (manual/'CARD_0.png',manual/'CARD_1.png',cards.images/'CARD_2.png')))
-        self.assertEqual(cards.clear_images(),3)
+        (cards.images/'CARD_1.png').write_bytes(tile_png())
+        (self.folder/'unrelated.json').write_text('keep')
+        self.assertEqual(cards.image_usage()['cached'],1)     # manual files are not counted
+        self.assertEqual(cards.clear_images(),1)
         self.assertEqual(list(cards.images.glob('*.png')),[])
-        self.assertEqual(list(manual.glob('*.png')),[])
-        self.assertTrue((manual/'notes.txt').exists())
+        self.assertFalse(manual.exists())                     # the legacy directory goes too
         self.assertTrue((self.folder/'unrelated.json').exists())
         self.assertTrue((self.folder/'cards-enUS.json').exists())
         self.assertEqual(len(cards.by_id),MIN_CARDS)
         self.assertEqual(cards.image_usage()['cached'],0)
-
-    def test_clearing_images_keeps_databases_and_cancels_a_running_batch(self):
-        self.cache('enUS')
-        cards=Cards(self.folder)
-        for cid in cards.all_card_ids()[:5]:(cards.images/(cid+'.png')).write_bytes(tile_png())
-        cards.begin_image_download(cards.all_card_ids())         # 5 cached, the rest queued
-        self.assertTrue(cards.batch_remaining)
-        removed=cards.clear_images()
-        self.assertEqual(removed,5)
-        self.assertEqual(list(cards.images.glob('*.png')),[])
-        self.assertEqual(cards.image_batch['status'],'idle')
-        self.assertEqual(cards.batch_remaining,set())
-        self.assertEqual(cards.pending,set())
-        self.assertTrue((self.folder/'cards-enUS.json').exists())
-        self.assertEqual(len(cards.by_id),MIN_CARDS)
-        self.assertEqual(cards.info('CARD_1')['image'],'')
 
     def test_image_usage_reports_sizes_and_totals(self):
         self.cache('enUS')

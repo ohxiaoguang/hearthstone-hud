@@ -323,14 +323,6 @@ class Plugin:
         self._publish();return self._arena_ui()
 
     @active_operation
-    async def import_card_database(self, path: str):
-        async with self.media_lock:
-            record = await self._io(self.cards.import_file,path)
-            self.cards.apply(record)
-        self._publish()
-        return await self.status()
-
-    @active_operation
     async def retry_card_database(self):
         # Same single worker handles first use, retries and images.
         if self.cards.download_phase!='running':
@@ -489,7 +481,7 @@ class Plugin:
             diag = json.loads((self.runtime / 'diagnostic.json').read_text())
         except (OSError, ValueError):
             pass
-        return dict(version=VERSION,repository=REPOSITORY,settings=self.settings,storage=dict(runtime=str(self.runtime),database=str(self.cards.cache_path()),images=str(self.cards.images),manual_images=str(self.cards.images/'manual'),retained_on_uninstall=True), running=bool(self.proc and self.proc.returncode is None),
+        return dict(version=VERSION,repository=REPOSITORY,settings=self.settings,storage=dict(runtime=str(self.runtime),database=str(self.cards.cache_path()),images=str(self.cards.images),retained_on_uninstall=True), running=bool(self.proc and self.proc.returncode is None),
                     lifecycle=self.lifecycle_state,
                     background=dict(log_monitor=bool(self.task and not self.task.done()),downloads=bool(self.media_task and not self.media_task.done()),memory=self.memory_watch.thread is not None,io_pool=self.io_pool is not None),
                     error=self.error, diagnostic=diag, log_path=str(self.log_path or ''),
