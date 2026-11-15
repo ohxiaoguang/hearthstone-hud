@@ -70,7 +70,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          notes="docs/${GITHUB_REF_NAME}_RELEASE_NOTES.md"
+          # Tags are vX.Y.Z; the notes files are VX.Y.Z_RELEASE_NOTES.md, and the
+          # runner filesystem is case sensitive.
+          notes="docs/V${GITHUB_REF_NAME#v}_RELEASE_NOTES.md"
           if [ ! -f "$notes" ]; then
             echo "missing release notes: $notes" >&2
             exit 1
