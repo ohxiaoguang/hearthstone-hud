@@ -104,7 +104,7 @@ def format_diagnostics(data,version,recent=(),renderer_tail=''):
     field('Last Error',cards.get('image_error',''))
     section('Full Card Resources')
     resources=data.get('full_card_resources',{})
-    for key in ('locale','resolution','cached','manual','bytes','total','batch','last_error'):field(key,resources.get(key,'unknown'))
+    for key in ('locale','resolution','cached','bytes','total','batch','last_error'):field(key,resources.get(key,'unknown'))
     section('Renderer');field('Status','running' if data.get('running') else 'stopped');field('Gamescope',data.get('gamescope_status','unknown'))
     diag=data.get('diagnostic',{})
     for key in ('display','window','external_overlay','mapped','frames','xshape_input_empty'):

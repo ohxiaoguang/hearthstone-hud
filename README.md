@@ -250,8 +250,8 @@ Full cards use HearthstoneJSON's documented
 `/v1/render/latest/{locale}/256x/{card_id}.png`. These include the frame and text,
 whereas tiles contain only cropped artwork. A missing localized render falls back
 to English. By default only hovered cards are requested; an explicit full download is available in Download resources.
-`cache/full-cards/256x/<locale>/` is separate from tiles, limited to 256 MiB and pruned
-by last use when a new image is saved. The renderer retains at most 12 full-card
+`cache/full-cards/256x/<locale>/` is separate from tiles. Hover and bulk downloads
+share the same files without a disk size cap or automatic eviction. The renderer retains at most 12 full-card
 textures. Network and CPU decode run in background workers; GL upload runs on the
 render thread. Workers are drained when the plugin or renderer stops.
 
@@ -341,8 +341,8 @@ used after loading, with aspect ratio preserved and frame padding included in ed
 avoidance. Previews use 256px-wide complete card renders (normally 256x384), which
 have one quarter of the pixels of 512px renders; transfer size varies by card.
 The resolution-specific `cache/full-cards/256x/<locale>/` directory prevents reuse
-of old high-resolution files. Both on-demand resolution variants count toward the existing 256 MiB disk
-limit; old files are retained until normal eviction. Bulk downloading requires an explicit action in Download resources.
+of old high-resolution files. Files are retained until you clear them; bulk downloading
+requires an explicit action in Download resources.
 
 ### Thumbnail and full-card resource controls
 
@@ -360,10 +360,19 @@ language cancels that batch. The existing full-card worker gives hovered cards
 priority and merges them with batch work so each card is fetched once. Cancellation
 keeps completed files and allows a promoted hover request to finish.
 
-Explicitly downloaded cards live in `cache/full-cards/256x/<locale>/manual/` and
-are retained until cleared; they are not subject to the 256 MiB automatic-cache cap.
-This allows a complete manual collection to finish without evicting its own files.
-The renderer reads both manual and automatic files. The automatic-cache cap and
-12-texture memory limit remain in force. Resource disk scans run on the I/O pool
+All full cards use `cache/full-cards/256x/<locale>/<CardID>.png`, independent of
+whether hover or bulk downloading fetched them. There is no disk quota or automatic
+eviction. Cached hover cards are read directly, and bulk jobs only enqueue local
+missing IDs. High-priority hover and low-priority bulk queues share reservations,
+so a promoted card cannot be queued or downloaded twice. The 12-texture GPU limit
+is separate and never deletes disk files. Resource disk scans run on the I/O pool
 with a two-second statistics cache; batch progress stays live. Full downloads never
 start automatically, and all owned workers are drained on plugin stop/clear.
+
+On upgrade, a background migration merges legacy `manual/` PNGs into their parent
+unified directory. A valid existing destination wins; a valid source replaces a
+missing/corrupt destination atomically. Only after a verified copy exists is the
+legacy source removed. Empty old directories are removed without recursive deletion;
+unverified files or failed moves are retained and reported in migration diagnostics,
+and can be retried on restart. Thumbnail directories are never part of migration or
+full-card clearing. Migration does not wait on the render or log parsing loop.

@@ -148,6 +148,7 @@ class Plugin:
         self.lifecycle_state='starting'
         self.full_cards=FullCards(self.runtime)
         self.io_pool=ThreadPoolExecutor(max_workers=3,thread_name_prefix='hud-io-'+str(id(self)))
+        self.full_cards.prepare()
         self.loop_stop=asyncio.Event();self.last_scan=float('-inf')
         self.task=asyncio.create_task(self._loop())
         if self.settings['arena_memory']:self.memory_watch.start()

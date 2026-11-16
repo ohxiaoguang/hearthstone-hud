@@ -70,15 +70,6 @@ class FeatureTests(unittest.TestCase):
             again=FullCards(root,fetch);again._load(('zhCN','CARD_A',True));again.close()
             self.assertEqual(len(calls),2)
 
-    def test_disk_eviction_keeps_recent_card_and_caps_total_bytes(self):
-        with tempfile.TemporaryDirectory() as folder:
-            worker=FullCards(folder);directory=worker.root/'enUS';directory.mkdir(parents=True)
-            old=directory/'OLD.png';recent=directory/'NEW.png'
-            old.write_bytes(b'x'*20);recent.write_bytes(b'y'*20)
-            with patch('engine.full_cards.DISK_LIMIT',25):worker._trim(recent)
-            self.assertFalse(old.exists());self.assertTrue(recent.exists())
-            worker.close()
-
     def test_departure_cancels_fallback_and_discards_late_download(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);started=threading.Event();release=threading.Event();calls=[]
@@ -141,13 +132,3 @@ class FeatureTests(unittest.TestCase):
                 self.assertEqual(legacy.read_bytes(),tile_png(512,768))
                 self.assertEqual(len(calls),1);self.assertIn('/256x/',calls[0])
             finally:worker.close()
-
-    def test_disk_limit_counts_both_legacy_and_small_render_caches(self):
-        with tempfile.TemporaryDirectory() as folder:
-            worker=FullCards(folder)
-            old=worker.root/'enUS/OLD.png';small=worker.root/'256x/enUS/NEW.png'
-            old.parent.mkdir(parents=True);small.parent.mkdir(parents=True)
-            old.write_bytes(b'x'*20);small.write_bytes(b'y'*20)
-            with patch('engine.full_cards.DISK_LIMIT',25):worker._trim(small)
-            self.assertFalse(old.exists());self.assertTrue(small.exists())
-            worker.close()

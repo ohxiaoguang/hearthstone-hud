@@ -27,9 +27,7 @@ public:
         cache[p.key]={id,p.width,p.height,frame};status={{"stage","resident"},{"key",p.key}};
     }
     GLuint get(const std::filesystem::path& root,const std::string& locale,const std::string& cid,unsigned long frame,int& width,int& height){
-        auto path=root/locale/(cid+".png");
-        const auto manual=root/locale/"manual"/(cid+".png");std::error_code ec;
-        if(std::filesystem::is_regular_file(manual,ec))path=manual;
+        const auto path=root/locale/(cid+".png");
         const auto key=path.string();
         auto it=cache.find(key);if(it!=cache.end()){status={{"stage","resident"},{"key",key}};it->second.used=frame;width=it->second.width;height=it->second.height;return it->second.id;}
         if(pending.valid())return 0;
