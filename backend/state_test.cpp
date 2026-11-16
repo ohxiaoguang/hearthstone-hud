@@ -132,5 +132,14 @@ int main(){
     if(history.diagnostic(4)["position_changes_with_cards"]!=1)return 70;
     history.observe(5,false,{0,0},true);history.observe(6,true,{0,0},false);
     if(history.diagnostic(6)["samples_with_cards"]!=3)return 71;
+    // Regression: seven registered regions were visible, but the renderer :0
+    // cursor stayed at (1919,1079). The game's :1 pointer must be selected.
+    if(!separate_pointer_display(":1",":0") || separate_pointer_display(":0.0",":0") || separate_pointer_display("",":0"))return 72;
+    if(local_x11_display("remote:1") || local_x11_display(":1.") || !local_x11_display(":1.0"))return 73;
+    good["game_display"]=":1";if(!valid_hud_state(good))return 74;
+    bad=good;bad["game_display"]="remote:1";if(valid_hud_state(bad))return 75;
+    bad=good;bad["game_display"]=1;if(valid_hud_state(bad))return 76;
+    point=hover_display_point(200,240,3840,2160,1920,1080);
+    if(point.x!=100 || point.y!=120 || !hover_contains(point.x,point.y,8,107,258,142))return 77;
     std::cout<<"Native HUD state validation: passed\n";
 }

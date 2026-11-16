@@ -1,5 +1,6 @@
 """Discover only live Hearthstone processes; never infer a prefix from old files."""
 import os
+import re
 from pathlib import Path, PureWindowsPath
 
 ENV_KEYS = ('STEAM_COMPAT_DATA_PATH', 'WINEPREFIX', 'SteamAppId', 'DISPLAY')
@@ -85,3 +86,8 @@ def discover_process(proc=Path('/proc')):
     if matches:
         return max(matches,key=lambda m:(bool(m.get('prefix')),bool(m.get('game_dir'))))
     return dict(found=False,error='游戏进程未发现' if not errors else '无法读取游戏进程环境：'+'; '.join(errors))
+
+
+def local_x11_display(value):
+    """Only accept a local X display address discovered from the live game."""
+    return value if isinstance(value,str) and len(value)<=32 and re.fullmatch(r':[0-9]+(?:\.[0-9]+)?',value) else ''

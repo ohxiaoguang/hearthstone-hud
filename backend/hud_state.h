@@ -3,6 +3,22 @@
 #include <cmath>
 #include <string>
 #include <algorithm>
+// Only local addresses are allowed for the optional read-only game connection.
+inline bool local_x11_display(const std::string& value){
+    if(value.empty() || value.size()>32 || value[0]!=':')return false;
+    bool digit=false,dot=false;
+    for(size_t i=1;i<value.size();++i){
+        if(value[i]>='0' && value[i]<='9'){digit=true;continue;}
+        if(value[i]=='.' && !dot && digit){dot=true;digit=false;continue;}
+        return false;
+    }
+    return digit;
+}
+inline bool separate_pointer_display(const std::string& game,const std::string& renderer){
+    if(!local_x11_display(game))return false;
+    const auto canonical=[](const std::string& value){return value.find('.')==std::string::npos?value+".0":value;};
+    return canonical(game)!=canonical(renderer);
+}
 inline bool valid_arena_state(const nlohmann::json& a){
     if(!a.is_object())return false;
     for(const auto* k:{"visible","drafting","exact"})if(!a.contains(k)||!a[k].is_boolean())return false;
@@ -44,6 +60,8 @@ inline bool valid_language(const nlohmann::json& s){
 inline bool valid_hud_state(const nlohmann::json& s) {
     if(!s.is_object() || !s.contains("updated") || !s["updated"].is_number())return false;
     if(!valid_language(s))return false;
+    if(s.contains("game_display") && (!s["game_display"].is_string() ||
+        (!s["game_display"].get_ref<const std::string&>().empty() && !local_x11_display(s["game_display"].get_ref<const std::string&>()))))return false;
     if(s.contains("idle_visible")&&!s["idle_visible"].is_boolean())return false;
     if(s.contains("card_locale")&&(!s["card_locale"].is_string() || s["card_locale"].get<std::string>().size()!=4 || s["card_locale"].get<std::string>().find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")!=std::string::npos))return false;
     for(const auto* k:{"scale","opacity","x","y","right_x","right_y","panel_width","font_size"})

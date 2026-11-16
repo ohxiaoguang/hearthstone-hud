@@ -93,3 +93,10 @@ class ProtonTests(unittest.TestCase):
         environment=discover_process(self.proc)['environment']
         self.assertEqual(environment['DISPLAY'],':1')
         self.assertNotIn('API_TOKEN',environment)
+
+    def test_local_display_addresses_only(self):
+        from engine.proton import local_x11_display
+        for value in (':0',':1',':12.0'):
+            self.assertEqual(local_x11_display(value),value)
+        for value in (None,1,'remote:1','localhost:0',':1; command',':','',':1.',':-1',':1.2.3',':'+('1'*40)):
+            self.assertEqual(local_x11_display(value),'')

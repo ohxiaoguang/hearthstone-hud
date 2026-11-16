@@ -30,6 +30,7 @@ static void write_json(const std::string& path,const json& j){
     std::ofstream f(path+".tmp"); f.exceptions(std::ios::failbit|std::ios::badbit); f<<j.dump(); f.close(); std::filesystem::rename(path+".tmp",path);
 }
 #include "hover_preview.h"
+#include "game_pointer.h"
 struct Texture { GLuint id=0; unsigned long used=0; };
 class TextureCache {
     std::map<std::string,Texture> items;
@@ -177,6 +178,7 @@ int main(int argc,char** argv){
     ImGui_ImplGlfw_InitForOpenGL(w,false); ImGui_ImplOpenGL3_Init("#version 130");
     TextureCache textures{std::filesystem::path(argv[1])};
     HoverPreview preview;
+    GamePointer game_pointer;
     json state; bool shown=false; auto last=std::chrono::steady_clock::now();
     unsigned long frames=0;
     while(!quitting && !glfwWindowShouldClose(w)){
@@ -195,6 +197,25 @@ int main(int argc,char** argv){
         ImGui_ImplOpenGL3_NewFrame();ImGui_ImplGlfw_NewFrame();ImGui::NewFrame();
         CardRegions card_regions(frames,{{"hud_visible",visible},{"tracking_status",state["tracking"].value("status","")},
             {"own_deck",state.value("own_deck",true)},{"arena_visible",state.contains("arena_state")&&state["arena_state"].value("visible",false)}});
+        const std::string renderer_display=getenv("DISPLAY")?getenv("DISPLAY"):"";
+        const auto source_display=state.value("game_display",std::string());
+        auto* viewport=ImGui::GetMainViewport();
+        if(separate_pointer_display(source_display,renderer_display)){
+            const auto sample=game_pointer.sample(source_display,ImGui::GetTime());
+            pointer_position={-1,-1};pointer_valid=sample.valid && io.DisplaySize.x>0 && io.DisplaySize.y>0;
+            if(pointer_valid){
+                const auto point=hover_display_point(float(sample.x),float(sample.y),float(sample.width),float(sample.height),
+                    io.DisplaySize.x,io.DisplaySize.y,viewport->Pos.x,viewport->Pos.y);
+                pointer_position={point.x,point.y};
+            }
+            pointer_diagnostic={{"source_display",source_display},{"renderer_display",renderer_display},
+                {"mapping","game_root_to_overlay_display"},{"query_ok",sample.valid},{"error",sample.error},
+                {"root",{sample.x,sample.y}},{"source_size",{sample.width,sample.height}},
+                {"display_size",{io.DisplaySize.x,io.DisplaySize.y}},
+                {"framebuffer_scale",{io.DisplayFramebufferScale.x,io.DisplayFramebufferScale.y}},
+                {"position",{pointer_position.x,pointer_position.y}}};
+        }else{
+            game_pointer.reset();
         // Query the root, not the input-transparent overlay. Translate explicitly
         // into its client coordinates, then into ImGui display units.
         Window pointer_root=0,pointer_child=0;int root_x=0,root_y=0,local_x=0,local_y=0;unsigned int mask=0;
@@ -203,16 +224,16 @@ int main(int argc,char** argv){
         const bool geometry_ok=XGetWindowAttributes(d,x,&client)!=0;
         const bool query_ok=geometry_ok && XQueryPointer(d,client.root,&pointer_root,&pointer_child,&root_x,&root_y,&local_x,&local_y,&mask);
         const bool translated=query_ok && XTranslateCoordinates(d,pointer_root,x,root_x,root_y,&local_x,&local_y,&pointer_child);
-        auto* viewport=ImGui::GetMainViewport();
         if(translated && client.width>0 && client.height>0){
             auto point=hover_display_point(float(local_x),float(local_y),float(client.width),float(client.height),io.DisplaySize.x,io.DisplaySize.y,viewport->Pos.x,viewport->Pos.y);
             pointer_position={point.x,point.y};pointer_valid=true;
         }
-        pointer_diagnostic={{"query_ok",query_ok},{"translated",translated},{"root",{root_x,root_y}},
+        pointer_diagnostic={{"source_display",renderer_display},{"mapping","overlay_client"},{"query_ok",query_ok},{"translated",translated},{"root",{root_x,root_y}},
             {"client",{local_x,local_y}},{"client_size",{client.width,client.height}},
             {"display_size",{io.DisplaySize.x,io.DisplaySize.y}},
             {"framebuffer_scale",{io.DisplayFramebufferScale.x,io.DisplayFramebufferScale.y}},
             {"position",{pointer_position.x,pointer_position.y}}};
+        }
         float scale=std::clamp(state.value("scale",1.0f),.5f,3.f);
         float opacity=std::clamp(state.value("opacity",.85f),.1f,1.f);
         int sw,sh;glfwGetWindowSize(w,&sw,&sh);

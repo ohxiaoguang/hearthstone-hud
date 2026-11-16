@@ -533,3 +533,12 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.plugin.status())['cards']['databases']['enUS']['exists'],False)
         with self.assertRaises(ValueError):await self.plugin.clear_card_database('deDE')
         with self.assertRaises(ValueError):await self.plugin.download_all_images()   # no database
+
+    async def test_game_pointer_display_reaches_renderer_without_moving_overlay(self):
+        for found,value,expected in ((True,':1',':1'),(True,':1.0',':1.0'),
+                                     (True,'remote:1',''),(True,None,''),(False,':1','')):
+            self.plugin.process=dict(found=found,environment=dict(DISPLAY=value))
+            self.plugin._publish()
+            state=json.loads((self.plugin.runtime/'state.json').read_text())
+            self.assertEqual(state['game_display'],expected)
+            self.assertEqual(state['display'],':0')

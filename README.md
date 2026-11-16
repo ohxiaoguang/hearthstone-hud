@@ -6,7 +6,7 @@ A [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin that 
 always-on overlay for Hearthstone on SteamOS and other Linux handhelds: your remaining
 deck, both players' played cards, and an arena drafting panel with card ratings.
 
-Current release: **v1.0.5** · [Changelog](CHANGELOG.md) · [中文说明](README.zh-CN.md)
+Current release: **v1.0.6** · [Changelog](CHANGELOG.md) · [中文说明](README.zh-CN.md)
 
 > This is an unofficial community project. It is not affiliated with, endorsed by, or
 > sponsored by Blizzard Entertainment or HearthSim. Hearthstone and its card data and art
@@ -313,3 +313,24 @@ are registered, retaining observed bounds and time since the last observed chang
 Diagnostics also show Game X11 Display and Renderer display to help identify separate
 X servers. A successful XQueryPointer call alone does not prove its coordinates track
 the cursor over the game; compare history while deliberately moving across card rows.
+
+### Separate game and overlay X servers
+
+Gamescope can run Hearthstone on `:1` while the external HUD renders on `:0`.
+A successful pointer query on `:0` then need not track the cursor over Hearthstone.
+The backend now passes the live game's validated local `DISPLAY` as `game_display`.
+When the displays differ, the renderer opens a separate read-only XCB connection to
+that game display and maps its root coordinates/resolution to the fullscreen HUD's
+ImGui display space. It never translates XIDs across X servers. Identical displays
+(or missing game metadata) retain the existing overlay-client coordinate path.
+
+The additional connection creates no windows, selects no input events and never
+focuses, grabs or warps the pointer. It is owned by the rendering loop and closed on
+source changes/shutdown. Connection failures are reported and retried after five
+seconds; they do not fall back to a known wrong overlay pointer. XCB lets a lost game
+connection be handled without Xlib's default fatal I/O path terminating the HUD.
+`pointer.source_display`, `renderer_display`, `source_size`, `mapping` and `error`
+identify the actual source and mapping. Cross-display mapping assumes the game's
+root covers the fullscreen overlay output; unusual compositor cropping/letterboxing
+still requires real-device verification. Downloads, caches and empty input shape
+are unchanged. Linux CI installs the libxcb development headers for this reader.

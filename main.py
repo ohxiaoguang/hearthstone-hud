@@ -21,7 +21,7 @@ from engine.memory_watch import MemoryWatch
 from engine.arena_class_ratings import ClassRatings
 from engine.arena_memory_view import ArenaPreview
 from engine.discovery import discover, gamescope_status, LogClock
-from engine.proton import discover_process
+from engine.proton import discover_process, local_x11_display
 from engine import i18n
 from engine.diagnostics import format_diagnostics
 from engine.logconfig import ensure_power, ensure_decks, ensure_arena, inspect_config, diagnostic_state
@@ -536,7 +536,7 @@ class Plugin:
         if self.settings['card_images'] and arena['visible'] and not self.cache_resetting:
             self.cards.request_images(r['id'] for key in ('picks','candidates') for r in arena[key])
         atomic_json(self.runtime / 'state.json', dict(self.settings,updated=time.time(),schema=2,tracking=tracking,arena_state=arena,
-                                                       card_locale=self.card_locale(),idle_visible=bool(self.process.get('pid')),labels=self._labels(),visible=bool(self.settings['enabled'] and self.settings['visible'])))
+                                                       game_display=local_x11_display(self.process.get('environment',{}).get('DISPLAY')) if self.process.get('found') else '',card_locale=self.card_locale(),idle_visible=bool(self.process.get('pid')),labels=self._labels(),visible=bool(self.settings['enabled'] and self.settings['visible'])))
 
     async def _loop(self):
         while not self.loop_stop.is_set():

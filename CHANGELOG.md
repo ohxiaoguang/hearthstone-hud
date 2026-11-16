@@ -2,6 +2,17 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
+## v1.0.6
+
+- Read the pointer from the live game's X11 display when Gamescope runs the game
+  and the HUD on separate servers (for example, game :1 and overlay :0).
+- Map game root coordinates into the fullscreen HUD display, preserving the overlay
+  window, shared card registration, click-through, image downloads and caches.
+- Add pointer source/resolution/mapping diagnostics and recoverable game-display
+  connection handling with a five-second reconnect cooldown.
+- Same-display setups keep the existing client-coordinate path. Live SteamOS
+  verification is still required, especially for unusual compositor letterboxing.
+
 ## v1.0.5
 
 - Add a frame-local card-region collector shared by arena and match panels, with
