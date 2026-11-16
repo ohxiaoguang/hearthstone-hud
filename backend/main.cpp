@@ -29,6 +29,7 @@ static void stop(int){quitting=1;}
 static void write_json(const std::string& path,const json& j){
     std::ofstream f(path+".tmp"); f<<j.dump(); f.close(); std::filesystem::rename(path+".tmp",path);
 }
+#include "hover_preview.h"
 struct Texture { GLuint id=0; unsigned long used=0; };
 class TextureCache {
     std::map<std::string,Texture> items;
@@ -79,6 +80,9 @@ static void panel(const char* id,const std::string& title,const json& rows,bool 
         if(row.value("section",false)){
             draw->AddText(pos,IM_COL32(255,215,135,255),row.value("name","").c_str());continue;
         }
+        const auto clip_min=draw->GetClipRectMin(),clip_max=draw->GetClipRectMax();
+        const auto cid=row.value("id",std::string());
+        if(safe_card_id(cid))card_hits.push_back({{std::max(pos.x,clip_min.x),std::max(pos.y,clip_min.y)},{std::min(pos.x+width,clip_max.x),std::min(pos.y+row_height,clip_max.y)},cid});
         const bool event=row.value("event",false),deck=row.value("deck_row",false),arena=row.value("arena_row",false);
         const auto label=arena?row.value("rating_label",labels.value("no_rating","No rating")):event?"":card_count_label(row,deck);
         const float rating_width=ImGui::GetFont()->CalcTextSizeA(24*scale,FLT_MAX,0,label.c_str()).x+12*scale;
@@ -169,6 +173,7 @@ int main(int argc,char** argv){
         std::cerr<<"Missing Thai font; Thai card names will show placeholders\n";
     ImGui_ImplGlfw_InitForOpenGL(w,false); ImGui_ImplOpenGL3_Init("#version 130");
     TextureCache textures{std::filesystem::path(argv[1])};
+    HoverPreview preview;
     json state; bool shown=false; auto last=std::chrono::steady_clock::now();
     unsigned long frames=0;
     while(!quitting && !glfwWindowShouldClose(w)){
@@ -185,6 +190,10 @@ int main(int argc,char** argv){
         if(visible!=shown){if(visible)glfwShowWindow(w);else glfwHideWindow(w);shown=visible;}
         if(auto m=glfwGetPrimaryMonitor()) if(auto mode=glfwGetVideoMode(m)){int width,height;glfwGetWindowSize(w,&width,&height);if(width!=mode->width||height!=mode->height)glfwSetWindowSize(w,mode->width,mode->height);}
         ImGui_ImplOpenGL3_NewFrame();ImGui_ImplGlfw_NewFrame();ImGui::NewFrame();
+        card_hits.clear();
+        Window pointer_root,pointer_child;int root_x,root_y,local_x,local_y;unsigned int mask;
+        pointer_position={-1,-1};
+        if(XQueryPointer(d,x,&pointer_root,&pointer_child,&root_x,&root_y,&local_x,&local_y,&mask))pointer_position={float(local_x),float(local_y)};
         float scale=std::clamp(state.value("scale",1.0f),.5f,3.f);
         float opacity=std::clamp(state.value("opacity",.85f),.1f,1.f);
         int sw,sh;glfwGetWindowSize(w,&sw,&sh);
@@ -230,13 +239,19 @@ int main(int argc,char** argv){
         const auto tick=std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch()).count()/8;
         const float own_y=ly+(left.opponent.visible&&!opponent_rows.empty()?panel_layout(opponent_rows.size(),font_size,scale,left.opponent.height,tick,ImGui::GetStyle().WindowPadding.y*2).height+8*scale:0);
         if(left.own.visible)render("own-played",labels.value("own_played","You played · newest first"),own_rows,false,lx,own_y,left.own.height);
+        if(state.value("own_deck",true) && state.value("idle_visible",false) && tracking.value("status","")=="waiting"){
+            ImGui::SetNextWindowPos({rx,ry});ImGui::SetNextWindowBgAlpha(0);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize,0);ImGui::Begin("idle",nullptr,flags|ImGuiWindowFlags_NoBackground);
+            ImGui::SetWindowFontScale(scale*.8f);ImGui::TextUnformatted(labels.value("waiting","Waiting for match").c_str());ImGui::End();ImGui::PopStyleVar();
+        }
         if(state.value("own_deck",true))render("remaining",tracking.value("remaining_title","Your remaining deck · "+number(tracking.value("own_remaining",json()))),deck_rows(tracking,state.value("hide_exhausted",false),labels),true,rx,ry,std::max(80.f,sh-ry-16*scale));
         }
         } // Hidden HUD submits an empty transparent frame.
+        try{preview.render(std::filesystem::path(argv[1]).parent_path(),state.value("card_locale","enUS"),labels.value("loading","Loading card..."),labels.value("preview_unavailable","Card preview unavailable"),frames,float(sw),float(sh),scale);}catch(const std::exception& e){std::cerr<<"preview: "<<e.what()<<'\n';}
         ImGui::Render();int fw,fh;glfwGetFramebufferSize(w,&fw,&fh);glViewport(0,0,fw,fh);glClearColor(0,0,0,0);glClear(GL_COLOR_BUFFER_BIT);ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());glfwSwapBuffers(w);
         if(++frames%30==0)write_json(argv[3],{{"display",getenv("DISPLAY")?getenv("DISPLAY"):""},{"window",x},{"external_overlay",atom_ok},{"xshape_input_empty",shape},{"transparent_framebuffer",glfwGetWindowAttrib(w,GLFW_TRANSPARENT_FRAMEBUFFER)==GLFW_TRUE},{"mapped",shown},{"frames",frames},{"compositor_visibility","unverified"},{"touch_passthrough","unverified"},{"state_schema",2}});
         std::this_thread::sleep_for(std::chrono::milliseconds(shown?16:100));
     }
-    textures.clear();
+    preview.clear();textures.clear();
     ImGui_ImplOpenGL3_Shutdown();ImGui_ImplGlfw_Shutdown();ImGui::DestroyContext();glfwDestroyWindow(w);glfwTerminate();return 0;
 }

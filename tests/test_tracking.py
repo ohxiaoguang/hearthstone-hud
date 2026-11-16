@@ -51,6 +51,16 @@ class TrackingTests(unittest.TestCase):
         self.assertEqual(self.row('TEST_A')['remaining'],2)
         self.assertEqual(self.row('TEST_A')['name'],'测试甲')
 
+    def test_confirmed_deck_name_reaches_tracking_view_and_does_not_cross_games(self):
+        timestamp=self.decks.candidates[0][0]
+        self.decks.metadata[timestamp]['name']='My actual mage'
+        self.assertEqual(self.p.view(self.cards)['deck_name'],'My actual mage')
+        self.feed('TAG_CHANGE Entity=GameEntity tag=STATE value=COMPLETE')
+        self.assertNotIn('deck_name',self.p.view(self.cards))
+        self.feed('CREATE_GAME')
+        self.assertEqual(self.p.initial_dbf,{})
+        self.assertEqual(self.decks.record_for_game(self.p.game.start,self.p.previous_start),{})
+
     def test_draw_play_and_duplicate(self):
         line=self.feed('TAG_CHANGE Entity=4 tag=ZONE value=HAND')
         self.p.feed_line(line,DAY)

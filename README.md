@@ -235,3 +235,33 @@ Dear ImGui (MIT), nlohmann/json (MIT), stb (MIT / public domain).
 
 **Reference only** (ideas and layout comparisons, no copied code): OverLaid, the official
 Decky plugin template, and Loadout — see `licenses/THIRD_PARTY.md` for the exact commits.
+
+## Hover previews and deck names
+
+Hover any visible HUD card row for 200 ms to see its full card render. The preview
+keeps its aspect ratio and chooses a position inside the overlay, preferring space
+beside the hovered row. Mouse position is read once per rendering frame through
+X11; the window retains its empty input shape and does not intercept game clicks.
+Hit regions come from the visible, clipped rows of the current page, in window
+coordinates (framebuffer DPI scaling is left to ImGui).
+
+Full cards use HearthstoneJSON's documented
+[card render API](https://hearthstonejson.com/docs/images.html),
+`/v1/render/latest/{locale}/512x/{card_id}.png`. These include the frame and text,
+whereas tiles contain only cropped artwork. A missing localized render falls back
+to English. Only hovered cards are requested; there is no bulk full-card download.
+`cache/full-cards/<locale>/` is separate from tiles, limited to 256 MiB and pruned
+by last use when a new image is saved. The renderer retains at most 12 full-card
+textures. Network and CPU decode run in background workers; GL upload runs on the
+render thread. Workers are drained when the plugin or renderer stops.
+
+When Hearthstone is running without a match, a plain “Waiting for match” label
+appears at the remaining-deck position, following the HUD and own-deck switches.
+It does not depend on the match-summary switch and is suppressed by arena drafting.
+Confirmed inactive drafts clear their selected cards; temporary read failures keep
+the last valid selection marked unconfirmed.
+
+The original-deck heading uses the name from the queue-time Decks.log block that
+supplied the current match's deck definition. It never uses a later or previous
+match's name; missing names retain “Original deck”. Arena matches use “Arena ·
+<class>”. Added/transformed cards retain their separate group.

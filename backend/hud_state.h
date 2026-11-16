@@ -44,6 +44,8 @@ inline bool valid_language(const nlohmann::json& s){
 inline bool valid_hud_state(const nlohmann::json& s) {
     if(!s.is_object() || !s.contains("updated") || !s["updated"].is_number())return false;
     if(!valid_language(s))return false;
+    if(s.contains("idle_visible")&&!s["idle_visible"].is_boolean())return false;
+    if(s.contains("card_locale")&&(!s["card_locale"].is_string() || s["card_locale"].get<std::string>().size()!=4 || s["card_locale"].get<std::string>().find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")!=std::string::npos))return false;
     for(const auto* k:{"scale","opacity","x","y","right_x","right_y","panel_width","font_size"})
         if(s.contains(k) && (!s[k].is_number() || !std::isfinite(s[k].get<double>())))return false;
     for(const auto* k:{"visible","own_deck","opponent_deck","opponent_hand","card_images","own_played","opponent_played","show_summary","hide_exhausted"})
@@ -52,7 +54,7 @@ inline bool valid_hud_state(const nlohmann::json& s) {
     if(!s.contains("tracking") || !s["tracking"].is_object())return false;
     const auto& t=s["tracking"];
     if(!t.contains("status") || !t["status"].is_string() || !t.contains("turn") || !t["turn"].is_number_integer())return false;
-    for(const auto* k:{"own_label","own_class","opponent_class"})if(t.contains(k) && !t[k].is_string())return false;
+    for(const auto* k:{"own_label","own_class","opponent_class","deck_name"})if(t.contains(k) && !t[k].is_string())return false;
     for(const auto* k:{"opponent_hand","opponent_deck","own_deck","own_remaining","opponent_unknown"})if(t.contains(k) && !t[k].is_null() && !t[k].is_number_integer())return false;
     for(const auto* k:{"own","opponent","own_added","own_played","opponent_seen","opponent_played"}) {
         const bool events=std::string(k)=="own_played" || std::string(k)=="opponent_played";
@@ -93,7 +95,7 @@ inline nlohmann::json deck_rows(const nlohmann::json& t,bool hide_exhausted,cons
             if(hide_exhausted && r.value("remaining",json())==json(0))continue;
             if(!heading){
                 const std::string name=std::string(key)=="own"?
-                    labels.value("deck_original","Original deck"):
+                    (t.value("deck_name",std::string()).empty()?labels.value("deck_original","Original deck"):t.value("deck_name",std::string())):
                     labels.value("deck_added","Added / transformed · currently in deck");
                 rows.push_back({{"section",true},{"name",name}});heading=true;
             }

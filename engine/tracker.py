@@ -19,22 +19,35 @@ class DeckLog:
         self.pending = False
         self.candidates = []
         self.errors = 0
+        self.metadata = {}
+        self.header = {}
 
     def feed(self, ts, payload):
         text = payload.strip()
         if text.startswith(('Finding Game With Deck:', 'Starting Arena Game With Deck:')):
             self.pending = True
+            self.header = dict(arena=text.startswith('Starting Arena'))
+        elif self.pending and text.startswith('### '):
+            self.header['name'] = text[4:].strip()[:256]
+        elif self.pending and text.startswith('# Deck ID:'):
+            self.header['deck_id'] = text.split(':',1)[1].strip()[:128]
         elif self.pending and text.startswith('AAE'):
             try:
                 definition = decode(text)
                 if 0 < sum(definition.cards.values()) <= 100:
                     self.candidates.append((ts, definition.cards))
+                    self.metadata[ts] = dict(self.header,code=text,cards=dict(definition.cards),time=ts)
+                    self.metadata = {t:m for t,m in self.metadata.items() if t in [x[0] for x in self.candidates[-32:]]}
                     self.candidates = self.candidates[-32:]
             except (ValueError, IndexError):
                 self.errors += 1
             self.pending = False
         elif self.pending and not text.startswith('#'):
             self.pending = False
+
+    def record_for_game(self,start,previous=None):
+        eligible=[t for t,_ in self.candidates if t <= start and (previous is None or t > previous)]
+        return self.metadata.get(max(eligible),{}) if eligible else {}
 
     def for_game(self, start, previous=None):
         eligible = [(t,d) for t,d in self.candidates if t <= start and (previous is None or t > previous)]
@@ -224,6 +237,10 @@ class Tracker(PowerParser):
         transformed=Counter(e.known_id for e in mine if e.zone=='DECK' and e.controller==me.player_id and e.card_id and e.card_id!=e.known_id)
         drawn=Counter(e.known_id for e in mine if e.id in self.drawn and e.known_id)
         used=Counter(e['card_id'] for e in self.used if e['player_id']==me.player_id and e['in_starting_deck'])
+        record=self.decks.record_for_game(game.start,self.previous_start)
+        result['deck_name']=record.get('name','') if record.get('cards')==self.initial_dbf and not record.get('arena') and game.game_type not in ('GT_ARENA','GT_UNDERGROUND_ARENA') else ''
+        if game.game_type in ('GT_ARENA','GT_UNDERGROUND_ARENA'):
+            result['deck_name']=i18n.t('hud.arena_deck',hero=i18n.class_label(result['own_class'],'arena.class_unknown'))
         result['own_label']=i18n.t('track.deck_full') if starting else i18n.t('track.deck_partial')
         # Without a deck definition, show only confirmed starting entities. Never
         # use arbitrary visible cards or plays to manufacture a deck definition.

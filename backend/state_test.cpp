@@ -81,5 +81,12 @@ int main(){
     bad=good;bad["arena_state"]["stage"]="invented";if(valid_hud_state(bad))return 28;
     bad=good;bad["arena_state"]["candidates"][0]["hero_stats"]={{"winrate",2},{"games",10},{"rank",1},{"of",11}};if(valid_hud_state(bad))return 29;
     bad=good;bad["arena_state"]["show_count"]="no";if(valid_hud_state(bad))return 30;
+    good["card_locale"]="zhCN";good["idle_visible"]=true;good["tracking"]["deck_name"]="My mage";
+    if(!valid_hud_state(good))return 48;
+    bad=good;bad["card_locale"]="../x";if(valid_hud_state(bad))return 49;
+    bad=good;bad["tracking"]["deck_name"]=123;if(valid_hud_state(bad))return 50;
+    auto named=good["tracking"];named["own"]=json::array({{{"id","CARD_A"},{"remaining",2}}});
+    if(deck_rows(named,false)[0]["name"]!="My mage")return 51;
+    named["deck_name"]="";if(deck_rows(named,false)[0]["name"]!="Original deck")return 52;
     std::cout<<"Native HUD state validation: passed\n";
 }

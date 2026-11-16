@@ -13,13 +13,13 @@ def valid_id(cid):
     return isinstance(cid,str) and bool(re.fullmatch(r'(?=.*[A-Za-z])[A-Za-z0-9_]{1,128}',cid))
 
 
-def validate_png(data):
-    if len(data)>MAX_IMAGE or data[:8]!=b'\x89PNG\r\n\x1a\n':raise ValueError('PNG 文件头或大小错误')
+def validate_png(data, full=False):
+    if len(data)>(4*MAX_IMAGE if full else MAX_IMAGE) or data[:8]!=b'\x89PNG\r\n\x1a\n':raise ValueError('PNG 文件头或大小错误')
     pos=8;chunks=[];compressed=bytearray();header=None;palette=False;ended=False
     while pos<len(data):
         if pos+12>len(data):raise ValueError('PNG 数据截断')
         size=struct.unpack_from('>I',data,pos)[0];kind=data[pos+4:pos+8];pos+=8
-        if size>MAX_IMAGE or pos+size+4>len(data):raise ValueError('PNG chunk 超限或截断')
+        if size>(4*MAX_IMAGE if full else MAX_IMAGE) or pos+size+4>len(data):raise ValueError('PNG chunk 超限或截断')
         payload=data[pos:pos+size];crc=struct.unpack_from('>I',data,pos+size)[0];pos+=size+4
         if zlib.crc32(kind+payload)&0xffffffff!=crc:raise ValueError('PNG CRC 校验失败')
         if not chunks and kind!=b'IHDR':raise ValueError('缺少 PNG IHDR')
@@ -36,7 +36,9 @@ def validate_png(data):
     if not header or not ended or not compressed:raise ValueError('PNG 不完整')
     width,height,depth,color,compression,filtering,interlace=header
     channels={0:1,2:3,3:1,4:2,6:4}.get(color)
-    if (width,height)!=(256,59):raise ValueError('仅接受 256x59 卡图缩略 PNG')
+    if full:
+        if not (128 <= width <= 1024 and 128 <= height <= 1536):raise ValueError('Invalid full card dimensions')
+    elif (width,height)!=(256,59):raise ValueError('仅接受 256x59 卡图缩略 PNG')
     allowed=(1,2,4,8) if color==3 else (1,2,4,8,16) if color==0 else (8,16)
     if not channels or depth not in allowed or compression or filtering or interlace not in (0,1) or (color==3 and not palette):raise ValueError('PNG 编码错误')
     passes=[(0,0,1,1)] if not interlace else [(0,0,8,8),(4,0,8,8),(0,4,4,8),(2,0,4,4),(0,2,2,4),(1,0,2,2),(0,1,1,2)]

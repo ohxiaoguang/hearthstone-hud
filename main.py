@@ -15,6 +15,7 @@ import decky
 from engine.io import Tail, atomic_json
 from engine.tracker import Tracker, DeckLog, LINE
 from engine.cards import Cards
+from engine.full_cards import FullCards
 from engine.arena import Arena
 from engine.memory_watch import MemoryWatch
 from engine.arena_class_ratings import ClassRatings
@@ -143,6 +144,7 @@ class Plugin:
     async def _start_services(self):
         if self.io_pool is not None:return
         self.lifecycle_state='starting'
+        self.full_cards=FullCards(self.runtime)
         self.io_pool=ThreadPoolExecutor(max_workers=3,thread_name_prefix='hud-io-'+str(id(self)))
         self.loop_stop=asyncio.Event();self.last_scan=float('-inf')
         self.task=asyncio.create_task(self._loop())
@@ -168,6 +170,7 @@ class Plugin:
             self.media_task=None
         if self.io_pool is not None:
             await self._io(self.memory_watch.join)
+            if getattr(self,'full_cards',None):await self._io(self.full_cards.close)
             pool,self.io_pool=self.io_pool,None
             pool.shutdown(wait=True)
         else:self.memory_watch.join()
@@ -504,7 +507,7 @@ class Plugin:
 
     def _labels(self):
         """Static HUD labels in the selected interface language."""
-        return dict(arena_hero=i18n.t('arena.hero'),arena_hero_power=i18n.t('arena.hero_power'),arena_card=i18n.t('arena.card'),
+        return dict(waiting=i18n.t('hud.waiting'),loading=i18n.t('hud.loading'),preview_unavailable=i18n.t('hud.preview_unavailable'),arena_hero=i18n.t('arena.hero'),arena_hero_power=i18n.t('arena.hero_power'),arena_card=i18n.t('arena.card'),
                     opponent_played=i18n.t('hud.opponent_played'),own_played=i18n.t('hud.own_played'),
                     empty_own=i18n.t('hud.empty_own'),empty_other=i18n.t('hud.empty_other'),no_rating=i18n.t('arena.no_rating'),
                     deck_original=i18n.t('hud.deck_original'),deck_added=i18n.t('hud.deck_added'))
@@ -521,6 +524,8 @@ class Plugin:
         return tracking
 
     def _publish(self):
+        if getattr(self,'full_cards',None):
+            self.full_cards.request(self.card_locale(),self.settings['enabled'] and self.settings['visible'],self.settings['image_tls_verify'])
         tracking = self.parser.view(self.cards) if self.active and self.caught_up else dict(status='waiting',turn=0,own=[],opponent=[],own_label=i18n.t('track.waiting_log'),opponent_hand=None,opponent_deck=None)
         self._tracking_titles(tracking)
         if self.settings['enabled'] and self.settings['card_images'] and not self.cache_resetting:
@@ -531,7 +536,7 @@ class Plugin:
         if self.settings['card_images'] and arena['visible'] and not self.cache_resetting:
             self.cards.request_images(r['id'] for key in ('picks','candidates') for r in arena[key])
         atomic_json(self.runtime / 'state.json', dict(self.settings,updated=time.time(),schema=2,tracking=tracking,arena_state=arena,
-                                                       labels=self._labels(),visible=bool(self.settings['enabled'] and self.settings['visible'])))
+                                                       card_locale=self.card_locale(),idle_visible=bool(self.process.get('pid')),labels=self._labels(),visible=bool(self.settings['enabled'] and self.settings['visible'])))
 
     async def _loop(self):
         while not self.loop_stop.is_set():

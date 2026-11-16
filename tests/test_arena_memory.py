@@ -382,6 +382,12 @@ class PreviewTests(unittest.TestCase):
         v=self.view(None,self.diag(code='reading'))
         self.assertEqual(v['count'],2);self.assertTrue(v['count_exact']);self.assertFalse(v['deck_stale'])
 
+    def test_confirmed_inactive_draft_clears_previous_selection(self):
+        self.view(self.state(deck=('CARD_A','CARD_B')))
+        v=self.view(None,self.diag(code='reading',inactive=True))
+        self.assertEqual(v['count'],0);self.assertEqual(v['picks'],[])
+        self.assertEqual(v['deck_id'],'')
+
     def test_46_expired_snapshot_marks_the_kept_deck_stale(self):
         self.view(self.state(deck=('CARD_A','CARD_B')))
         v=self.view(None,self.diag(code='reading',stale_read=True))

@@ -262,7 +262,7 @@ class HearthstoneMemory:
             code={'HERO':'hero_selection','CARD':'card_selection','HERO_POWER':'hero_power_selection'}.get(stage,'reading')
             message={'hero_selection':i18n.t('mem.hero'),'card_selection':i18n.t('mem.card'),
                      'hero_power_selection':i18n.t('mem.hero_power')}.get(code,i18n.t('mem.reading'))
-            return state,dict(code=code,status=message,pid=self.pid,error='',profile='Unity 6000.3 x64 / Assembly-CSharp',unity_version='.'.join(map(str,self.mono.version)),process_instance=str(self.identity),
+            return state,dict(inactive=state is None,code=code,status=message,pid=self.pid,error='',profile='Unity 6000.3 x64 / Assembly-CSharp',unity_version='.'.join(map(str,self.mono.version)),process_instance=str(self.identity),
                               deck_object=bool(state and state.deck_object),deck_slots=int(state.deck_slots) if state else 0,
                               deck_parsed=len(state.deck) if state else 0,deck_reason=(state.deck_reason if state else ''),
                               deck_note=(state.deck_note if state else ''),observed_start=(self.snapshot_start if state else 0),

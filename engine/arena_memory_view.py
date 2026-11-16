@@ -53,6 +53,8 @@ class ArenaPreview:
                 # Game restarted: nothing read from the old process may survive.
                 self.reset();self.identity=identity
             elif self.identity is None:self.identity=identity
+        if state is None and diagnostic.get('inactive') and not diagnostic.get('stale_read'):
+            self.reset();return
         if state is None:
             # Keep the last deck. Only a failed read makes it uncertain: a good
             # poll that finds no active draft (finished deck, between rounds)
