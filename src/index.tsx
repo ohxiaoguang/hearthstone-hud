@@ -29,6 +29,8 @@ const cancelImageDownload=callable<[],Status>('cancel_image_download');
 const clearDatabase=callable<[locale:string],Status>('clear_card_database');
 const diagnosticText=callable<[],string>('diagnostic_text');
 
+const UPDATE_URL='https://github.com/ohxiaoguang/hearthstone-hud/releases/latest/download/hearthstone-hud.zip';
+
 const box={fontSize:13,lineHeight:1.45,padding:'6px 2px',overflowWrap:'anywhere' as const};
 const row={display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap' as const,fontSize:12,lineHeight:1.5,padding:'4px 2px'};
 
@@ -55,6 +57,7 @@ function Content(){
  const [data,setData]=useState<Status>();const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);const [action,setAction]=useState('');
  const [copyState,setCopyState]=useState('');const [manualCopy,setManualCopy]=useState('');
+ const [updateCopyState,setUpdateCopyState]=useState('');
  const [confirm,setConfirm]=useState<Confirm>(null);
  const revision=useRef(0);const pending=useRef(0);
  const lang=data?.settings.ui_language??'en';
@@ -67,6 +70,10 @@ function Content(){
   setCopyState(t('copying'));let text='';
   try{text=await diagnosticText();await copyText(text);setCopyState(t('copied'));setManualCopy('');}
   catch(e){setCopyState(t('copyFailed',{error:String(e)}));setManualCopy(text||`Hearthstone HUD Diagnostic\n[Plugin]\nVersion: ${data?.version??'unknown'}\nStatus: ${data?.running?'running':'stopped'}\n[Recent Errors]\nBackend diagnostic retrieval failed; full diagnostic unavailable.`);}
+ };
+ const copyUpdateLink=async()=>{
+  try{await copyText(UPDATE_URL);setUpdateCopyState(t('updateLinkCopied'));}
+  catch(e){setUpdateCopyState(t('copyFailed',{error:String(e)}));}
  };
  const cards=data?.cards;const databases=cards?.databases??{};const usage=cards?.image_usage;const batch=cards?.image_batch;
  const done=Math.min(batch?.total??0,(batch?.success??0)+(batch?.failed??0)+(batch?.missing??0)+(batch?.skipped??0));
@@ -145,9 +152,11 @@ function Content(){
  </div></PanelSectionRow>
  </Fold>
  </>:<PanelSectionRow><div style={box}>{data.lifecycle==='disabled'?t('disabled'):t('stopping')}</div></PanelSectionRow>}
- <PanelSectionRow><div style={row}>
+ <PanelSectionRow><div style={{...row,flexWrap:'nowrap'}}>
   <SmallButton onClick={copyDiagnostic}>{t('copyDiagnostic')}</SmallButton>
+  <SmallButton onClick={copyUpdateLink}>{t('copyUpdateLink')}</SmallButton>
  </div></PanelSectionRow>
+ {updateCopyState&&<PanelSectionRow><div role="status" style={box}>{updateCopyState}</div></PanelSectionRow>}
  {copyState&&<PanelSectionRow><div role="status" style={box}>{copyState}</div></PanelSectionRow>}
  {manualCopy&&<textarea aria-label={t('manualAria')} readOnly value={manualCopy} onFocus={e=>e.currentTarget.select()} style={{width:'100%',height:180,fontSize:12,userSelect:'text',boxSizing:'border-box'}}/>}
  </>}

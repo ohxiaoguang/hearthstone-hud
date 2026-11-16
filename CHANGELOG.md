@@ -2,6 +2,14 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
+## v1.0.3
+
+- Add Copy Update Link beside Copy diagnostics, with localized clipboard feedback
+  and a fixed link to the latest stable release ZIP.
+- Add full-card hover previews with localized, bounded on-demand caching.
+- Clear confirmed inactive arena drafts while preserving cards across temporary read failures.
+- Show a waiting label at the remaining-deck position and the confirmed match deck name.
+
 ## v1.0.2
 
 - Promoting a batch-queued card to the front of the download queue now checks the queue's
