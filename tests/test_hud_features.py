@@ -91,3 +91,34 @@ class FeatureTests(unittest.TestCase):
                 self.assertFalse((root/'cache/full-cards/enUS/CARD_A.png').exists())
                 self.assertEqual(len(calls),1)
             finally:release.set();worker.close()
+
+    def test_bad_hover_ipc_is_reported_without_stopping_backend(self):
+        with tempfile.TemporaryDirectory() as folder:
+            worker=FullCards(folder)
+            for value in ([],dict(id='CARD_A',locale='enUS',updated=float('nan'))):
+                (Path(folder)/'hover.json').write_text(json.dumps(value))
+                worker.request('enUS')
+                self.assertEqual(worker.diagnostic()['stage'],'request_error')
+            (Path(folder)/'hover.json').write_text(json.dumps(dict(id='CARD_A',locale='zhCN',updated=time.time())))
+            worker.request('enUS');self.assertEqual(worker.diagnostic()['stage'],'locale_mismatch')
+            worker.close()
+
+    def test_download_failure_is_reported_and_retries_while_still_hovered(self):
+        with tempfile.TemporaryDirectory() as folder, patch('engine.full_cards.RETRY_SECONDS',.05):
+            calls=[];ready=threading.Event()
+            def fetch(url,limit,verify):
+                calls.append(url)
+                if len(calls)==1:raise OSError('offline')
+                return tile_png(512,768)
+            root=Path(folder);worker=FullCards(root,fetch)
+            try:
+                (root/'hover.json').write_text(json.dumps(dict(id='CARD_A',locale='enUS',updated=time.time())))
+                worker.request('enUS')
+                deadline=time.monotonic()+2
+                while worker.diagnostic()['stage']!='download_failed' and time.monotonic()<deadline:ready.wait(.002)
+                self.assertEqual(worker.diagnostic()['error'],'offline')
+                while worker.diagnostic()['stage']!='ready' and time.monotonic()<deadline:ready.wait(.01)
+                self.assertEqual(worker.diagnostic()['stage'],'ready')
+                self.assertEqual(len(calls),2)
+                ready.wait(.1);self.assertEqual(len(calls),2)
+            finally:worker.close()

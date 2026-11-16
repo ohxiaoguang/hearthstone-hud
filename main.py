@@ -494,7 +494,7 @@ class Plugin:
         return dict(version=VERSION,repository=REPOSITORY,settings=self.settings,storage=dict(runtime=str(self.runtime),database=str(self.cards.cache_path()),images=str(self.cards.images),retained_on_uninstall=True), running=bool(self.proc and self.proc.returncode is None),
                     lifecycle=self.lifecycle_state,
                     background=dict(log_monitor=bool(self.task and not self.task.done()),downloads=bool(self.media_task and not self.media_task.done()),memory=self.memory_watch.thread is not None,io_pool=self.io_pool is not None),
-                    error=self.error, diagnostic=diag, log_path=str(self.log_path or ''),
+                    error=self.error, diagnostic=diag,full_card_preview=self.full_cards.diagnostic() if getattr(self,'full_cards',None) else {}, log_path=str(self.log_path or ''),
                     parse_errors=self.parser.failures, gamescope_running=self.gamescope_running,
                     gamescope_status=self.gamescope, logs=self.discovery, cards=self.cards.diagnostic(),
                     process=self.process, power_config=self.power_config, decks_config=self.decks_config,arena_config=self.arena_config,

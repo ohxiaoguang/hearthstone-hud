@@ -105,6 +105,9 @@ def format_diagnostics(data,version,recent=(),renderer_tail=''):
     diag=data.get('diagnostic',{})
     for key in ('window','external_overlay','mapped','frames','xshape_input_empty'):
         field(key,diag.get(key,'unknown'))
+    section('Hover Preview')
+    for key,value in diag.get('hover',{}).items():field('Renderer '+key,value)
+    for key,value in data.get('full_card_preview',{}).items():field('Downloader '+key,value)
     section('Recent Errors')
     errors=list(recent)+list(cards.get('image_errors',[]))
     for error in errors[-12:]:field('Error',error)

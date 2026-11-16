@@ -146,3 +146,15 @@ inline nlohmann::json arena_rows(const nlohmann::json& a,bool candidates){
     append(candidates?"candidates":"picks");
     return rows;
 }
+
+// X11 client geometry and ImGui display units can differ under compositor/DPI
+// scaling. HUD scale is already included in row rectangles: never apply it here.
+struct HoverPoint {float x,y;};
+inline HoverPoint hover_display_point(float x,float y,float client_width,float client_height,
+                                     float display_width,float display_height,float origin_x=0,float origin_y=0){
+    if(client_width<=0 || client_height<=0 || display_width<=0 || display_height<=0)return {-1,-1};
+    return {origin_x+x*display_width/client_width,origin_y+y*display_height/client_height};
+}
+inline bool hover_contains(float x,float y,float left,float top,float right,float bottom){
+    return right>left && bottom>top && x>=left && x<right && y>=top && y<bottom;
+}

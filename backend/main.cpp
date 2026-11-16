@@ -27,7 +27,7 @@ using json=nlohmann::json;
 static volatile std::sig_atomic_t quitting=0;
 static void stop(int){quitting=1;}
 static void write_json(const std::string& path,const json& j){
-    std::ofstream f(path+".tmp"); f<<j.dump(); f.close(); std::filesystem::rename(path+".tmp",path);
+    std::ofstream f(path+".tmp"); f.exceptions(std::ios::failbit|std::ios::badbit); f<<j.dump(); f.close(); std::filesystem::rename(path+".tmp",path);
 }
 #include "hover_preview.h"
 struct Texture { GLuint id=0; unsigned long used=0; };
@@ -82,7 +82,7 @@ static void panel(const char* id,const std::string& title,const json& rows,bool 
         }
         const auto clip_min=draw->GetClipRectMin(),clip_max=draw->GetClipRectMax();
         const auto cid=row.value("id",std::string());
-        if(safe_card_id(cid))card_hits.push_back({{std::max(pos.x,clip_min.x),std::max(pos.y,clip_min.y)},{std::min(pos.x+width,clip_max.x),std::min(pos.y+row_height,clip_max.y)},cid});
+        if(safe_card_id(cid) && std::min(pos.x+width,clip_max.x)>std::max(pos.x,clip_min.x) && std::min(pos.y+row_height,clip_max.y)>std::max(pos.y,clip_min.y))card_hits.push_back({{std::max(pos.x,clip_min.x),std::max(pos.y,clip_min.y)},{std::min(pos.x+width,clip_max.x),std::min(pos.y+row_height,clip_max.y)},cid});
         const bool event=row.value("event",false),deck=row.value("deck_row",false),arena=row.value("arena_row",false);
         const auto label=arena?row.value("rating_label",labels.value("no_rating","No rating")):event?"":card_count_label(row,deck);
         const float rating_width=ImGui::GetFont()->CalcTextSizeA(24*scale,FLT_MAX,0,label.c_str()).x+12*scale;
@@ -191,9 +191,24 @@ int main(int argc,char** argv){
         if(auto m=glfwGetPrimaryMonitor()) if(auto mode=glfwGetVideoMode(m)){int width,height;glfwGetWindowSize(w,&width,&height);if(width!=mode->width||height!=mode->height)glfwSetWindowSize(w,mode->width,mode->height);}
         ImGui_ImplOpenGL3_NewFrame();ImGui_ImplGlfw_NewFrame();ImGui::NewFrame();
         card_hits.clear();
-        Window pointer_root,pointer_child;int root_x,root_y,local_x,local_y;unsigned int mask;
-        pointer_position={-1,-1};
-        if(XQueryPointer(d,x,&pointer_root,&pointer_child,&root_x,&root_y,&local_x,&local_y,&mask))pointer_position={float(local_x),float(local_y)};
+        // Query the root, not the input-transparent overlay. Translate explicitly
+        // into its client coordinates, then into ImGui display units.
+        Window pointer_root=0,pointer_child=0;int root_x=0,root_y=0,local_x=0,local_y=0;unsigned int mask=0;
+        XWindowAttributes client{};
+        pointer_position={-1,-1};pointer_valid=false;
+        const bool geometry_ok=XGetWindowAttributes(d,x,&client)!=0;
+        const bool query_ok=geometry_ok && XQueryPointer(d,client.root,&pointer_root,&pointer_child,&root_x,&root_y,&local_x,&local_y,&mask);
+        const bool translated=query_ok && XTranslateCoordinates(d,pointer_root,x,root_x,root_y,&local_x,&local_y,&pointer_child);
+        auto* viewport=ImGui::GetMainViewport();
+        if(translated && client.width>0 && client.height>0){
+            auto point=hover_display_point(float(local_x),float(local_y),float(client.width),float(client.height),io.DisplaySize.x,io.DisplaySize.y,viewport->Pos.x,viewport->Pos.y);
+            pointer_position={point.x,point.y};pointer_valid=true;
+        }
+        pointer_diagnostic={{"query_ok",query_ok},{"translated",translated},{"root",{root_x,root_y}},
+            {"client",{local_x,local_y}},{"client_size",{client.width,client.height}},
+            {"display_size",{io.DisplaySize.x,io.DisplaySize.y}},
+            {"framebuffer_scale",{io.DisplayFramebufferScale.x,io.DisplayFramebufferScale.y}},
+            {"position",{pointer_position.x,pointer_position.y}}};
         float scale=std::clamp(state.value("scale",1.0f),.5f,3.f);
         float opacity=std::clamp(state.value("opacity",.85f),.1f,1.f);
         int sw,sh;glfwGetWindowSize(w,&sw,&sh);
@@ -247,9 +262,9 @@ int main(int argc,char** argv){
         if(state.value("own_deck",true))render("remaining",tracking.value("remaining_title","Your remaining deck · "+number(tracking.value("own_remaining",json()))),deck_rows(tracking,state.value("hide_exhausted",false),labels),true,rx,ry,std::max(80.f,sh-ry-16*scale));
         }
         } // Hidden HUD submits an empty transparent frame.
-        try{preview.render(std::filesystem::path(argv[1]).parent_path(),state.value("card_locale","enUS"),labels.value("loading","Loading card..."),labels.value("preview_unavailable","Card preview unavailable"),frames,float(sw),float(sh),scale);}catch(const std::exception& e){std::cerr<<"preview: "<<e.what()<<'\n';}
-        ImGui::Render();int fw,fh;glfwGetFramebufferSize(w,&fw,&fh);glViewport(0,0,fw,fh);glClearColor(0,0,0,0);glClear(GL_COLOR_BUFFER_BIT);ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());glfwSwapBuffers(w);
-        if(++frames%30==0)write_json(argv[3],{{"display",getenv("DISPLAY")?getenv("DISPLAY"):""},{"window",x},{"external_overlay",atom_ok},{"xshape_input_empty",shape},{"transparent_framebuffer",glfwGetWindowAttrib(w,GLFW_TRANSPARENT_FRAMEBUFFER)==GLFW_TRUE},{"mapped",shown},{"frames",frames},{"compositor_visibility","unverified"},{"touch_passthrough","unverified"},{"state_schema",2}});
+        try{preview.render(std::filesystem::path(argv[1]).parent_path(),state.value("card_locale","enUS"),labels.value("loading","Loading card..."),labels.value("preview_unavailable","Card preview unavailable"),frames,float(sw),float(sh),scale);}catch(const std::exception& e){preview.failure(e.what());std::cerr<<"preview: "<<e.what()<<'\n';}
+        ImGui::Render();int fw,fh;glfwGetFramebufferSize(w,&fw,&fh);glViewport(0,0,fw,fh);glClearColor(0,0,0,0);glClear(GL_COLOR_BUFFER_BIT);ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());preview.render_result(glGetError());glfwSwapBuffers(w);
+        if(++frames%30==0)write_json(argv[3],{{"hover",preview.diagnostic()},{"display",getenv("DISPLAY")?getenv("DISPLAY"):""},{"window",x},{"external_overlay",atom_ok},{"xshape_input_empty",shape},{"transparent_framebuffer",glfwGetWindowAttrib(w,GLFW_TRANSPARENT_FRAMEBUFFER)==GLFW_TRUE},{"mapped",shown},{"frames",frames},{"compositor_visibility","unverified"},{"touch_passthrough","unverified"},{"state_schema",2}});
         std::this_thread::sleep_for(std::chrono::milliseconds(shown?16:100));
     }
     preview.clear();textures.clear();

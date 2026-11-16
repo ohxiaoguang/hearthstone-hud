@@ -88,5 +88,12 @@ int main(){
     auto named=good["tracking"];named["own"]=json::array({{{"id","CARD_A"},{"remaining",2}}});
     if(deck_rows(named,false)[0]["name"]!="My mage")return 51;
     named["deck_name"]="";if(deck_rows(named,false)[0]["name"]!="Original deck")return 52;
+    auto point=hover_display_point(640,360,2560,1440,1280,720);
+    if(point.x!=320 || point.y!=180)return 53;
+    point=hover_display_point(160,90,1280,720,2560,1440,10,20);
+    if(point.x!=330 || point.y!=200)return 54;
+    if(!hover_contains(330,200,320,190,400,250))return 55;
+    if(hover_contains(400,200,320,190,400,250) || hover_contains(330,200,400,190,320,250))return 56;
+    if(hover_display_point(10,10,0,0,1280,720).x!=-1)return 57;
     std::cout<<"Native HUD state validation: passed\n";
 }

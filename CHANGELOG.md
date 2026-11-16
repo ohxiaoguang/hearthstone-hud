@@ -2,6 +2,16 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
+## v1.0.4
+
+- Translate the X11 root pointer into HUD client and ImGui display coordinates for
+  the shared arena/match hover mechanism; ignore clipped empty card hit regions.
+- Add hover diagnostics covering pointer queries, card hits, request IPC, download,
+  decode, texture upload and rendering, available through Copy diagnostics.
+- Retry failed full-card downloads after cooldown while still hovered, preserve
+  error details, and reject malformed hover requests without interrupting tracking.
+- Preserve the transparent overlay, empty X11 input shape and ImGui NoInputs flags.
+
 ## v1.0.3
 
 - Add Copy Update Link beside Copy diagnostics, with localized clipboard feedback

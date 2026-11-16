@@ -6,7 +6,7 @@ A [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin that 
 always-on overlay for Hearthstone on SteamOS and other Linux handhelds: your remaining
 deck, both players' played cards, and an arena drafting panel with card ratings.
 
-Current release: **v1.0.3** · [Changelog](CHANGELOG.md) · [中文说明](README.zh-CN.md)
+Current release: **v1.0.4** · [Changelog](CHANGELOG.md) · [中文说明](README.zh-CN.md)
 
 > This is an unofficial community project. It is not affiliated with, endorsed by, or
 > sponsored by Blizzard Entertainment or HearthSim. Hearthstone and its card data and art
@@ -265,3 +265,28 @@ The original-deck heading uses the name from the queue-time Decks.log block that
 supplied the current match's deck definition. It never uses a later or previous
 match's name; missing names retain “Original deck”. Arena matches use “Arena ·
 <class>”. Added/transformed cards retain their separate group.
+
+### Diagnosing hover previews
+
+Copy diagnostics now includes **Hover Preview**, with separate renderer and downloader
+states. Mouse detection uses the X11 root pointer translated into the overlay client,
+then scaled to ImGui display coordinates; HUD scale is applied only to card geometry.
+The empty X11 input shape and ImGui NoInputs flags remain enabled.
+
+- `pointer_unavailable`: root pointer query or client translation failed; inspect
+  `query_ok`, `translated`, client/display sizes and framebuffer scale.
+- `no_card_regions` / `no_hit`: no visible clipped card rectangles, or the pointer
+  lies outside them. Compare `position`, `first_region`, and `hit_region`.
+- `hover_delay`: the 200 ms dwell interval has not elapsed.
+- `request_write_failed` / downloader `request_error`, `locale_mismatch`, or
+  `request_expired`: inspect the renderer-to-backend hover.json handoff.
+- Downloader `downloading`, `ready`, `cached`, or `download_failed`: shows the card,
+  source locale and bounded error details. A failed request retries after 60 seconds
+  while still hovered; duplicate requests are coalesced.
+- Renderer `awaiting_texture` with texture `missing_file`, `decode_failed`, or
+  `upload_failed`: identifies the cache/decode/upload stage; `render_failed` reports
+  render exceptions or GL errors. `rendered` means the image was submitted without
+  a detected error, not a guarantee of compositor visibility.
+
+Renderer details are in runtime `diagnostic.json`; request IPC is `hover.json`.
+No additional mouse-polling thread or input-capturing window is created.

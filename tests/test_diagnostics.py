@@ -26,3 +26,12 @@ Email private@example.com api_key=api-secret'''
             self.assertIn(section,report)
         self.assertIn('TRUNCATED',report);self.assertLessEqual(len(report),LIMIT);self.assertIn('1007',report)
         self.assertIn('Exact Rows: 1',report);self.assertIn('Unknown Rows: 1',report)
+
+    def test_hover_pipeline_stages_are_in_copied_diagnostics(self):
+        data=dict(diagnostic=dict(hover=dict(stage='no_hit',card_regions=30,
+                  pointer=dict(query_ok=True,client_size=[2560,1440],display_size=[1280,720]))),
+                  full_card_preview=dict(stage='download_failed',error='HTTP 404',id='CARD_A'))
+        report=format_diagnostics(data,'test')
+        for text in ('[Hover Preview]','Renderer stage: no_hit','Renderer card_regions: 30',
+                     'Downloader stage: download_failed','HTTP 404'):
+            self.assertIn(text,report)

@@ -6,7 +6,7 @@
 Linux 掌机上为《炉石传说》绘制常驻悬浮层：己方剩余牌库、双方已打出的卡牌，以及带有评分的
 竞技场选牌面板。
 
-当前版本：**v1.0.3** · [更新记录](CHANGELOG.md) · [English](README.md)
+当前版本：**v1.0.4** · [更新记录](CHANGELOG.md) · [English](README.md)
 
 > 这是非官方社区项目，与暴雪娱乐、HearthSim 均无隶属或背书关系。《炉石传说》及其卡牌数据、
 > 卡图版权归暴雪娱乐所有。
@@ -218,3 +218,25 @@ OpenGL 上传在渲染线程执行，停止插件或渲染器时回收对应线�
 
 原始牌库分组使用与本局卡组定义关联的排队日志中的真实名称，无法确认时仍显示
 “原始牌库”；竞技场显示“竞技场 · 职业名称”。新增和变形卡牌继续单独分组。
+
+### 悬停预览诊断
+
+“复制诊断”新增 **Hover Preview**，分别记录渲染器和下载器状态。鼠标位置从 X11
+根窗口读取，转换到 HUD 客户区，再映射到 ImGui 显示坐标；HUD 缩放只作用于卡牌
+几何区域。保留空的 X11 Input Shape 与 ImGui NoInputs，不改变游戏点击行为。
+
+- `pointer_unavailable`：取鼠标或坐标转换失败，查看 `query_ok`、`translated`、
+  客户区大小、ImGui 显示大小和 framebuffer scale。
+- `no_card_regions`／`no_hit`：当前没有有效可见卡牌矩形，或指针不在卡牌内。
+  对比 `position`、`first_region` 和 `hit_region`。
+- `hover_delay`：尚未达到 200ms 悬停时间。
+- `request_write_failed`、下载器 `request_error`、`locale_mismatch` 或
+  `request_expired`：检查 hover.json 写入、格式、语言或请求时效。
+- 下载器 `downloading`、`ready`、`cached`、`download_failed`：记录卡牌、资源语言与
+  失败详情。持续悬停的失败请求冷却 60 秒后重试，重复请求合并。
+- 渲染器 `awaiting_texture` 的 texture 状态 `missing_file`、`decode_failed`、
+  `upload_failed` 分别代表缓存文件缺失、解码失败、OpenGL 上传失败；`render_failed`
+  代表渲染异常或 GL 错误。`rendered` 表示已提交图片且未检测到错误，不能证明合成器可见性。
+
+渲染器详情写入运行目录 `diagnostic.json`，悬停请求使用 `hover.json`。
+没有新增鼠标轮询线程或拦截输入的窗口。
