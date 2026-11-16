@@ -60,6 +60,7 @@ inline bool valid_language(const nlohmann::json& s){
 inline bool valid_hud_state(const nlohmann::json& s) {
     if(!s.is_object() || !s.contains("updated") || !s["updated"].is_number())return false;
     if(!valid_language(s))return false;
+    if(s.contains("full_card_generation") && (!s["full_card_generation"].is_number_integer() || s["full_card_generation"]<0 || s["full_card_generation"]>2147483647))return false;
     if(s.contains("game_display") && (!s["game_display"].is_string() ||
         (!s["game_display"].get_ref<const std::string&>().empty() && !local_x11_display(s["game_display"].get_ref<const std::string&>()))))return false;
     if(s.contains("idle_visible")&&!s["idle_visible"].is_boolean())return false;
@@ -175,4 +176,15 @@ inline HoverPoint hover_display_point(float x,float y,float client_width,float c
 }
 inline bool hover_contains(float x,float y,float left,float top,float right,float bottom){
     return right>left && bottom>top && x>=left && x<right && y>=top && y<bottom;
+}
+
+struct PreviewSize {float width,height,padding;};
+inline PreviewSize preview_size(int width,int height,float scale,float screen_width,float screen_height){
+    const float padding=8*scale;
+    const float available_width=std::max(1.f,screen_width-16-2*padding);
+    const float available_height=std::max(1.f,screen_height-16-2*padding);
+    const float ratio=float(std::max(1,width))/float(std::max(1,height));
+    float h=std::min(384*scale,available_height),w=h*ratio;
+    if(w>available_width){w=available_width;h=w/ratio;}
+    return {w,h,padding};
 }

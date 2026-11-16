@@ -141,5 +141,16 @@ int main(){
     bad=good;bad["game_display"]=1;if(valid_hud_state(bad))return 76;
     point=hover_display_point(200,240,3840,2160,1920,1080);
     if(point.x!=100 || point.y!=120 || !hover_contains(point.x,point.y,8,107,258,142))return 77;
+    auto preview=preview_size(256,384,1,1920,1080);
+    if(preview.width!=256 || preview.height!=384 || preview.padding!=8)return 78;
+    auto placeholder=preview_size(256,384,2,240,320);
+    if(placeholder.width+2*placeholder.padding>224 || placeholder.height+2*placeholder.padding>304)return 79;
+    if(std::abs(placeholder.width/placeholder.height-2.f/3.f)>.0001f)return 80;
+    // A cached card and its loading placeholder reserve identical frame geometry.
+    auto loaded=preview_size(256,384,2,240,320);
+    if(placeholder.width!=loaded.width || placeholder.height!=loaded.height)return 81;
+    good["full_card_generation"]=1;if(!valid_hud_state(good))return 82;
+    bad=good;bad["full_card_generation"]=-1;if(valid_hud_state(bad))return 83;
+    bad=good;bad["full_card_generation"]="1";if(valid_hud_state(bad))return 84;
     std::cout<<"Native HUD state validation: passed\n";
 }

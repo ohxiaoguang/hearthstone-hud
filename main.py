@@ -86,6 +86,8 @@ class Plugin:
         self.media_lock = asyncio.Lock()
         self.media_stop = asyncio.Event()
         self.cache_resetting = False
+        self.full_cache_resetting = False
+        self.full_card_generation = 0
         self.error = ''
         self.recent_errors = deque(maxlen=10)
         self.decks = DeckLog()
@@ -406,6 +408,31 @@ class Plugin:
         return await self.status()
 
     @active_operation
+    async def download_all_full_card_images(self):
+        ids=self.cards.all_card_ids()
+        if not ids:raise ValueError(i18n.t('cards.no_database'))
+        await self._io(self.full_cards.begin_download,ids,self.card_locale(),self.settings['image_tls_verify'])
+        return await self.status()
+
+    @active_operation
+    async def cancel_full_card_download(self):
+        self.full_cards.cancel_download()
+        return await self.status()
+
+    @active_operation
+    async def clear_full_card_images(self):
+        self.full_cache_resetting=True
+        try:
+            await self._io(self.full_cards.close)
+            await self._io(self.full_cards.clear)
+        finally:
+            self.full_cards=FullCards(self.runtime)
+            self.full_card_generation+=1
+            self.full_cache_resetting=False
+        self._publish()
+        return await self.status()
+
+    @active_operation
     async def clear_card_database(self,locale: str):
         """Delete one language's JSON file; the other language and art stay."""
         if locale not in i18n.MANAGED_CARD_LANGUAGES:
@@ -491,7 +518,8 @@ class Plugin:
             diag = json.loads((self.runtime / 'diagnostic.json').read_text())
         except (OSError, ValueError):
             pass
-        return dict(version=VERSION,repository=REPOSITORY,settings=self.settings,storage=dict(runtime=str(self.runtime),database=str(self.cards.cache_path()),images=str(self.cards.images),retained_on_uninstall=True), running=bool(self.proc and self.proc.returncode is None),
+        full_resources=await self._io(self.full_cards.usage,self.card_locale(),len(self.cards.by_id)) if self.io_pool is not None and getattr(self,'full_cards',None) else {}
+        return dict(full_card_resources=full_resources,version=VERSION,repository=REPOSITORY,settings=self.settings,storage=dict(runtime=str(self.runtime),database=str(self.cards.cache_path()),images=str(self.cards.images),retained_on_uninstall=True), running=bool(self.proc and self.proc.returncode is None),
                     lifecycle=self.lifecycle_state,
                     background=dict(log_monitor=bool(self.task and not self.task.done()),downloads=bool(self.media_task and not self.media_task.done()),memory=self.memory_watch.thread is not None,io_pool=self.io_pool is not None),
                     error=self.error, diagnostic=diag,full_card_preview=self.full_cards.diagnostic() if getattr(self,'full_cards',None) else {}, log_path=str(self.log_path or ''),
@@ -524,7 +552,7 @@ class Plugin:
         return tracking
 
     def _publish(self):
-        if getattr(self,'full_cards',None):
+        if getattr(self,'full_cards',None) and not self.full_cache_resetting:
             self.full_cards.request(self.card_locale(),self.settings['enabled'] and self.settings['visible'],self.settings['image_tls_verify'])
         tracking = self.parser.view(self.cards) if self.active and self.caught_up else dict(status='waiting',turn=0,own=[],opponent=[],own_label=i18n.t('track.waiting_log'),opponent_hand=None,opponent_deck=None)
         self._tracking_titles(tracking)
@@ -535,7 +563,7 @@ class Plugin:
         arena['visible']=bool(self.settings['enabled'] and self.settings['arena'] and (arena['count'] or arena['candidates']) and tracking['status']!='playing')
         if self.settings['card_images'] and arena['visible'] and not self.cache_resetting:
             self.cards.request_images(r['id'] for key in ('picks','candidates') for r in arena[key])
-        atomic_json(self.runtime / 'state.json', dict(self.settings,updated=time.time(),schema=2,tracking=tracking,arena_state=arena,
+        atomic_json(self.runtime / 'state.json', dict(self.settings,updated=time.time(),schema=2,full_card_generation=self.full_card_generation,tracking=tracking,arena_state=arena,
                                                        game_display=local_x11_display(self.process.get('environment',{}).get('DISPLAY')) if self.process.get('found') else '',card_locale=self.card_locale(),idle_visible=bool(self.process.get('pid')),labels=self._labels(),visible=bool(self.settings['enabled'] and self.settings['visible'])))
 
     async def _loop(self):

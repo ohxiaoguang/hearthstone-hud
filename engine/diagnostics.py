@@ -102,6 +102,9 @@ def format_diagnostics(data,version,recent=(),renderer_tail=''):
                              f"no_art={totals.get('missing',0)}, skipped={totals.get('skipped',0)}")
     field('No Art Cards',f"{cards.get('images_missing',0)} not requested again this session")
     field('Last Error',cards.get('image_error',''))
+    section('Full Card Resources')
+    resources=data.get('full_card_resources',{})
+    for key in ('locale','resolution','cached','manual','bytes','total','batch','last_error'):field(key,resources.get(key,'unknown'))
     section('Renderer');field('Status','running' if data.get('running') else 'stopped');field('Gamescope',data.get('gamescope_status','unknown'))
     diag=data.get('diagnostic',{})
     for key in ('display','window','external_overlay','mapped','frames','xshape_input_empty'):

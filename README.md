@@ -247,10 +247,10 @@ coordinates (framebuffer DPI scaling is left to ImGui).
 
 Full cards use HearthstoneJSON's documented
 [card render API](https://hearthstonejson.com/docs/images.html),
-`/v1/render/latest/{locale}/512x/{card_id}.png`. These include the frame and text,
+`/v1/render/latest/{locale}/256x/{card_id}.png`. These include the frame and text,
 whereas tiles contain only cropped artwork. A missing localized render falls back
-to English. Only hovered cards are requested; there is no bulk full-card download.
-`cache/full-cards/<locale>/` is separate from tiles, limited to 256 MiB and pruned
+to English. By default only hovered cards are requested; an explicit full download is available in Download resources.
+`cache/full-cards/256x/<locale>/` is separate from tiles, limited to 256 MiB and pruned
 by last use when a new image is saved. The renderer retains at most 12 full-card
 textures. Network and CPU decode run in background workers; GL upload runs on the
 render thread. Workers are drained when the plugin or renderer stops.
@@ -334,3 +334,36 @@ identify the actual source and mapping. Cross-display mapping assumes the game's
 root covers the fullscreen overlay output; unusual compositor cropping/letterboxing
 still requires real-device verification. Downloads, caches and empty input shape
 are unchanged. Linux CI installs the libxcb development headers for this reader.
+
+Hover previews now have a dark background frame and a fixed card-shaped loading
+placeholder with localized text and an animated indicator. The same framed area is
+used after loading, with aspect ratio preserved and frame padding included in edge
+avoidance. Previews use 256px-wide complete card renders (normally 256x384), which
+have one quarter of the pixels of 512px renders; transfer size varies by card.
+The resolution-specific `cache/full-cards/256x/<locale>/` directory prevents reuse
+of old high-resolution files. Both on-demand resolution variants count toward the existing 256 MiB disk
+limit; old files are retained until normal eviction. Bulk downloading requires an explicit action in Download resources.
+
+### Thumbnail and full-card resource controls
+
+Download resources separates **Card thumbnails** (the existing row artwork) from
+**Full card renders** (256px complete hover cards). Each has independent cache
+statistics, download-all/cancel controls and inline-confirmed clearing. Full-card
+counts refer to the current interface language; disk bytes include all languages,
+older resolutions and retained manual downloads. Clearing full cards clears those
+variants and invalidates only the renderer's full-card texture cache; thumbnail art,
+card databases and settings are kept.
+
+Full-card bulk downloads use the current database/language, skip valid cached files,
+retry transient failures once and report unavailable renders separately. Switching
+language cancels that batch. The existing full-card worker gives hovered cards
+priority and merges them with batch work so each card is fetched once. Cancellation
+keeps completed files and allows a promoted hover request to finish.
+
+Explicitly downloaded cards live in `cache/full-cards/256x/<locale>/manual/` and
+are retained until cleared; they are not subject to the 256 MiB automatic-cache cap.
+This allows a complete manual collection to finish without evicting its own files.
+The renderer reads both manual and automatic files. The automatic-cache cap and
+12-texture memory limit remain in force. Resource disk scans run on the I/O pool
+with a two-second statistics cache; batch progress stays live. Full downloads never
+start automatically, and all owned workers are drained on plugin stop/clear.

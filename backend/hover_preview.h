@@ -27,7 +27,10 @@ public:
         cache[p.key]={id,p.width,p.height,frame};status={{"stage","resident"},{"key",p.key}};
     }
     GLuint get(const std::filesystem::path& root,const std::string& locale,const std::string& cid,unsigned long frame,int& width,int& height){
-        const auto path=root/locale/(cid+".png");const auto key=path.string();
+        auto path=root/locale/(cid+".png");
+        const auto manual=root/locale/"manual"/(cid+".png");std::error_code ec;
+        if(std::filesystem::is_regular_file(manual,ec))path=manual;
+        const auto key=path.string();
         auto it=cache.find(key);if(it!=cache.end()){status={{"stage","resident"},{"key",key}};it->second.used=frame;width=it->second.width;height=it->second.height;return it->second.id;}
         if(pending.valid())return 0;
         double now=ImGui::GetTime();if(retry[key]>now)return 0;
@@ -50,7 +53,7 @@ public:
         });return 0;
     }
     json diagnostic()const{return status;}
-    void clear(){if(pending.valid())pending.wait();for(auto& e:cache)glDeleteTextures(1,&e.second.id);cache.clear();}
+    void clear(){if(pending.valid()){pending.wait();pending=std::future<Pixels>();}for(auto& e:cache)glDeleteTextures(1,&e.second.id);cache.clear();retry.clear();status={{"stage","idle"}};}
 };
 static bool pointer_valid=false;
 static json pointer_diagnostic=json::object();
@@ -62,8 +65,12 @@ class HoverPreview {
     json status={{"stage","idle"}};
     json last_registration=json::object(),last_hit=json::object(),last_request=json::object();
     HoverPointerHistory pointer_history;
+    int cache_generation=0;
 public:
     json diagnostic()const{return status;}
+    void cache_changed(int generation){
+        if(generation!=cache_generation){textures.clear();cache_generation=generation;}
+    }
     void render_result(GLenum error){
         if(error!=GL_NO_ERROR){status["gl_error"]=error;if(status.value("stage","")=="rendered")status["stage"]="render_failed";}
     }
@@ -89,25 +96,47 @@ public:
         if(!hit || now-since<.2){status["stage"]=!pointer_valid?"pointer_unavailable":card_hits.empty()?"no_card_regions":hit?"hover_delay":"no_hit";return;}
         status["stage"]="request_write";
         if(now-last_write>.2){write_json((runtime/"hover.json").string(),{{"id",hit->id},{"locale",locale},{"updated",std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count()}});last_write=now;last_request={{"frame",frame},{"id",hit->id},{"locale",locale}};status["last_request"]=last_request;}
-        int iw=512,ih=768;
-        GLuint texture=textures.get(runtime/"cache/full-cards",locale,hit->id,frame,iw,ih);
+        int iw=256,ih=384;
+        GLuint texture=textures.get(runtime/"cache/full-cards/256x",locale,hit->id,frame,iw,ih);
         status["request_written"]=last_write>0;
         status["hover_seconds"]=now-since;
         status["texture"]=textures.diagnostic();
         status["stage"]=texture?"rendered":"awaiting_texture";
-        float h=std::min(540.f*scale,std::max(1.f,sh-16));float w=h*float(iw)/float(ih);
-        if(w>sw-16){w=std::max(1.f,sw-16);h=w*float(ih)/float(iw);}
-        float y=std::clamp(hit->min.y,8.f,std::max(8.f,sh-h-8));
+        const auto size=preview_size(iw,ih,scale,sw,sh);
+        const float w=size.width,h=size.height,padding=size.padding;
+        const float outer_width=w+2*padding,outer_height=h+2*padding;
+        float y=std::clamp(hit->min.y,8.f,std::max(8.f,sh-outer_height-8));
         // Prefer a side of the hovered row with the least overlap with drawn cards.
         float best_x=8,best_score=FLT_MAX;
-        for(float candidate:{hit->min.x-w-12,hit->max.x+12}){
-            float x=std::clamp(candidate,8.f,std::max(8.f,sw-w-8));float score=0;
-            for(auto& r:card_hits){float area=std::max(0.f,std::min(x+w,r.max.x)-std::max(x,r.min.x))*std::max(0.f,std::min(y+h,r.max.y)-std::max(y,r.min.y));score+=area*(&r==hit?100.f:1.f);}
+        for(float candidate:{hit->min.x-outer_width-12*scale,hit->max.x+12*scale}){
+            float x=std::clamp(candidate,8.f,std::max(8.f,sw-outer_width-8));float score=0;
+            for(auto& r:card_hits){float area=std::max(0.f,std::min(x+outer_width,r.max.x)-std::max(x,r.min.x))*std::max(0.f,std::min(y+outer_height,r.max.y)-std::max(y,r.min.y));score+=area*(&r==hit?100.f:1.f);}
             if(score<best_score){best_score=score;best_x=x;}
         }
         auto* draw=ImGui::GetForegroundDrawList();
-        if(texture)draw->AddImage(reinterpret_cast<void*>(static_cast<intptr_t>(texture)),{best_x,y},{best_x+w,y+h});
-        else draw->AddText({best_x+8,y+8},IM_COL32(220,220,220,220),(now-since>30?unavailable:loading).c_str());
+        const ImVec2 image_min(best_x+padding,y+padding),image_max(image_min.x+w,image_min.y+h);
+        draw->AddRectFilled({best_x,y},{best_x+outer_width,y+outer_height},IM_COL32(20,25,33,245),8*scale);
+        draw->AddRect({best_x,y},{best_x+outer_width,y+outer_height},IM_COL32(115,135,160,210),8*scale,0,scale);
+        status["preview_rect"]={best_x,y,best_x+outer_width,y+outer_height};
+        status["resolution"]="256x";
+        if(texture)draw->AddImage(reinterpret_cast<void*>(static_cast<intptr_t>(texture)),image_min,image_max);
+        else{
+            draw->AddRect(image_min,image_max,IM_COL32(65,80,100,180),4*scale);
+            const bool timed_out=now-since>30;
+            const auto& message=timed_out?unavailable:loading;
+            const float text_size=18*scale;
+            auto* font=ImGui::GetFont();
+            const auto extent=font->CalcTextSizeA(text_size,FLT_MAX,0,message.c_str());
+            const ImVec2 center(image_min.x+w*.5f,image_min.y+h*.5f);
+            if(!timed_out){
+                const ImVec2 spinner(center.x,center.y-24*scale);
+                draw->AddCircle(spinner,10*scale,IM_COL32(70,85,105,220),24,2*scale);
+                draw->PathArcTo(spinner,10*scale,float(now*4),float(now*4)+4.4f,24);
+                draw->PathStroke(IM_COL32(165,205,245,255),0,2*scale);
+            }
+            draw->AddText(font,text_size,{center.x-extent.x*.5f,center.y+2*scale},IM_COL32(220,230,240,255),message.c_str());
+            status["placeholder"]=timed_out?"unavailable":"loading";
+        }
     }
     void clear(){textures.clear();}
 };

@@ -10,12 +10,13 @@ import { UI_LANGUAGES, tr, type UiLang } from './i18n';
 
 type Settings = {enabled:boolean;visible:boolean;own_deck:boolean;arena:boolean;arena_memory:boolean;font_size:number;panel_width:number;scale:number;opacity:number;x:number;y:number;right_x:number;right_y:number;own_played:boolean;opponent_played:boolean;show_summary:boolean;hide_exhausted:boolean;ui_language:UiLang};
 type Database = {code:string;active:boolean;exists:boolean;bytes:number;updated:number};
-type Batch = {status:string;total:number;success:number;failed:number;missing?:number;skipped:number;retried?:number;done?:number};
+type Batch = {status:string;total:number;success:number;failed:number;missing?:number;skipped:number;retried?:number;done?:number;locale?:string};
 type Cards = {count:number;download_state:string;download_phase:string;error:string;language?:string;data_language?:string;
   databases?:Record<string,Database>;image_usage?:{cached:number;bytes:number;total:number;downloading:boolean};image_batch:Batch};
 type Status = {lifecycle:string;version:string;repository?:string;settings:Settings;running:boolean;error:string;
   process:{found?:boolean};power_config:{enabled?:boolean;restart_required?:boolean};
   decks_config:{enabled?:boolean;restart_required?:boolean};arena_config:{enabled?:boolean;restart_required?:boolean};
+  full_card_resources?:{cached:number;bytes:number;total:number;locale:string;batch:Batch;last_error:string};
   arena:{memory?:{status?:string}};cards:Cards};
 
 const getStatus=callable<[],Status>('status');
@@ -26,6 +27,9 @@ const retryDatabase=callable<[],Status>('retry_card_database');
 const downloadAllImages=callable<[],Status>('download_all_images');
 const clearImages=callable<[],Status>('clear_card_images');
 const cancelImageDownload=callable<[],Status>('cancel_image_download');
+const downloadAllFullImages=callable<[],Status>('download_all_full_card_images');
+const cancelFullDownload=callable<[],Status>('cancel_full_card_download');
+const clearFullImages=callable<[],Status>('clear_full_card_images');
 const clearDatabase=callable<[locale:string],Status>('clear_card_database');
 const diagnosticText=callable<[],string>('diagnostic_text');
 
@@ -51,7 +55,7 @@ function size(bytes:number){
  if(bytes<1024*1024)return `${(bytes/1024).toFixed(0)} KB`;
  return `${(bytes/1024/1024).toFixed(1)} MB`;
 }
-type Confirm={kind:'database';code:string}|{kind:'images'}|null;
+type Confirm={kind:'database';code:string}|{kind:'images'}|{kind:'fullImages'}|null;
 
 function Content(){
  const [data,setData]=useState<Status>();const [error,setError]=useState('');
@@ -76,6 +80,7 @@ function Content(){
   catch(e){setUpdateCopyState(t('copyFailed',{error:String(e)}));}
  };
  const cards=data?.cards;const databases=cards?.databases??{};const usage=cards?.image_usage;const batch=cards?.image_batch;
+ const full=data?.full_card_resources;const fullBatch=full?.batch;const fullBatchRunning=fullBatch?.status==='running';
  const done=Math.min(batch?.total??0,(batch?.success??0)+(batch?.failed??0)+(batch?.missing??0)+(batch?.skipped??0));
  const downloading=cards?.download_phase==='prepare'||cards?.download_phase==='running';
  const batchRunning=batch?.status==='running';
@@ -89,7 +94,7 @@ function Content(){
   setConfirm(null);
   if(!job)return;
   if(job.kind==='database')await background(t('applying'),()=>clearDatabase(job.code));
-  else await background(t('applying'),clearImages);
+  else await background(t('applying'),job.kind==='fullImages'?clearFullImages:clearImages);
  };
  return <PanelSection title={t('title',{version:data?.version??'…'})}>
  <PanelSectionRow><div style={box}>{data?.running?t('hudOn'):t('hudOff')}{(error||data?.error)&&<div role="alert" style={{color:'#ffbdad'}}>{error||data?.error}</div>}</div></PanelSectionRow>
@@ -143,6 +148,26 @@ function Content(){
   <SmallButton disabled={busy||batchRunning||!(usage?.cached??0)} onClick={()=>setConfirm({kind:'images'})}>{t('clearImages')}</SmallButton>
  </div></PanelSectionRow>
  <PanelSectionRow><div style={box}>{t('imagesNote')}</div></PanelSectionRow>
+ <div style={{fontWeight:600,padding:'8px 2px 4px'}}>{t('fullImages')} · {full?.locale??cards?.language}</div>
+ <div style={row}>
+  <span style={{flex:'1 1 160px'}}>{t('imagesCached',{cached:full?.cached??0,total:full?.total??0})}</span>
+  <span style={{opacity:.8}}>{t('imagesOnDisk',{size:size(full?.bytes??0)})}</span>
+ </div>
+ {fullBatchRunning&&<PanelSectionRow><div role="status" style={box}>
+  <progress aria-label={t('fullDownloadAria')} value={fullBatch?.total?(fullBatch.done??0)/fullBatch.total:0} style={{width:'100%'}}/>
+  {t('fullBatchRunning',{done:fullBatch?.done??0,total:fullBatch?.total??0,failed:fullBatch?.failed??0,missing:fullBatch?.missing??0,retried:fullBatch?.retried??0})}
+  <div style={{marginTop:'6px'}}><SmallButton disabled={busy} onClick={()=>background(t('applying'),cancelFullDownload)}>{t('cancel')}</SmallButton></div>
+ </div></PanelSectionRow>}
+ {fullBatch?.status==='complete'&&<PanelSectionRow><div role="status" style={box}>
+  {t('fullBatchDone',{total:fullBatch.total,success:fullBatch.success,failed:fullBatch.failed,missing:fullBatch.missing??0,skipped:fullBatch.skipped})}
+ </div></PanelSectionRow>}
+ {fullBatch?.status==='cancelled'&&<PanelSectionRow><div role="status" style={box}>{t('fullBatchCancelled')}</div></PanelSectionRow>}
+ {(fullBatch?.failed??0)>0&&full?.last_error&&<PanelSectionRow><div role="alert" style={box}>{full.last_error}</div></PanelSectionRow>}
+ <PanelSectionRow><div style={row}>
+  <SmallButton disabled={busy||fullBatchRunning||!cards?.count} onClick={()=>background(t('applying'),downloadAllFullImages)}>{t('downloadAllFullImages')}</SmallButton>
+  <SmallButton disabled={busy||fullBatchRunning||!(full?.bytes??0)} onClick={()=>setConfirm({kind:'fullImages'})}>{t('clearFullImages')}</SmallButton>
+ </div></PanelSectionRow>
+ <PanelSectionRow><div style={box}>{t('fullImagesNote')}</div></PanelSectionRow>
  </Fold>
  <Fold title={t('about')} openLabel={t('expand')} closeLabel={t('collapse')}>
  <PanelSectionRow><div style={box}>
@@ -161,10 +186,10 @@ function Content(){
  {manualCopy&&<textarea aria-label={t('manualAria')} readOnly value={manualCopy} onFocus={e=>e.currentTarget.select()} style={{width:'100%',height:180,fontSize:12,userSelect:'text',boxSizing:'border-box'}}/>}
  </>}
  {confirm&&<PanelSectionRow><div role="alertdialog" style={box}>
-  <div>{confirm.kind==='database'?t('confirmDeleteDatabase',{language:databaseLabel(confirm.code)}):t('confirmClearImages')}</div>
-  <div style={{marginTop:'4px',opacity:.8}}>{confirm.kind==='database'?t('confirmDeleteDatabaseBody'):t('confirmClearImagesBody')}</div>
+  <div>{confirm.kind==='database'?t('confirmDeleteDatabase',{language:databaseLabel(confirm.code)}):t(confirm.kind==='fullImages'?'confirmClearFullImages':'confirmClearImages')}</div>
+  <div style={{marginTop:'4px',opacity:.8}}>{confirm.kind==='database'?t('confirmDeleteDatabaseBody'):t(confirm.kind==='fullImages'?'confirmClearFullImagesBody':'confirmClearImagesBody')}</div>
   <div style={{...row,marginTop:'8px'}}>
-   <SmallButton disabled={busy} onClick={finishConfirm}>{confirm.kind==='database'?t('delete'):t('clearImages')}</SmallButton>
+   <SmallButton disabled={busy} onClick={finishConfirm}>{confirm.kind==='database'?t('delete'):t(confirm.kind==='fullImages'?'clearFullImages':'clearImages')}</SmallButton>
    <SmallButton disabled={busy} onClick={()=>setConfirm(null)}>{t('cancel')}</SmallButton>
   </div>
  </div></PanelSectionRow>}

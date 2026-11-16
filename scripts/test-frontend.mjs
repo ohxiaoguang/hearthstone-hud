@@ -52,3 +52,13 @@ const used=new Set([...ui.matchAll(/\bt\('(\w+)'/g)].map(m=>m[1]));
 const missing=[...used].filter(key=>!enKeys.has(key));
 assert.deepEqual(missing,[]);
 console.log(`Interface strings: ${enKeys.size} keys in both languages, ${used.size} used by the panel`);
+
+assert.match(ui, /download_all_full_card_images/);
+assert.match(ui, /cancel_full_card_download/);
+assert.match(ui, /clear_full_card_images/);
+assert.match(ui, /full_card_resources/);
+assert.match(ui, /t\('fullImages'\)/);
+assert.match(ui, /kind:'fullImages'/);
+assert.match(catalog, /images: 'Card thumbnails'/);
+assert.match(catalog, /images: '卡牌缩略图'/);
+console.log('Thumbnail and full-card resources have separate controls and labels');

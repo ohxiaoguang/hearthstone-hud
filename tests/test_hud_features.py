@@ -58,12 +58,14 @@ class FeatureTests(unittest.TestCase):
                 if '/zhCN/' in url:raise HTTPError(url,404,'missing',None,None)
                 return tile_png(512,768)
             worker=FullCards(root,fetch);self.addCleanup(worker.close)
-            path=root/'cache/full-cards/zhCN/CARD_A.png'
+            path=root/'cache/full-cards/256x/zhCN/CARD_A.png'
             (root/'hover.json').write_text(json.dumps(dict(id='CARD_A',locale='zhCN',updated=time.time())))
             for _ in range(5):worker.request('zhCN')
             deadline=time.monotonic()+3
             while not path.exists() and time.monotonic()<deadline:done.wait(.01)
             self.assertTrue(path.exists());self.assertEqual(len(calls),2)
+            self.assertTrue(all('/256x/' in url for url in calls))
+            self.assertEqual(worker.diagnostic()['resolution'],'256x')
             worker.close()
             again=FullCards(root,fetch);again._load(('zhCN','CARD_A',True));again.close()
             self.assertEqual(len(calls),2)
@@ -88,7 +90,7 @@ class FeatureTests(unittest.TestCase):
                 (root/'hover.json').write_text(json.dumps(dict(id='CARD_A',locale='enUS',updated=time.time())))
                 worker.request('enUS');self.assertTrue(started.wait(2))
                 worker.request('enUS',enabled=False);release.set();worker.close()
-                self.assertFalse((root/'cache/full-cards/enUS/CARD_A.png').exists())
+                self.assertFalse((root/'cache/full-cards/256x/enUS/CARD_A.png').exists())
                 self.assertEqual(len(calls),1)
             finally:release.set();worker.close()
 
@@ -122,3 +124,30 @@ class FeatureTests(unittest.TestCase):
                 self.assertEqual(len(calls),2)
                 ready.wait(.1);self.assertEqual(len(calls),2)
             finally:worker.close()
+
+    def test_small_renders_do_not_reuse_or_overwrite_legacy_high_resolution_cache(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);legacy=root/'cache/full-cards/enUS/CARD_A.png'
+            legacy.parent.mkdir(parents=True);legacy.write_bytes(tile_png(512,768))
+            calls=[]
+            def fetch(url,limit,verify):
+                calls.append(url);return tile_png(256,384)
+            worker=FullCards(root,fetch)
+            try:
+                (root/'hover.json').write_text(json.dumps(dict(id='CARD_A',locale='enUS',updated=time.time())))
+                worker.target=('enUS','CARD_A',True)
+                worker._load(worker.target)
+                self.assertTrue((root/'cache/full-cards/256x/enUS/CARD_A.png').is_file())
+                self.assertEqual(legacy.read_bytes(),tile_png(512,768))
+                self.assertEqual(len(calls),1);self.assertIn('/256x/',calls[0])
+            finally:worker.close()
+
+    def test_disk_limit_counts_both_legacy_and_small_render_caches(self):
+        with tempfile.TemporaryDirectory() as folder:
+            worker=FullCards(folder)
+            old=worker.root/'enUS/OLD.png';small=worker.root/'256x/enUS/NEW.png'
+            old.parent.mkdir(parents=True);small.parent.mkdir(parents=True)
+            old.write_bytes(b'x'*20);small.write_bytes(b'y'*20)
+            with patch('engine.full_cards.DISK_LIMIT',25):worker._trim(small)
+            self.assertFalse(old.exists());self.assertTrue(small.exists())
+            worker.close()

@@ -542,3 +542,27 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
             state=json.loads((self.plugin.runtime/'state.json').read_text())
             self.assertEqual(state['game_display'],expected)
             self.assertEqual(state['display'],':0')
+
+    async def test_full_card_resources_download_cancel_and_clear_are_independent(self):
+        from engine.images import atomic_image
+        from image_support import tile_png
+        self.plugin.cards.install([dict(id='CARD_A',dbfId=1,name='A',cost=1)])
+        self.plugin.full_cards.fetcher=lambda *args,**kwargs:tile_png(256,384)
+        tile=self.plugin.cards.images/'CARD_A.png'
+        atomic_image(tile,tile_png())
+        await self.plugin.download_all_full_card_images()
+        for _ in range(100):
+            if self.plugin.full_cards.batch_view()['status']=='complete':break
+            await asyncio.sleep(.01)
+        self.assertEqual(self.plugin.full_cards.batch_view()['success'],1)
+        self.plugin.full_cards.usage_at=0  # Disk statistics refresh at most every two seconds.
+        resources=(await self.plugin.status())['full_card_resources']
+        self.assertEqual(resources['cached'],1);self.assertGreater(resources['bytes'],0)
+        await self.plugin.cancel_full_card_download()
+        generation=self.plugin.full_card_generation
+        await self.plugin.clear_full_card_images()
+        self.assertEqual(self.plugin.full_card_generation,generation+1)
+        self.assertEqual((await self.plugin.status())['full_card_resources']['bytes'],0)
+        state=json.loads((self.plugin.runtime/'state.json').read_text())
+        self.assertEqual(state['full_card_generation'],generation+1)
+        self.assertTrue(tile.exists());self.assertIn('CARD_A',self.plugin.cards.by_id)
