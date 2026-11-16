@@ -566,3 +566,14 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         state=json.loads((self.plugin.runtime/'state.json').read_text())
         self.assertEqual(state['full_card_generation'],generation+1)
         self.assertTrue(tile.exists());self.assertIn('CARD_A',self.plugin.cards.by_id)
+
+    async def test_preview_scale_is_independent_validated_and_persisted(self):
+        self.assertEqual(self.plugin.settings['preview_scale'],1.0)
+        original_scale=self.plugin.settings['scale'];original_width=self.plugin.settings['panel_width']
+        for value in (0.4,2.1,float('nan'),float('inf'),'large'):
+            with self.assertRaises((ValueError,TypeError)):await self.plugin.configure(dict(preview_scale=value))
+        await self.plugin.configure(dict(preview_scale=1.5))
+        state=json.loads((self.plugin.runtime/'state.json').read_text())
+        stored=json.loads((self.plugin.settings_dir/'settings.json').read_text())
+        self.assertEqual(state['preview_scale'],1.5);self.assertEqual(stored['preview_scale'],1.5)
+        self.assertEqual(state['scale'],original_scale);self.assertEqual(state['panel_width'],original_width)

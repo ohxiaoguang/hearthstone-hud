@@ -65,7 +65,7 @@ inline bool valid_hud_state(const nlohmann::json& s) {
         (!s["game_display"].get_ref<const std::string&>().empty() && !local_x11_display(s["game_display"].get_ref<const std::string&>()))))return false;
     if(s.contains("idle_visible")&&!s["idle_visible"].is_boolean())return false;
     if(s.contains("card_locale")&&(!s["card_locale"].is_string() || s["card_locale"].get<std::string>().size()!=4 || s["card_locale"].get<std::string>().find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")!=std::string::npos))return false;
-    for(const auto* k:{"scale","opacity","x","y","right_x","right_y","panel_width","font_size"})
+    for(const auto* k:{"scale","preview_scale","opacity","x","y","right_x","right_y","panel_width","font_size"})
         if(s.contains(k) && (!s[k].is_number() || !std::isfinite(s[k].get<double>())))return false;
     for(const auto* k:{"visible","own_deck","opponent_deck","opponent_hand","card_images","own_played","opponent_played","show_summary","hide_exhausted"})
         if(s.contains(k) && !s[k].is_boolean())return false;
@@ -180,7 +180,7 @@ inline bool hover_contains(float x,float y,float left,float top,float right,floa
 
 struct PreviewSize {float width,height,padding;};
 inline PreviewSize preview_size(int width,int height,float scale,float screen_width,float screen_height){
-    const float padding=8*scale;
+    const float padding=2*scale;
     const float available_width=std::max(1.f,screen_width-16-2*padding);
     const float available_height=std::max(1.f,screen_height-16-2*padding);
     const float ratio=float(std::max(1,width))/float(std::max(1,height));

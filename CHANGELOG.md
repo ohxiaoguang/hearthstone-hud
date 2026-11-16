@@ -2,6 +2,15 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
+## v1.0.8
+
+- Trim fully transparent outer PNG canvas during background decode so visible card
+  artwork fills its preview frame. Keep all nonzero-alpha decorations and a one-pixel guard.
+- Reduce preview frame padding from 8px to 2px at the base scale without changing cached originals.
+- Add Full card preview scale in Display settings (0.5–2.0, default 1.0), independent
+  of card rows and applied on top of overall HUD scale. Preserve aspect ratio and edge fitting.
+- Fit loading text at smaller preview sizes and report source/visible texture sizes in diagnostics.
+
 ## v1.0.7
 
 - Frame hover previews with a dark background and a matching loading placeholder

@@ -8,7 +8,7 @@ import { FaLayerGroup } from 'react-icons/fa';
 import { copyText } from './clipboard';
 import { UI_LANGUAGES, tr, type UiLang } from './i18n';
 
-type Settings = {enabled:boolean;visible:boolean;own_deck:boolean;arena:boolean;arena_memory:boolean;font_size:number;panel_width:number;scale:number;opacity:number;x:number;y:number;right_x:number;right_y:number;own_played:boolean;opponent_played:boolean;show_summary:boolean;hide_exhausted:boolean;ui_language:UiLang};
+type Settings = {enabled:boolean;visible:boolean;own_deck:boolean;arena:boolean;arena_memory:boolean;font_size:number;panel_width:number;scale:number;preview_scale:number;opacity:number;x:number;y:number;right_x:number;right_y:number;own_played:boolean;opponent_played:boolean;show_summary:boolean;hide_exhausted:boolean;ui_language:UiLang};
 type Database = {code:string;active:boolean;exists:boolean;bytes:number;updated:number};
 type Batch = {status:string;total:number;success:number;failed:number;missing?:number;skipped:number;retried?:number;done?:number;locale?:string};
 type Cards = {count:number;download_state:string;download_phase:string;error:string;language?:string;data_language?:string;
@@ -115,6 +115,8 @@ function Content(){
  <SliderField label={t('fontSize')} value={data.settings.font_size} min={14} max={30} step={1} onChange={font_size=>change({font_size})}/>
  <SliderField label={t('panelWidth')} value={data.settings.panel_width} min={180} max={640} step={10} onChange={panel_width=>change({panel_width})}/>
  <SliderField label={t('scale')} value={data.settings.scale} min={.5} max={3} step={.1} onChange={scale=>change({scale})}/>
+ <SliderField label={t('previewScale')} value={data.settings.preview_scale??1} min={.5} max={2} step={.1} onChange={preview_scale=>change({preview_scale})}/>
+ <PanelSectionRow><div style={box}>{t('previewScaleNote')}</div></PanelSectionRow>
  <SliderField label={t('opacity')} value={data.settings.opacity} min={.1} max={1} step={.05} onChange={opacity=>change({opacity})}/>
  {(['own_deck','opponent_played','own_played','show_summary','hide_exhausted'] as const).map((key,i)=><ToggleField key={key} label={[t('ownDeck'),t('opponentPlayed'),t('ownPlayed'),t('summary'),t('hideExhausted')][i]} checked={data.settings[key]} onChange={v=>change({[key]:v})}/>)}
  {(['x','y','right_x','right_y'] as const).map((key,i)=><SliderField key={key} label={[t('leftX'),t('leftY'),t('rightX'),t('rightY')][i]} value={data.settings[key]} min={0} max={[1920,1080,1920,1080][i]} step={10} onChange={v=>change({[key]:v})}/>)}

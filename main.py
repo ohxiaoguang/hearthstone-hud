@@ -32,7 +32,7 @@ VERSION = json.loads((ROOT/'package.json').read_text())['version']
 DEFAULTS = dict(enabled=True,game_dir='/home/deck/Games/battlegame/Hearthstone',
     proton_prefix='',
     log_dir='', display=':0', x=40, y=80, scale=1.0, opacity=0.85,
-    visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=True, right_x=1540, right_y=80, card_images=True, show_card_names=True, image_tls_verify=False, database_tls_verify=False, own_played=True, opponent_played=True, show_summary=True, panel_width=320, font_size=22, hide_exhausted=False, arena_memory=False, auto_logs=False,
+    visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=True, right_x=1540, right_y=80, preview_scale=1.0, card_images=True, show_card_names=True, image_tls_verify=False, database_tls_verify=False, own_played=True, opponent_played=True, show_summary=True, panel_width=320, font_size=22, hide_exhausted=False, arena_memory=False, auto_logs=False,
     ui_language=i18n.DEFAULT_UI)
 
 
@@ -199,7 +199,7 @@ class Plugin:
                     raise ValueError('unsupported interface language')
             elif expected in (int, float):
                 value = float(value)
-                low, high = {'x':(0,7680),'y':(0,4320),'scale':(.5,3),'opacity':(.1,1),'right_x':(0,7680),'right_y':(0,4320),'panel_width':(180,640),'font_size':(14,30)}[key]
+                low, high = {'x':(0,7680),'y':(0,4320),'scale':(.5,3),'preview_scale':(.5,2),'opacity':(.1,1),'right_x':(0,7680),'right_y':(0,4320),'panel_width':(180,640),'font_size':(14,30)}[key]
                 if not low <= value <= high:
                     raise ValueError(i18n.t('config.out_of_range'))
                 value = int(value) if expected is int else value

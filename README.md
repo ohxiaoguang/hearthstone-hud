@@ -6,7 +6,7 @@ A [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin that 
 always-on overlay for Hearthstone on SteamOS and other Linux handhelds: your remaining
 deck, both players' played cards, and an arena drafting panel with card ratings.
 
-Current release: **v1.0.7** · [Changelog](CHANGELOG.md) · [中文说明](README.zh-CN.md)
+Current release: **v1.0.8** · [Changelog](CHANGELOG.md) · [中文说明](README.zh-CN.md)
 
 > This is an unofficial community project. It is not affiliated with, endorsed by, or
 > sponsored by Blizzard Entertainment or HearthSim. Hearthstone and its card data and art
@@ -376,3 +376,14 @@ legacy source removed. Empty old directories are removed without recursive delet
 unverified files or failed moves are retained and reported in migration diagnostics,
 and can be retried on restart. Thumbnail directories are never part of migration or
 full-card clearing. Migration does not wait on the render or log parsing loop.
+
+### Preview spacing and scale
+
+Full-card previews trim fully transparent outer PNG canvas during background decode,
+keeping every nonzero-alpha pixel and a one-source-pixel guard. Cached originals
+are untouched. The background frame uses only 2px padding at the base scale, so the
+visible card fills it more closely without stretching or cutting off decorations.
+Display settings include **Full card preview scale** (0.5–2.0, default 1.0), applied
+on top of overall HUD scale. It affects preview images/loading frames only, keeps
+aspect ratio and screen-edge fitting, and leaves card rows unchanged. Diagnostics
+show preview_scale plus texture source_size and visible_size for the trim result.

@@ -1,6 +1,8 @@
 #include "hud_state.h"
 #include "card_regions.h"
+#include "preview_image.h"
 #include <iostream>
+#include <limits>
 int main(){
     using nlohmann::json;
     auto good=json::parse(R"({"updated":1,"tracking":{"status":"playing","turn":2,"own":[],"opponent":[]}})");
@@ -142,7 +144,7 @@ int main(){
     point=hover_display_point(200,240,3840,2160,1920,1080);
     if(point.x!=100 || point.y!=120 || !hover_contains(point.x,point.y,8,107,258,142))return 77;
     auto preview=preview_size(256,384,1,1920,1080);
-    if(preview.width!=256 || preview.height!=384 || preview.padding!=8)return 78;
+    if(preview.width!=256 || preview.height!=384 || preview.padding!=2)return 78;
     auto placeholder=preview_size(256,384,2,240,320);
     if(placeholder.width+2*placeholder.padding>224 || placeholder.height+2*placeholder.padding>304)return 79;
     if(std::abs(placeholder.width/placeholder.height-2.f/3.f)>.0001f)return 80;
@@ -152,5 +154,22 @@ int main(){
     good["full_card_generation"]=1;if(!valid_hud_state(good))return 82;
     bad=good;bad["full_card_generation"]=-1;if(valid_hud_state(bad))return 83;
     bad=good;bad["full_card_generation"]="1";if(valid_hud_state(bad))return 84;
+    good["preview_scale"]=1.5;if(!valid_hud_state(good))return 85;
+    bad=good;bad["preview_scale"]="large";if(valid_hud_state(bad))return 86;
+    bad=good;bad["preview_scale"]=std::numeric_limits<double>::infinity();if(valid_hud_state(bad))return 87;
+    auto larger=preview_size(256,384,1.5,1920,1080);
+    if(larger.height<=preview.height || larger.height!=576)return 88;
+    std::vector<unsigned char> transparent(10*14*4,0);
+    transparent[(size_t(4)*10+3)*4+3]=255;transparent[(size_t(9)*10+6)*4+3]=1;
+    auto bounds=preview_alpha_bounds(transparent.data(),10,14);
+    if(bounds.left!=2 || bounds.top!=3 || bounds.width!=6 || bounds.height!=8)return 89;
+    // Even alpha=1 decorative pixels are retained; opaque cards keep all edges.
+    std::vector<unsigned char> opaque(10*14*4,255);
+    bounds=preview_alpha_bounds(opaque.data(),10,14);
+    if(bounds.left || bounds.top || bounds.width!=10 || bounds.height!=14)return 90;
+    std::fill(transparent.begin(),transparent.end(),0);
+    bounds=preview_alpha_bounds(transparent.data(),10,14);
+    if(bounds.width!=10 || bounds.height!=14)return 91;
+    if(preview_alpha_bounds(nullptr,0,0).width!=0)return 92;
     std::cout<<"Native HUD state validation: passed\n";
 }

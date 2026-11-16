@@ -62,3 +62,8 @@ assert.match(ui, /kind:'fullImages'/);
 assert.match(catalog, /images: 'Card thumbnails'/);
 assert.match(catalog, /images: '卡牌缩略图'/);
 console.log('Thumbnail and full-card resources have separate controls and labels');
+
+assert.match(ui, /previewScale/);
+assert.match(ui, /preview_scale: number|preview_scale:number/);
+assert.match(ui, /onChange=\{preview_scale=>change\(\{preview_scale\}\)\}/);
+console.log('Independent full-card preview scale is wired to settings');

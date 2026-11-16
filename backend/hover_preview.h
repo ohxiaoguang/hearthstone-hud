@@ -2,12 +2,14 @@
 #include <future>
 #include <vector>
 #include <iterator>
+#include <memory>
 #include "card_regions.h"
+#include "preview_image.h"
 
 // CPU decode is asynchronous; this object's GL methods run only on the render thread.
 class FullTextures {
-    struct Pixels {std::string key;int width=0,height=0;std::vector<unsigned char> bytes;std::string error,stage="missing_file";};
-    struct Entry {GLuint id;int width,height;unsigned long used;};
+    struct Pixels {std::string key;int width=0,height=0,source_width=0,source_height=0;std::vector<unsigned char> bytes;std::string error,stage="missing_file";};
+    struct Entry {GLuint id;int width,height,source_width,source_height;unsigned long used;};
     std::map<std::string,Entry> cache;
     std::future<Pixels> pending;
     std::map<std::string,double> retry;
@@ -24,12 +26,12 @@ public:
         glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,p.width,p.height,0,GL_RGBA,GL_UNSIGNED_BYTE,p.bytes.data());
         auto error=glGetError();
         if(!id || error!=GL_NO_ERROR){if(id)glDeleteTextures(1,&id);status={{"stage","upload_failed"},{"gl_error",error},{"key",p.key}};return;}
-        cache[p.key]={id,p.width,p.height,frame};status={{"stage","resident"},{"key",p.key}};
+        cache[p.key]={id,p.width,p.height,p.source_width,p.source_height,frame};status={{"stage","resident"},{"key",p.key}};
     }
     GLuint get(const std::filesystem::path& root,const std::string& locale,const std::string& cid,unsigned long frame,int& width,int& height){
         const auto path=root/locale/(cid+".png");
         const auto key=path.string();
-        auto it=cache.find(key);if(it!=cache.end()){status={{"stage","resident"},{"key",key}};it->second.used=frame;width=it->second.width;height=it->second.height;return it->second.id;}
+        auto it=cache.find(key);if(it!=cache.end()){status={{"stage","resident"},{"key",key},{"source_size",{it->second.source_width,it->second.source_height}},{"visible_size",{it->second.width,it->second.height}}};it->second.used=frame;width=it->second.width;height=it->second.height;return it->second.id;}
         if(pending.valid())return 0;
         double now=ImGui::GetTime();if(retry[key]>now)return 0;
         if(retry.size()>256)retry.clear();retry[key]=now+1;
@@ -43,8 +45,18 @@ public:
                 int channels;
                 result.stage="decode_failed";
                 if(!stbi_info_from_memory(data.data(),int(data.size()),&result.width,&result.height,&channels) || result.width<128 || result.height<128 || result.width>1024 || result.height>1536){result.error="Invalid PNG header or full card dimensions";return result;}
-                auto* pixels=stbi_load_from_memory(data.data(),int(data.size()),&result.width,&result.height,nullptr,4);
-                if(pixels){result.bytes.assign(pixels,pixels+result.width*result.height*4);stbi_image_free(pixels);result.stage="decoded";}
+                result.source_width=result.width;result.source_height=result.height;
+                std::unique_ptr<unsigned char,decltype(&stbi_image_free)> decoded(
+                    stbi_load_from_memory(data.data(),int(data.size()),&result.width,&result.height,nullptr,4),&stbi_image_free);
+                auto* pixels=decoded.get();
+                if(pixels){
+                    const auto bounds=preview_alpha_bounds(pixels,result.width,result.height);
+                    result.bytes.resize(size_t(bounds.width)*bounds.height*4);
+                    for(int y=0;y<bounds.height;++y)
+                        std::copy_n(pixels+(size_t(y+bounds.top)*result.width+bounds.left)*4,size_t(bounds.width)*4,result.bytes.data()+size_t(y)*bounds.width*4);
+                    result.width=bounds.width;result.height=bounds.height;
+                    result.stage="decoded";
+                }
                 else result.error=stbi_failure_reason()?stbi_failure_reason():"PNG decode failed";
             }catch(const std::exception& e){result.stage="decode_failed";result.error=e.what();}
             return result;
@@ -73,7 +85,7 @@ public:
         if(error!=GL_NO_ERROR){status["gl_error"]=error;if(status.value("stage","")=="rendered")status["stage"]="render_failed";}
     }
     void failure(const std::string& error){status["stage"]=status.value("stage","")=="request_write"?"request_write_failed":"render_failed";status["error"]=error.substr(0,300);}
-    void render(const std::filesystem::path& runtime,const std::string& locale,const std::string& loading,const std::string& unavailable,unsigned long frame,float sw,float sh,float scale,const CardRegions& regions){
+    void render(const std::filesystem::path& runtime,const std::string& locale,const std::string& loading,const std::string& unavailable,unsigned long frame,float sw,float sh,float scale,const CardRegions& regions,float preview_scale=1){
         textures.pump(frame);
         const auto& card_hits=regions.hits;
         const CardHit* hit=pointer_valid?regions.hit(pointer_position.x,pointer_position.y):nullptr;
@@ -100,7 +112,7 @@ public:
         status["hover_seconds"]=now-since;
         status["texture"]=textures.diagnostic();
         status["stage"]=texture?"rendered":"awaiting_texture";
-        const auto size=preview_size(iw,ih,scale,sw,sh);
+        const auto size=preview_size(iw,ih,scale*preview_scale,sw,sh);
         const float w=size.width,h=size.height,padding=size.padding;
         const float outer_width=w+2*padding,outer_height=h+2*padding;
         float y=std::clamp(hit->min.y,8.f,std::max(8.f,sh-outer_height-8));
@@ -113,18 +125,23 @@ public:
         }
         auto* draw=ImGui::GetForegroundDrawList();
         const ImVec2 image_min(best_x+padding,y+padding),image_max(image_min.x+w,image_min.y+h);
-        draw->AddRectFilled({best_x,y},{best_x+outer_width,y+outer_height},IM_COL32(20,25,33,245),8*scale);
-        draw->AddRect({best_x,y},{best_x+outer_width,y+outer_height},IM_COL32(115,135,160,210),8*scale,0,scale);
+        draw->AddRectFilled({best_x,y},{best_x+outer_width,y+outer_height},IM_COL32(20,25,33,245),4*scale);
+        draw->AddRect({best_x,y},{best_x+outer_width,y+outer_height},IM_COL32(115,135,160,210),4*scale,0,scale);
         status["preview_rect"]={best_x,y,best_x+outer_width,y+outer_height};
         status["resolution"]="256x";
+        status["preview_scale"]=preview_scale;
         if(texture)draw->AddImage(reinterpret_cast<void*>(static_cast<intptr_t>(texture)),image_min,image_max);
         else{
             draw->AddRect(image_min,image_max,IM_COL32(65,80,100,180),4*scale);
             const bool timed_out=now-since>30;
             const auto& message=timed_out?unavailable:loading;
-            const float text_size=18*scale;
+            float text_size=18*scale;
             auto* font=ImGui::GetFont();
-            const auto extent=font->CalcTextSizeA(text_size,FLT_MAX,0,message.c_str());
+            auto extent=font->CalcTextSizeA(text_size,FLT_MAX,0,message.c_str());
+            if(extent.x>w-8*scale && extent.x>0){
+                text_size*=std::max(1.f,w-8*scale)/extent.x;
+                extent=font->CalcTextSizeA(text_size,FLT_MAX,0,message.c_str());
+            }
             const ImVec2 center(image_min.x+w*.5f,image_min.y+h*.5f);
             if(!timed_out){
                 const ImVec2 spinner(center.x,center.y-24*scale);
