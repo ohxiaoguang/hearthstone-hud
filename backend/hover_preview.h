@@ -2,6 +2,7 @@
 #include <future>
 #include <vector>
 #include <iterator>
+#include "card_regions.h"
 
 // CPU decode is asynchronous; this object's GL methods run only on the render thread.
 class FullTextures {
@@ -51,36 +52,43 @@ public:
     json diagnostic()const{return status;}
     void clear(){if(pending.valid())pending.wait();for(auto& e:cache)glDeleteTextures(1,&e.second.id);cache.clear();}
 };
-struct CardHit {ImVec2 min,max;std::string id;};
-static std::vector<CardHit> card_hits;
 static bool pointer_valid=false;
 static json pointer_diagnostic=json::object();
 static ImVec2 pointer_position{-1,-1};
-static bool safe_card_id(const std::string& id){return !id.empty() && id.size()<=128 && id.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_")==std::string::npos;}
 class HoverPreview {
     std::string current;
     double since=0,last_write=0;
     FullTextures textures;
     json status={{"stage","idle"}};
+    json last_registration=json::object(),last_hit=json::object(),last_request=json::object();
+    HoverPointerHistory pointer_history;
 public:
     json diagnostic()const{return status;}
     void render_result(GLenum error){
         if(error!=GL_NO_ERROR){status["gl_error"]=error;if(status.value("stage","")=="rendered")status["stage"]="render_failed";}
     }
     void failure(const std::string& error){status["stage"]=status.value("stage","")=="request_write"?"request_write_failed":"render_failed";status["error"]=error.substr(0,300);}
-    void render(const std::filesystem::path& runtime,const std::string& locale,const std::string& loading,const std::string& unavailable,unsigned long frame,float sw,float sh,float scale){
+    void render(const std::filesystem::path& runtime,const std::string& locale,const std::string& loading,const std::string& unavailable,unsigned long frame,float sw,float sh,float scale,const CardRegions& regions){
         textures.pump(frame);
-        const CardHit* hit=nullptr;
-        for(auto& r:card_hits)if(pointer_valid && hover_contains(pointer_position.x,pointer_position.y,r.min.x,r.min.y,r.max.x,r.max.y))hit=&r;
+        const auto& card_hits=regions.hits;
+        const CardHit* hit=pointer_valid?regions.hit(pointer_position.x,pointer_position.y):nullptr;
         status={{"stage",!pointer_valid?"pointer_unavailable":card_hits.empty()?"no_card_regions":hit?"hover_delay":"no_hit"},{"pointer",pointer_diagnostic},{"card_regions",card_hits.size()},{"id",hit?hit->id:""}};
+        double now=ImGui::GetTime();
+        pointer_history.observe(now,pointer_valid,{pointer_position.x,pointer_position.y},!card_hits.empty());
+        status["pointer_history"]=pointer_history.diagnostic(now);
+        status["last_request"]=last_request;
+        status.update(regions.diagnostic());
+        if(!card_hits.empty())last_registration={{"frame",frame},{"card_regions",card_hits.size()},{"ids",status["registered_ids"]}};
+        if(hit)last_hit={{"frame",frame},{"id",hit->id},{"source",hit->source}};
+        status["last_nonempty_registration"]=last_registration;
+        status["last_hit"]=last_hit;
         if(!card_hits.empty())status["first_region"]={card_hits[0].min.x,card_hits[0].min.y,card_hits[0].max.x,card_hits[0].max.y};
         if(hit)status["hit_region"]={hit->min.x,hit->min.y,hit->max.x,hit->max.y};
         std::string key=hit?locale+":"+hit->id:"";
-        double now=ImGui::GetTime();
         if(key!=current){status["stage"]="request_write";current=key;since=now;last_write=0;write_json((runtime/"hover.json").string(),{{"id",""},{"updated",0}});}
         if(!hit || now-since<.2){status["stage"]=!pointer_valid?"pointer_unavailable":card_hits.empty()?"no_card_regions":hit?"hover_delay":"no_hit";return;}
         status["stage"]="request_write";
-        if(now-last_write>.2){write_json((runtime/"hover.json").string(),{{"id",hit->id},{"locale",locale},{"updated",std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count()}});last_write=now;}
+        if(now-last_write>.2){write_json((runtime/"hover.json").string(),{{"id",hit->id},{"locale",locale},{"updated",std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count()}});last_write=now;last_request={{"frame",frame},{"id",hit->id},{"locale",locale}};status["last_request"]=last_request;}
         int iw=512,ih=768;
         GLuint texture=textures.get(runtime/"cache/full-cards",locale,hit->id,frame,iw,ih);
         status["request_written"]=last_write>0;

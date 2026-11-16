@@ -59,7 +59,8 @@ public:
 };
 static std::string number(const json& value){return value.is_number_integer()?std::to_string(value.get<int>()):"?";}
 static constexpr auto flags=ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoInputs|ImGuiWindowFlags_NoFocusOnAppearing;
-static void panel(const char* id,const std::string& title,const json& rows,bool own,float x,float y,float scale,float opacity,bool images,bool show_names,const json& labels,TextureCache& textures,unsigned long frame,float width,float height,float font_size){
+static void panel(const char* id,const std::string& title,const json& rows,bool own,float x,float y,float scale,float opacity,bool images,bool show_names,const json& labels,TextureCache& textures,unsigned long frame,float width,float height,float font_size,CardRegions& regions){
+    regions.panel(id,rows.size());
     if(rows.empty())return;
     const float row_height=std::max(32.f,font_size+8)*scale;
     const auto seconds=std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -68,7 +69,7 @@ static void panel(const char* id,const std::string& title,const json& rows,bool 
     const int per_page=layout.per_page,pages=layout.pages,page=layout.page;
     height=layout.height;
     ImGui::SetNextWindowPos({x,y});ImGui::SetNextWindowSize({width+padding.x*2,height});ImGui::SetNextWindowBgAlpha(opacity);
-    ImGui::Begin(id,nullptr,flags & ~ImGuiWindowFlags_AlwaysAutoResize);
+    if(!ImGui::Begin(id,nullptr,flags & ~ImGuiWindowFlags_AlwaysAutoResize)){regions.skipped(id);ImGui::End();return;}
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,ImVec2(0,2*scale));ImGui::SetWindowFontScale(scale*.8f);
     ImGui::TextUnformatted(title.c_str());if(pages>1)ImGui::Text("%d / %d",page+1,pages);
     if(rows.empty())ImGui::TextUnformatted(labels.value(own?"empty_own":"empty_other",own?"No remaining cards or waiting for log evidence":"No plays recorded yet").c_str());
@@ -78,11 +79,13 @@ static void panel(const char* id,const std::string& title,const json& rows,bool 
         const auto pos=ImGui::GetCursorScreenPos();
         ImGui::Dummy({width,row_height});
         if(row.value("section",false)){
+            regions.section(id);
             draw->AddText(pos,IM_COL32(255,215,135,255),row.value("name","").c_str());continue;
         }
         const auto clip_min=draw->GetClipRectMin(),clip_max=draw->GetClipRectMax();
         const auto cid=row.value("id",std::string());
-        if(safe_card_id(cid) && std::min(pos.x+width,clip_max.x)>std::max(pos.x,clip_min.x) && std::min(pos.y+row_height,clip_max.y)>std::max(pos.y,clip_min.y))card_hits.push_back({{std::max(pos.x,clip_min.x),std::max(pos.y,clip_min.y)},{std::min(pos.x+width,clip_max.x),std::min(pos.y+row_height,clip_max.y)},cid});
+        regions.add(id,cid,{pos.x,pos.y},{pos.x+width,pos.y+row_height},
+                    {clip_min.x,clip_min.y},{clip_max.x,clip_max.y});
         const bool event=row.value("event",false),deck=row.value("deck_row",false),arena=row.value("arena_row",false);
         const auto label=arena?row.value("rating_label",labels.value("no_rating","No rating")):event?"":card_count_label(row,deck);
         const float rating_width=ImGui::GetFont()->CalcTextSizeA(24*scale,FLT_MAX,0,label.c_str()).x+12*scale;
@@ -190,7 +193,8 @@ int main(int argc,char** argv){
         if(visible!=shown){if(visible)glfwShowWindow(w);else glfwHideWindow(w);shown=visible;}
         if(auto m=glfwGetPrimaryMonitor()) if(auto mode=glfwGetVideoMode(m)){int width,height;glfwGetWindowSize(w,&width,&height);if(width!=mode->width||height!=mode->height)glfwSetWindowSize(w,mode->width,mode->height);}
         ImGui_ImplOpenGL3_NewFrame();ImGui_ImplGlfw_NewFrame();ImGui::NewFrame();
-        card_hits.clear();
+        CardRegions card_regions(frames,{{"hud_visible",visible},{"tracking_status",state["tracking"].value("status","")},
+            {"own_deck",state.value("own_deck",true)},{"arena_visible",state.contains("arena_state")&&state["arena_state"].value("visible",false)}});
         // Query the root, not the input-transparent overlay. Translate explicitly
         // into its client coordinates, then into ImGui display units.
         Window pointer_root=0,pointer_child=0;int root_x=0,root_y=0,local_x=0,local_y=0;unsigned int mask=0;
@@ -233,8 +237,8 @@ int main(int argc,char** argv){
                 :labels.value("arena_card","Arena · Card selection");
             const std::string title=arena.value("offer_title",base+(show_count?" · "+count:""));
             const float available=std::max(80.f,sh-ly-16*scale);
-            panel("arena-offer",title,arena_rows(arena,true),false,lx,ly,scale,opacity,state.value("card_images",true),state.value("show_card_names",true),labels,textures,frames,width,std::min(available,230*scale),font_size);
-            if(show_count)panel("arena-picked",arena.value("picked_title",arena_picked_title(arena)),arena_rows(arena,false),false,rx,ry,scale,opacity,state.value("card_images",true),state.value("show_card_names",true),labels,textures,frames,width,std::max(80.f,sh-ry-16*scale),font_size);
+            panel("arena-offer",title,arena_rows(arena,true),false,lx,ly,scale,opacity,state.value("card_images",true),state.value("show_card_names",true),labels,textures,frames,width,std::min(available,230*scale),font_size,card_regions);
+            if(show_count)panel("arena-picked",arena.value("picked_title",arena_picked_title(arena)),arena_rows(arena,false),false,rx,ry,scale,opacity,state.value("card_images",true),state.value("show_card_names",true),labels,textures,frames,width,std::max(80.f,sh-ry-16*scale),font_size,card_regions);
         }else{
         if(state.value("show_summary",true)){
         ImGui::SetNextWindowPos({sw*.5f,8},ImGuiCond_Always,{.5f,0});ImGui::SetNextWindowBgAlpha(opacity);
@@ -248,7 +252,7 @@ int main(int argc,char** argv){
         const auto opponent_rows=played_rows(tracking,"opponent_played"),own_rows=played_rows(tracking,"own_played");
         const auto left=left_regions(state.value("opponent_played",true)&&!opponent_rows.empty(),state.value("own_played",true)&&!own_rows.empty(),ly,std::max(80.f,sh-ly-16*scale),8*scale);
         const auto render=[&](const char* id,const std::string& title,const json& rows,bool deck,float x,float y,float height){
-            panel(id,title,rows,deck,x,y,scale,opacity,state.value("card_images",true),state.value("show_card_names",true),labels,textures,frames,width,height,font_size);
+            panel(id,title,rows,deck,x,y,scale,opacity,state.value("card_images",true),state.value("show_card_names",true),labels,textures,frames,width,height,font_size,card_regions);
         };
         if(left.opponent.visible)render("opponent-played",labels.value("opponent_played","Opponent played · newest first"),opponent_rows,false,lx,left.opponent.y,left.opponent.height);
         const auto tick=std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch()).count()/8;
@@ -262,7 +266,7 @@ int main(int argc,char** argv){
         if(state.value("own_deck",true))render("remaining",tracking.value("remaining_title","Your remaining deck · "+number(tracking.value("own_remaining",json()))),deck_rows(tracking,state.value("hide_exhausted",false),labels),true,rx,ry,std::max(80.f,sh-ry-16*scale));
         }
         } // Hidden HUD submits an empty transparent frame.
-        try{preview.render(std::filesystem::path(argv[1]).parent_path(),state.value("card_locale","enUS"),labels.value("loading","Loading card..."),labels.value("preview_unavailable","Card preview unavailable"),frames,float(sw),float(sh),scale);}catch(const std::exception& e){preview.failure(e.what());std::cerr<<"preview: "<<e.what()<<'\n';}
+        try{preview.render(std::filesystem::path(argv[1]).parent_path(),state.value("card_locale","enUS"),labels.value("loading","Loading card..."),labels.value("preview_unavailable","Card preview unavailable"),frames,float(sw),float(sh),scale,card_regions);}catch(const std::exception& e){preview.failure(e.what());std::cerr<<"preview: "<<e.what()<<'\n';}
         ImGui::Render();int fw,fh;glfwGetFramebufferSize(w,&fw,&fh);glViewport(0,0,fw,fh);glClearColor(0,0,0,0);glClear(GL_COLOR_BUFFER_BIT);ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());preview.render_result(glGetError());glfwSwapBuffers(w);
         if(++frames%30==0)write_json(argv[3],{{"hover",preview.diagnostic()},{"display",getenv("DISPLAY")?getenv("DISPLAY"):""},{"window",x},{"external_overlay",atom_ok},{"xshape_input_empty",shape},{"transparent_framebuffer",glfwGetWindowAttrib(w,GLFW_TRANSPARENT_FRAMEBUFFER)==GLFW_TRUE},{"mapped",shown},{"frames",frames},{"compositor_visibility","unverified"},{"touch_passthrough","unverified"},{"state_schema",2}});
         std::this_thread::sleep_for(std::chrono::milliseconds(shown?16:100));

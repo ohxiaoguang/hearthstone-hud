@@ -35,3 +35,23 @@ Email private@example.com api_key=api-secret'''
         for text in ('[Hover Preview]','Renderer stage: no_hit','Renderer card_regions: 30',
                      'Downloader stage: download_failed','HTTP 404'):
             self.assertIn(text,report)
+
+    def test_registration_details_survive_copying_after_match_ends(self):
+        registration=dict(stage='no_card_regions',registration_state='no_cards',registration_frame=200,
+            card_regions=0,registered_ids=[],
+            render_context=dict(tracking_status='waiting',hud_visible=True),
+            panels=dict(remaining=dict(available=0,registered=0)),
+            last_nonempty_registration=dict(frame=150,card_regions=3,ids=['CORE_CS2_029','HERO_08']),
+            last_hit=dict(frame=151,id='HERO_08',source='arena-offer'))
+        report=format_diagnostics(dict(diagnostic=dict(hover=registration)),'test')
+        for text in ('Renderer registration_state: no_cards','Renderer registration_frame: 200',
+                     'CORE_CS2_029','HERO_08','Renderer last_hit:',"'frame': 151",'arena-offer'):
+            self.assertIn(text,report)
+        self.assertNotIn('TRUNCATED',report)
+
+    def test_game_and_renderer_displays_and_hover_history_are_reported(self):
+        report=format_diagnostics(dict(process=dict(environment=dict(DISPLAY=':1')),
+            diagnostic=dict(display=':0',hover=dict(pointer_history=dict(position_changes_with_cards=0),
+            last_request=dict(frame=100,id='CORE_CS2_029')))),'test')
+        for text in ('X11 Display: :1','display: :0','position_changes_with_cards','Renderer last_request:','CORE_CS2_029'):
+            self.assertIn(text,report)

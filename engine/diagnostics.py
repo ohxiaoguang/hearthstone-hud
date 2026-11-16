@@ -37,6 +37,7 @@ def format_diagnostics(data,version,recent=(),renderer_tail=''):
     field('Enabled',data.get('settings',{}).get('enabled',True));field('Background',data.get('background',{}))
     field('Lifecycle',data.get('lifecycle','unknown'))
     section('Game');field('Process','PID '+str(process.get('pid')) if process.get('found') else 'not found')
+    field('X11 Display',process.get('environment',{}).get('DISPLAY','unknown'))
     field('Prefix',process.get('prefix','unknown'));field('Game Status',data.get('match_status','unknown'))
     field('Players',data.get('identity_status','unknown'));field('Current Turn',tracking.get('turn','unknown'))
     section('Logs');field('Read Status',data.get('log_status','unknown'))
@@ -103,7 +104,7 @@ def format_diagnostics(data,version,recent=(),renderer_tail=''):
     field('Last Error',cards.get('image_error',''))
     section('Renderer');field('Status','running' if data.get('running') else 'stopped');field('Gamescope',data.get('gamescope_status','unknown'))
     diag=data.get('diagnostic',{})
-    for key in ('window','external_overlay','mapped','frames','xshape_input_empty'):
+    for key in ('display','window','external_overlay','mapped','frames','xshape_input_empty'):
         field(key,diag.get(key,'unknown'))
     section('Hover Preview')
     for key,value in diag.get('hover',{}).items():field('Renderer '+key,value)

@@ -6,7 +6,7 @@
 Linux 掌机上为《炉石传说》绘制常驻悬浮层：己方剩余牌库、双方已打出的卡牌，以及带有评分的
 竞技场选牌面板。
 
-当前版本：**v1.0.4** · [更新记录](CHANGELOG.md) · [English](README.md)
+当前版本：**v1.0.5** · [更新记录](CHANGELOG.md) · [English](README.md)
 
 > 这是非官方社区项目，与暴雪娱乐、HearthSim 均无隶属或背书关系。《炉石传说》及其卡牌数据、
 > 卡图版权归暴雪娱乐所有。
@@ -240,3 +240,22 @@ OpenGL 上传在渲染线程执行，停止插件或渲染器时回收对应线�
 
 渲染器详情写入运行目录 `diagnostic.json`，悬停请求使用 `hover.json`。
 没有新增鼠标轮询线程或拦截输入的窗口。
+
+卡牌注册诊断还会记录当前 `registration_frame`、`render_context`、
+`card_rows_submitted`、`registered_ids`（最多 12 个）与各面板的 `available`（输入行数）、
+`submitted`（提交卡牌行数）、`sections`（分组标题数）、`rejected_id`（ID 被过滤）、
+`clipped`（裁剪后无有效面积）、`registered`（成功注册）、`skipped`（面板跳过）计数。
+`first_registration_attempt` 保存首张尝试注册卡牌的绘制矩形和裁剪矩形，即使所有卡牌都被过滤也能排查。
+
+`registration_state=no_cards` 表示当前渲染分支没有输入行，例如对局已结束；
+`no_submitted_cards` 表示有输入但没有提交卡牌行，需检查跳过的面板或分组标题；
+`all_filtered` 表示有卡牌行提交，但全被 ID 或裁剪条件过滤；`registered` 表示命中区域
+已传入预览。已注册但 `no_hit` 与图片请求失败属于不同阶段。
+`last_nonempty_registration`、`last_hit` 保留带帧号的有限历史快照，结束对局后仍可查看，
+但不会作为当前命中区域使用。各面板显式接收同一个当前帧收集器，预览只在所有面板提交后读取，
+不再依赖可在面板间清空的全局卡牌列表。
+
+`pointer_history` 记录有卡牌区域期间的有效指针采样数、位置变化数、观测范围和距上次变化的秒数，
+`last_request` 在离开卡牌后仍保留最近请求。诊断同时显示游戏和渲染器的 X11 Display，
+用于排查是否属于不同 X 服务。XQueryPointer 返回成功不代表读到的位置一定跟随游戏中的实际鼠标，
+需结合主动在卡牌间移动时的历史记录判断。

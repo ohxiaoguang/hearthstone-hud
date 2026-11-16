@@ -2,7 +2,7 @@
 import os
 from pathlib import Path, PureWindowsPath
 
-ENV_KEYS = ('STEAM_COMPAT_DATA_PATH', 'WINEPREFIX', 'SteamAppId')
+ENV_KEYS = ('STEAM_COMPAT_DATA_PATH', 'WINEPREFIX', 'SteamAppId', 'DISPLAY')
 
 
 def linux_game_dir(args):

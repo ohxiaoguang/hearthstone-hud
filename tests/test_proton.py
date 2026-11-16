@@ -86,3 +86,10 @@ class ProtonTests(unittest.TestCase):
             self.assertIn('尚未生成',diagnostic_state(p,config,{}))
             self.assertIn('正常读取',diagnostic_state(p,config,dict(power=dict(active=True),offset=1)))
         finally:i18n.set_ui_language('en')
+
+    def test_only_display_and_existing_safe_environment_keys_are_exposed(self):
+        self.process(41,'Hearthstone.exe',['Hearthstone.exe'],
+                     dict(WINEPREFIX=str(self.prefix),DISPLAY=':1',API_TOKEN='secret'))
+        environment=discover_process(self.proc)['environment']
+        self.assertEqual(environment['DISPLAY'],':1')
+        self.assertNotIn('API_TOKEN',environment)

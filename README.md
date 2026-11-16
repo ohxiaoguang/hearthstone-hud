@@ -6,7 +6,7 @@ A [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin that 
 always-on overlay for Hearthstone on SteamOS and other Linux handhelds: your remaining
 deck, both players' played cards, and an arena drafting panel with card ratings.
 
-Current release: **v1.0.4** · [Changelog](CHANGELOG.md) · [中文说明](README.zh-CN.md)
+Current release: **v1.0.5** · [Changelog](CHANGELOG.md) · [中文说明](README.zh-CN.md)
 
 > This is an unofficial community project. It is not affiliated with, endorsed by, or
 > sponsored by Blizzard Entertainment or HearthSim. Hearthstone and its card data and art
@@ -290,3 +290,26 @@ The empty X11 input shape and ImGui NoInputs flags remain enabled.
 
 Renderer details are in runtime `diagnostic.json`; request IPC is `hover.json`.
 No additional mouse-polling thread or input-capturing window is created.
+
+Hover registration diagnostics also record the current `registration_frame`,
+`render_context`, `card_rows_submitted`, `registered_ids` (up to 12), and per-panel
+`available`, `submitted`, `sections`, `rejected_id`, `clipped`, `registered` and
+`skipped` counters. `first_registration_attempt` contains the original draw rectangle
+and clip rectangle, including when registration rejects every row.
+
+`registration_state=no_cards` means the active render branch has no input rows
+(e.g. a completed match); `no_submitted_cards` means rows exist but no card row was
+submitted (check skipped panels/section rows); `all_filtered` means submitted card
+rows were rejected by ID or clipping; `registered` means hit rectangles reached the
+preview. A `no_hit` preview with registered rows is different from a download failure.
+`last_nonempty_registration` and `last_hit` retain bounded snapshots with frame
+numbers after the match ends. They are historical evidence, not current hit regions.
+All panels explicitly receive the same frame-local collector, and the preview reads
+it only after panel submission; no global card-hit list is cleared between panels.
+
+`pointer_history` counts valid pointer samples and position changes while cards
+are registered, retaining observed bounds and time since the last observed change.
+`last_request` records the most recent card request even after the pointer leaves.
+Diagnostics also show Game X11 Display and Renderer display to help identify separate
+X servers. A successful XQueryPointer call alone does not prove its coordinates track
+the cursor over the game; compare history while deliberately moving across card rows.

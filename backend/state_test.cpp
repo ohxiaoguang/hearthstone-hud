@@ -1,4 +1,5 @@
 #include "hud_state.h"
+#include "card_regions.h"
 #include <iostream>
 int main(){
     using nlohmann::json;
@@ -95,5 +96,41 @@ int main(){
     if(!hover_contains(330,200,320,190,400,250))return 55;
     if(hover_contains(400,200,320,190,400,250) || hover_contains(330,200,400,190,320,250))return 56;
     if(hover_display_point(10,10,0,0,1280,720).x!=-1)return 57;
+    // Arena and match rows append to the same frame; registration is independent
+    // of texture availability and ImGui input handling.
+    CardRegions regions(123);
+    regions.panel("remaining",3);regions.section("remaining");
+    regions.add("remaining","CORE_CS2_029",{100,100},{420,132},{0,0},{1920,1080});
+    regions.add("remaining","VAC_001t2",{100,134},{420,166},{0,0},{1920,1080});
+    regions.panel("arena-offer",3);
+    regions.add("arena-offer","HERO_08",{500,100},{820,132},{0,0},{1920,1080});
+    regions.add("arena-offer","EDR_001",{500,134},{820,166},{0,0},{1920,1080});
+    regions.add("arena-offer","TEST_CARD",{500,168},{820,200},{0,0},{1920,1080});
+    if(regions.hits.size()!=5 || regions.diagnostic()["registration_frame"]!=123)return 58;
+    if(!regions.hit(110,110) || regions.hit(110,110)->id!="CORE_CS2_029")return 59;
+    if(!regions.hit(510,110) || regions.hit(510,110)->source!="arena-offer")return 60;
+    if(regions.hit(450,110) || regions.hit(820,110))return 61;
+    CardRegions next_frame(124);
+    if(!next_frame.hits.empty() || regions.hits.size()!=5)return 62;
+    if(next_frame.diagnostic()["registration_state"]!="no_cards")return 63;
+    // Invalid IDs and offscreen rows are diagnosed separately; partial clipping
+    // uses the visible part of the actual draw rectangle, without rescaling.
+    CardRegions filtered(125);filtered.panel("remaining",3);
+    filtered.add("remaining","dbf:42",{100,100},{420,132},{0,0},{1920,1080});
+    filtered.add("remaining","CARD_A",{100,1100},{420,1132},{0,0},{1920,1080});
+    filtered.add("remaining","CARD_B",{100,100},{420,132},{110,110},{400,130});
+    const auto registration=filtered.diagnostic();
+    if(registration["panels"]["remaining"]["rejected_id"]!=1 || registration["panels"]["remaining"]["clipped"]!=1)return 64;
+    if(filtered.hit(105,115) || !filtered.hit(115,115) || filtered.hit(115,131))return 65;
+    if(filtered.hits.size()!=1 || registration["registered_ids"][0]!="CARD_B")return 66;
+    for(const auto* id:{"HERO_08","CORE_CS2_029","VAC_001t2","BOM_10_Card_001","TOY_123"})if(!safe_card_id(id))return 67;
+    for(const auto* id:{"","../CARD","dbf:1","CARD.png"})if(safe_card_id(id))return 68;
+    HoverPointerHistory history;
+    history.observe(1,true,{1919,1079},true);history.observe(3,true,{1919,1079},true);
+    if(history.diagnostic(3)["position_changes_with_cards"]!=0 || history.diagnostic(3)["seconds_since_observed_change"]!=2)return 69;
+    history.observe(4,true,{100,110},true);
+    if(history.diagnostic(4)["position_changes_with_cards"]!=1)return 70;
+    history.observe(5,false,{0,0},true);history.observe(6,true,{0,0},false);
+    if(history.diagnostic(6)["samples_with_cards"]!=3)return 71;
     std::cout<<"Native HUD state validation: passed\n";
 }

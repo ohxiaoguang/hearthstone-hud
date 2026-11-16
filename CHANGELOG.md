@@ -2,6 +2,16 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
+## v1.0.5
+
+- Add a frame-local card-region collector shared by arena and match panels, with
+  registration counts, Card IDs, filtering reasons and draw/clip rectangles.
+- Retain the last nonempty registration, hover hit and image request after the
+  pointer leaves, so opening Decky to copy diagnostics preserves useful evidence.
+- Record pointer movement while cards are visible and report both game and renderer
+  X11 displays. Keep pointer acquisition, downloads, caches and click-through unchanged.
+- This release improves diagnosis; the reported hover failure is not yet confirmed fixed.
+
 ## v1.0.4
 
 - Translate the X11 root pointer into HUD client and ImGui display coordinates for
