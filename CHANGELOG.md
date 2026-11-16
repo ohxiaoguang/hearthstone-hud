@@ -2,6 +2,21 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
+## v1.0.7
+
+- Frame hover previews with a dark background and a matching loading placeholder
+  with localized text and an animated indicator. Use smaller 256px complete renders.
+- Rename Card images to Card thumbnails and add separate Full card renders resource
+  statistics, download-all, cancellation, retry progress and confirmed clearing.
+- Unify full-card hover and bulk downloads in one file per language/Card ID. Remove
+  the 256 MiB disk cap and automatic eviction; files stay until explicitly cleared.
+- Share deduplicated high/low priority queues: hover requests go first, cached files
+  are skipped, and cancelling a batch preserves downloaded files and hover requests.
+- Merge legacy manual files into the unified directory in the background. Remove old
+  files/directories only after verifying a unified copy; retain/report migration failures.
+- Keep thumbnail resource handling and click-through unchanged. Full-card texture
+  memory remains bounded independently of the unlimited disk store.
+
 ## v1.0.6
 
 - Read the pointer from the live game's X11 display when Gamescope runs the game
