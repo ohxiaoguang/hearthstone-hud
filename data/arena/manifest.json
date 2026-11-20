@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "updated_at": "2026-11-20T07:02:20.668031+00:00",
+  "files": {
+    "arena_ratings.json": {
+      "url": "https://raw.githubusercontent.com/ohxiaoguang/hearthstone-hud/main/data/arena/arena_ratings.json",
+      "sha256": "78a1b146653c57e2ae042e4a341c9f68dcd5948835be2d3ce50881847d694be7",
+      "source": "HearthArena tier list (static snapshot)",
+      "captured_at": "2026-11-20T06:54:21.440933+00:00",
+      "source_url": "https://www.heartharena.com/tierlist",
+      "upstream_updated_at": null
+    },
+    "arena_class_ratings.json": {
+      "url": "https://raw.githubusercontent.com/ohxiaoguang/hearthstone-hud/main/data/arena/arena_class_ratings.json",
+      "sha256": "7ff445223c328390784ea5deb88759006354bd601883c1087468e377c79fd2ce",
+      "source": "Firestone / Zero-to-Heroes static public class statistics",
+      "captured_at": "2026-11-20T07:02:20.668031+00:00",
+      "modes": {
+        "arena": {
+          "source_url": "https://static.zerotoheroes.com/api/arena/stats/classes/arena/last-patch/overview.gz.json",
+          "upstream_updated_at": "2026-11-20T02:25:41.972Z"
+        },
+        "arena-underground": {
+          "source_url": "https://static.zerotoheroes.com/api/arena/stats/classes/arena-underground/last-patch/overview.gz.json",
+          "upstream_updated_at": "2026-11-20T04:25:42.242Z"
+        }
+      }
+    }
+  }
+}

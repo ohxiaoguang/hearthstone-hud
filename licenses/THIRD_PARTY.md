@@ -1,6 +1,7 @@
 # Third-party notices
 
 - engine/power.py: hs-decktracker-linux, Copyright (c) 2026 justfaked, MIT. Vendored commit 649534be99f35cb499ed2fae371625bd04b95b1d. Only local change: postponed annotation evaluation for Python 3.9. License included alongside this file.
+- scripts/update-arena-data.py adapts the HearthArena parser from hs-decktracker-linux at the same commit. The MIT notice covers the parser code. The ratings and statistics retain their HearthArena and Firestone / Zero-to-Heroes attribution.
 - NotoSansCJKsc-Regular.otf: Noto CJK, SIL OFL 1.1, license included (licenses/Noto-OFL.txt). Downloaded 2026-11-14 from https://github.com/notofonts/noto-cjk/tree/main/Sans/OTF/SimplifiedChinese . Unmodified font; reserved names remain unchanged.
 - NotoSansThai-Regular.ttf: Noto Sans Thai, SIL OFL 1.1, same license file. Downloaded 2026-11-15 from https://github.com/notofonts/noto-fonts/tree/main/hinted/ttf/NotoSansThai . Unmodified font, merged into the HUD font atlas at runtime so Thai card names render.
 - GLFW 3.3.10: zlib/libpng license; build-native.sh copies original license to distribution.

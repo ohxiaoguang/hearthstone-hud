@@ -131,14 +131,20 @@ The arena panel is fed by the game's own draft objects (`DraftManager.m_draftDec
 
 ## Ratings data
 
-Both ratings are static snapshots shipped with the plugin; nothing is fetched at runtime and
-nothing is re-scored locally.
+The HUD starts with the last valid local snapshots, with built-in copies for first use and
+offline access. Open **Arena data** in Decky settings to see the sources and dates, check for
+updates now, or turn off the daily check. The HUD downloads only changed snapshots in the
+background and keeps the last valid copy if an update fails.
 
 - **Arena card ratings**: [HearthArena](https://www.heartharena.com/tierlist) tier-list
   snapshot from 2026-11-14 (4240 entries across 11 classes and neutral). Cards without a
   score show *No rating*; the plugin does not estimate one.
 - **Arena class win rates**: Firestone / Zero-to-Heroes public arena statistics snapshot from
   2026-11-14, aggregated per class for normal and underground arena separately.
+
+The [Update arena data workflow](https://github.com/ohxiaoguang/hearthstone-hud/actions/workflows/arena-data.yml)
+fetches both sources daily and can also run on demand. Validated snapshots and their
+[manifest](data/arena/manifest.json) are published directly on `main`.
 
 Provenance details: [docs/ARENA_RATINGS_SOURCE.md](docs/ARENA_RATINGS_SOURCE.md),
 [docs/ARENA_CLASS_RATINGS_SOURCE.md](docs/ARENA_CLASS_RATINGS_SOURCE.md) (Chinese, with the
@@ -191,7 +197,7 @@ are still Chinese.
   deliberately not reconstructed from Arena.log.
 - Draft order is unknown by design; selected cards are sorted by mana cost and name, not by
   pick order.
-- Ratings and class win rates are static snapshots and may lag the live arena pool.
+- Published ratings and class win rates may lag the live arena pool.
 - Card tracking depends on Hearthstone's text logs. Cards the game does not reveal stay
   unknown, and counts can be shown as lower bounds.
 - The HUD builds a 64 MB font atlas while it runs, so it is not started on very low-memory
@@ -221,7 +227,7 @@ project downloads data at runtime and never bundles a card-image collection.
 
 **Ratings.** Card tier list from [HearthArena](https://www.heartharena.com/tierlist); class
 win rates from Firestone / [Zero-to-Heroes](https://www.zerotoheroes.com/) public statistics.
-Both are third-party data, captured once and stored as JSON snapshots.
+Both are third-party data stored as JSON snapshots.
 
 **Bundled assets.** Noto Sans CJK SC and Noto Sans Thai (SIL OFL 1.1,
 [licenses/Noto-OFL.txt](licenses/Noto-OFL.txt)); Mozilla/certifi CA bundle (MPL-2.0,

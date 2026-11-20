@@ -112,12 +112,17 @@ HUD 渲染器只构建一张字体图集，覆盖拉丁、西里尔、中文、�
 
 ## 评分数据
 
-两份评分都是随插件发布的静态快照，运行时不联网、也不在本地重新打分。
+HUD 启动时直接读取本地有效快照，首次安装或离线时可使用内置数据。Decky 设置中的「竞技场数据」
+可查看来源和数据日期、立即检查更新或关闭每日自动检查。后台只下载有变化的文件，更新失败时继续
+使用原有数据。
 
 - **竞技场卡牌评分**：[HearthArena](https://www.heartharena.com/tierlist) 梯级表快照，抓取于
   2026-11-14，共 4240 条，覆盖 11 个职业与中立。没有评分的卡显示 *暂无评分*，插件不会估算分数。
 - **竞技场职业胜率**：Firestone / Zero-to-Heroes 的竞技场公开统计快照，抓取于 2026-11-14，
   普通竞技场与地下竞技场分别聚合。
+
+[Update arena data 工作流](https://github.com/ohxiaoguang/hearthstone-hud/actions/workflows/arena-data.yml)
+每天获取上游数据，也可手动运行。校验后的快照和 [manifest](data/arena/manifest.json) 发布在 `main` 分支。
 
 来源细节（含 URL 与抓取时间）见 [docs/ARENA_RATINGS_SOURCE.md](docs/ARENA_RATINGS_SOURCE.md)、
 [docs/ARENA_CLASS_RATINGS_SOURCE.md](docs/ARENA_CLASS_RATINGS_SOURCE.md)。
@@ -160,7 +165,7 @@ HUD 渲染器只构建一张字体图集，覆盖拉丁、西里尔、中文、�
 - 只读竞技场读取器仅支持上文所述的 Unity 6000.3 x64 版本，其他版本会报告不兼容，不做猜测。
 - 内存不可用时竞技场面板不显示已选牌：本插件刻意不从 Arena.log 反推已选牌。
 - 选牌顺序按设计不提供；已选牌按费用与名称排序，不代表选取顺序。
-- 评分与职业胜率是静态快照，可能落后于当前竞技场牌池。
+- 发布的评分与职业胜率可能落后于当前竞技场牌池。
 - 记牌依赖炉石的文本日志。游戏未公开的卡牌保持未知，数量可能以下界显示。
 - HUD 运行时会构建 64 MB 的字体图集，极低内存设备在未手动开启时不会启动渲染器。
 
@@ -182,8 +187,7 @@ HUD 渲染器只构建一张字体图集，覆盖拉丁、西里尔、中文、�
 本项目在运行时下载数据，不打包任何卡图集合。
 
 **评分数据**：卡牌梯级表来自 [HearthArena](https://www.heartharena.com/tierlist)；职业胜率来自
-Firestone / [Zero-to-Heroes](https://www.zerotoheroes.com/) 公开统计。两者都是第三方数据，仅抓取
-一次并保存为 JSON 快照。
+Firestone / [Zero-to-Heroes](https://www.zerotoheroes.com/) 公开统计。两者都是以 JSON 快照保存的第三方数据。
 
 **随包资源**：Noto Sans CJK SC 与 Noto Sans Thai（SIL OFL 1.1，
 [licenses/Noto-OFL.txt](licenses/Noto-OFL.txt)）；Mozilla/certifi CA 证书包（MPL-2.0，

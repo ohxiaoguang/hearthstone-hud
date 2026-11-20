@@ -160,6 +160,7 @@ class PluginLanguageTests(unittest.IsolatedAsyncioTestCase):
         sys.modules['decky']=types.SimpleNamespace(DECKY_PLUGIN_SETTINGS_DIR=base/'settings',DECKY_PLUGIN_RUNTIME_DIR=base/'runtime')
         spec=importlib.util.spec_from_file_location('hud_lang',Path(__file__).resolve().parents[1]/'main.py')
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        module.DEFAULTS['arena_data_auto_update']=False
         self.plugin=module.Plugin();await self.plugin._main()
         await asyncio.sleep(.3)   # the publish loop writes the first state.json
 
@@ -379,6 +380,7 @@ class VisibleTextTests(unittest.IsolatedAsyncioTestCase):
         sys.modules['decky']=types.SimpleNamespace(DECKY_PLUGIN_SETTINGS_DIR=base/'settings',DECKY_PLUGIN_RUNTIME_DIR=base/'runtime')
         spec=importlib.util.spec_from_file_location('hud_text',Path(__file__).resolve().parents[1]/'main.py')
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        module.DEFAULTS['arena_data_auto_update']=False
         self.plugin=module.Plugin();await self.plugin._main()
         self.plugin.cards.install([dict(id='CARD_A',dbfId=1,name='Alpha',cost=1,type='MINION'),
                                    dict(id='CARD_B',dbfId=2,name='Beta',cost=2,type='MINION')])

@@ -24,6 +24,7 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         sys.modules['decky']=types.SimpleNamespace(DECKY_PLUGIN_SETTINGS_DIR=base/'settings',DECKY_PLUGIN_RUNTIME_DIR=base/'runtime')
         spec=importlib.util.spec_from_file_location('hud_backend',Path(__file__).resolve().parents[1]/'main.py')
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        module.DEFAULTS['arena_data_auto_update']=False
         self.plugin=module.Plugin();await self.plugin._main()
     async def asyncTearDown(self):
         await self.plugin._unload()

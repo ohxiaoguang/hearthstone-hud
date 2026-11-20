@@ -8,19 +8,25 @@ import { FaLayerGroup } from 'react-icons/fa';
 import { copyText } from './clipboard';
 import { UI_LANGUAGES, tr, type UiLang } from './i18n';
 
-type Settings = {enabled:boolean;visible:boolean;own_deck:boolean;arena:boolean;arena_memory:boolean;font_size:number;panel_width:number;scale:number;preview_scale:number;opacity:number;x:number;y:number;right_x:number;right_y:number;own_played:boolean;opponent_played:boolean;show_summary:boolean;hide_exhausted:boolean;ui_language:UiLang};
+type Settings = {enabled:boolean;visible:boolean;own_deck:boolean;arena:boolean;arena_memory:boolean;font_size:number;panel_width:number;scale:number;preview_scale:number;opacity:number;x:number;y:number;right_x:number;right_y:number;own_played:boolean;opponent_played:boolean;show_summary:boolean;hide_exhausted:boolean;ui_language:UiLang;arena_data_auto_update:boolean};
 type Database = {code:string;active:boolean;exists:boolean;bytes:number;updated:number};
 type Batch = {status:string;total:number;success:number;failed:number;missing?:number;skipped:number;retried?:number;done?:number;locale?:string};
 type Cards = {count:number;download_state:string;download_phase:string;error:string;language?:string;data_language?:string;
   databases?:Record<string,Database>;image_usage?:{cached:number;bytes:number;total:number;downloading:boolean};image_batch:Batch};
+type ArenaResult = 'idle'|'checking'|'downloading'|'unchanged'|'updated'|'failed';
+type ArenaSnapshot = {source:string;captured_at:string};
+type ArenaData = {last_checked:number;running:boolean;
+  results:Record<'arena_ratings.json'|'arena_class_ratings.json',ArenaResult>;
+  cards:ArenaSnapshot;classes:ArenaSnapshot & {dates:Partial<Record<'arena'|'arena-underground',string>>}};
 type Status = {lifecycle:string;version:string;repository?:string;settings:Settings;running:boolean;error:string;
   process:{found?:boolean};power_config:{enabled?:boolean;restart_required?:boolean};
   decks_config:{enabled?:boolean;restart_required?:boolean};arena_config:{enabled?:boolean;restart_required?:boolean};
   full_card_resources?:{cached:number;bytes:number;total:number;locale:string;batch:Batch;last_error:string};
-  arena:{memory?:{status?:string}};cards:Cards};
+  arena:{memory?:{status?:string}};cards:Cards;arena_data:ArenaData};
 
 const getStatus=callable<[],Status>('status');
 const configure=callable<[values:Partial<Settings>],Status>('configure');
+const checkArenaData=callable<[],Status>('check_arena_data');
 const start=callable<[],Status>('start_hud');
 const stop=callable<[],Status>('stop_hud');
 const retryDatabase=callable<[],Status>('retry_card_database');
@@ -55,6 +61,44 @@ function size(bytes:number){
  if(bytes<1024*1024)return `${(bytes/1024).toFixed(0)} KB`;
  return `${(bytes/1024/1024).toFixed(1)} MB`;
 }
+
+const arenaResultKey:Record<ArenaResult,string>={
+ idle:'arenaDataIdle',checking:'arenaDataChecking',downloading:'arenaDataDownloading',
+ unchanged:'arenaDataUnchanged',updated:'arenaDataUpdated',failed:'arenaDataFailed',
+};
+
+function ArenaDataPanel({data,lang,automatic,busy,onToggle,onCheck}:{
+ data:ArenaData;lang:UiLang;automatic:boolean;busy:boolean;onToggle:(enabled:boolean)=>void;onCheck:()=>void;
+}){
+ const t=(key:string)=>tr(lang,key);
+ const format=(value?:string|number)=>{
+  if(!value)return '—';
+  const date=new Date(typeof value==='number'?value*1000:value);
+  return Number.isNaN(date.getTime())?'—':date.toLocaleString(lang,{dateStyle:'medium',timeStyle:'short'});
+ };
+ return <Fold title={t('arenaData')} openLabel={t('expand')} closeLabel={t('collapse')}>
+  <ToggleField label={t('arenaDataAuto')} checked={automatic} disabled={busy} onChange={onToggle}/>
+  <div style={box}>
+   <strong>{t('arenaCardRatings')}</strong>
+   <div>{data.cards.source || '—'}</div>
+   <div>{t('arenaDataCaptured')} · {format(data.cards.captured_at)}</div>
+  </div>
+  <div style={box}>
+   <strong>{t('arenaClassRatings')}</strong>
+   <div>{data.classes.source || '—'}</div>
+   <div>{t('arenaNormal')} · {format(data.classes.dates.arena)}</div>
+   <div>{t('arenaUnderground')} · {format(data.classes.dates['arena-underground'])}</div>
+  </div>
+  <div role="status" style={box}>
+   <div>{t('arenaDataLastCheck')} · {format(data.last_checked)}</div>
+   {data.running&&<progress aria-label={t('arenaDataChecking')} style={{width:'100%'}}/>}
+   <div>{t('arenaCardRatings')} · {t(arenaResultKey[data.results['arena_ratings.json']])}</div>
+   <div>{t('arenaClassRatings')} · {t(arenaResultKey[data.results['arena_class_ratings.json']])}</div>
+  </div>
+  <ButtonItem layout="below" disabled={busy||data.running} onClick={onCheck}>{t('arenaDataCheckNow')}</ButtonItem>
+ </Fold>;
+}
+
 type Confirm={kind:'database';code:string}|{kind:'images'}|{kind:'fullImages'}|null;
 
 function Content(){
@@ -106,6 +150,8 @@ function Content(){
  {data.settings.enabled?<>
  <ToggleField label={t('hud')} checked={data.running&&data.settings.visible} disabled={busy} onChange={enabled=>background(t('applying'),enabled?start:stop)}/>
  <ToggleField label={t('arena')} description={t('arenaDesc')} checked={data.settings.arena&&data.settings.arena_memory} disabled={busy} onChange={enabled=>change({arena:enabled,arena_memory:enabled})}/>
+ {data.arena_data&&<ArenaDataPanel data={data.arena_data} lang={lang} automatic={data.settings.arena_data_auto_update}
+   busy={busy} onToggle={arena_data_auto_update=>change({arena_data_auto_update})} onCheck={()=>run(checkArenaData)}/>}
  {data.running&&(data.power_config.restart_required||data.decks_config.restart_required||data.arena_config.restart_required)&&<PanelSectionRow><div role="status" style={box}>{t('logsRestart')}</div></PanelSectionRow>}
  {data.running&&data.process.found&&(!data.decks_config.enabled||!data.arena_config.enabled)&&<PanelSectionRow><div role="alert" style={box}>{t('logsPending')}</div></PanelSectionRow>}
  {data.settings.arena_memory&&data.arena.memory?.status&&<PanelSectionRow><div style={box}>{data.arena.memory.status}</div></PanelSectionRow>}

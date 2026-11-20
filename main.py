@@ -17,8 +17,9 @@ from engine.tracker import Tracker, DeckLog, LINE
 from engine.cards import Cards
 from engine.full_cards import FullCards
 from engine.arena import Arena
+from engine.arena_data import CARD_FILE, CLASS_FILE
+from engine.arena_data_update import ArenaDataUpdater
 from engine.memory_watch import MemoryWatch
-from engine.arena_class_ratings import ClassRatings
 from engine.arena_memory_view import ArenaPreview
 from engine.discovery import discover, gamescope_status, LogClock
 from engine.proton import discover_process, local_x11_display
@@ -33,7 +34,7 @@ DEFAULTS = dict(enabled=True,game_dir='/home/deck/Games/battlegame/Hearthstone',
     proton_prefix='',
     log_dir='', display=':0', x=40, y=80, scale=1.0, opacity=0.85,
     visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=True, right_x=1540, right_y=80, preview_scale=1.0, card_images=True, show_card_names=True, image_tls_verify=False, database_tls_verify=False, own_played=True, opponent_played=True, show_summary=True, panel_width=320, font_size=22, hide_exhausted=False, arena_memory=False, auto_logs=False,
-    ui_language=i18n.DEFAULT_UI)
+    ui_language=i18n.DEFAULT_UI, arena_data_auto_update=True)
 
 
 def active_operation(method):
@@ -76,6 +77,7 @@ class Plugin:
         # This testing build uses the user's requested download mode; no UI switch.
         self.settings.update(image_tls_verify=False,database_tls_verify=False)
         if type(self.settings.get('enabled')) is not bool:self.settings['enabled']=True
+        if type(self.settings['arena_data_auto_update']) is not bool:self.settings['arena_data_auto_update']=True
         self.lifecycle_lock=asyncio.Lock()
         self.io_pool=None;self.task=None;self.loop_stop=asyncio.Event()
         self.lifecycle_state='disabled'
@@ -100,10 +102,11 @@ class Plugin:
         try:
             manual=json.loads((self.settings_dir/'arena-manual.json').read_text())
         except (OSError,ValueError):manual=[]
-        self.arena = Arena(self.cards,manual=manual if isinstance(manual,list) else [])
+        self.arena_data = ArenaDataUpdater(self.settings_dir / 'arena-data', self._install_arena_data)
+        self.arena = Arena(self.cards,ratings=self.arena_data.models[CARD_FILE],manual=manual if isinstance(manual,list) else [])
         self.parser.arena = self.arena
         self.memory_watch = MemoryWatch()
-        self.arena_preview = ArenaPreview(ClassRatings())
+        self.arena_preview = ArenaPreview(self.arena_data.models[CLASS_FILE])
         self.arena_tail = Tail();self.arena_clock = None;self.side_session = None
         self.arena_caught_up = False;self.arena_config = {};self.arena_receipt = {}
         try:
@@ -139,6 +142,17 @@ class Plugin:
         """Card database locale, derived from the interface language."""
         return i18n.card_language('auto',self.settings.get('ui_language'))
 
+    def _install_arena_data(self, name, model):
+        if name == CARD_FILE:
+            self.arena.ratings = model
+        else:
+            self.arena_preview.class_ratings = model
+
+    @active_operation
+    async def check_arena_data(self):
+        self.arena_data.check()
+        return await self.status()
+
     async def _io(self,method,*args):
         if self.io_pool is None:raise RuntimeError(i18n.t('plugin.stopped_error'))
         return await asyncio.get_running_loop().run_in_executor(self.io_pool,method,*args)
@@ -158,10 +172,12 @@ class Plugin:
             try:await self._start_renderer()
             except Exception as exc:self.error=str(exc)
         self.lifecycle_state='running'
+        self.arena_data.set_policy(True, self.settings['arena_data_auto_update'])
 
     async def _stop_services(self):
         # No cancellation of executor futures: drain requests before disposing workers.
         self.lifecycle_state='stopping'
+        self.arena_data.set_policy(False, self.settings['arena_data_auto_update'])
         self.loop_stop.set();self.media_stop.set();self.memory_watch.request_stop()
         try:await self._stop_renderer(preserve=True)
         except Exception as exc:self.error=i18n.t('hud.stop_error',error=str(exc))
@@ -177,6 +193,7 @@ class Plugin:
             pool,self.io_pool=self.io_pool,None
             pool.shutdown(wait=True)
         else:self.memory_watch.join()
+        await self.arena_data.wait()
         if self.proc and self.proc.returncode is None:
             self.lifecycle_state='stop_failed'
             raise RuntimeError(i18n.t('hud.stop_failed'))
@@ -235,6 +252,8 @@ class Plugin:
             self.last_scan = float('-inf')
         if was_enabled and not self.settings['enabled']:await self._stop_services()
         elif not was_enabled and self.settings['enabled']:await self._start_services()
+        elif 'arena_data_auto_update' in checked:
+            self.arena_data.set_policy(self.settings['enabled'], checked['arena_data_auto_update'])
         self._publish()
         return await self.status()
 
@@ -532,7 +551,7 @@ class Plugin:
                     log_status=diagnostic_state(self.process,self.power_config,self.discovery),
                     tracking=tracking,
                     visibility='',
-                    arena=self._arena_ui(),arena_log_status=i18n.t('arena_log.found') if self.discovery.get('arena') else i18n.t('arena_log.missing'))
+                    arena=self._arena_ui(),arena_data=self.arena_data.status(),arena_log_status=i18n.t('arena_log.found') if self.discovery.get('arena') else i18n.t('arena_log.missing'))
 
     def _labels(self):
         """Static HUD labels in the selected interface language."""
