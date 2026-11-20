@@ -2,6 +2,15 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
+## v1.0.9
+
+- Refresh HearthArena card ratings and Firestone class win-rate data in the background.
+  The HUD starts with local snapshots and keeps the last valid file if an update fails.
+- Check on first launch and every 24 hours from the latest check. Run overdue checks
+  after sleep or restart. A manual check starts a new 24-hour interval.
+- Add **Arena data** in Decky settings with source dates, update progress, an automatic
+  update switch and a manual check button. Normal and Underground Arena retain separate statistics.
+
 ## v1.0.8
 
 - Trim fully transparent outer PNG canvas during background decode so visible card
