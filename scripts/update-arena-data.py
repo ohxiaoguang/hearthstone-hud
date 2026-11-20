@@ -21,7 +21,7 @@ sys.path.insert(0, str(ROOT))
 from engine.arena_class_ratings import aggregate
 from engine.arena_data import (
     CARD_FILE, CARD_URL, CLASS_FILE, FILES, MODE_URLS, RAW_URL, TIERS,
-    read_object, validate_mode, validate_snapshot,
+    read_object, timestamp, validate_mode, validate_snapshot,
 )
 
 PUBLISHED = ROOT / 'data' / 'arena'
@@ -78,7 +78,7 @@ def fetch(url):
             time.sleep(2 ** attempt)
 
 
-def fetch_mode(url, previous):
+def fetch_mode(url):
     raw, _ = fetch(url)
     decoded = raw
     if raw.startswith(b'\x1f\x8b'):
@@ -98,7 +98,7 @@ def fetch_mode(url, previous):
         'validated': True,
         'classes': aggregate(source),
     }
-    validate_mode(mode, url, previous)
+    validate_mode(mode, url, None)
     return mode
 
 
@@ -119,12 +119,18 @@ def update():
 
     with ThreadPoolExecutor(max_workers=3) as pool:
         page = pool.submit(fetch, CARD_URL)
-        stats = {mode: pool.submit(fetch_mode, url, old_classes['modes'][mode]) for mode, url in MODE_URLS.items()}
+        stats = {mode: pool.submit(fetch_mode, url) for mode, url in MODE_URLS.items()}
         html, last_modified = page.result()
         modes = {mode: future.result() for mode, future in stats.items()}
     cards = parse_tierlist(html.decode('utf-8'))
     upstream_date = parsedate_to_datetime(last_modified).isoformat() if last_modified else None
     captured = datetime.now(timezone.utc).isoformat()
+    if publishing:
+        for mode, row in modes.items():
+            previous = old_classes['modes'][mode]
+            if timestamp(row['source_lastUpdated']) < timestamp(previous['source_lastUpdated']):
+                print(f'{mode}: upstream returned an older snapshot; keeping the published data.')
+                modes[mode] = previous
     next_cards = dict(old_cards, classes=cards, captured_at=captured, source_sha256=sha256(html).hexdigest())
     next_classes = dict(old_classes, modes=modes, captured_at=captured)
     validate_snapshot(CARD_FILE, next_cards, old_cards)

@@ -1,8 +1,10 @@
 """Check compatibility and isolated updates using the published snapshots."""
 import asyncio
+import importlib.util
 import json
 from hashlib import sha256
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -89,3 +91,26 @@ class ArenaDataUpdateTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(service.results[CARD_FILE], 'failed')
             self.assertEqual((cache / CARD_FILE).read_bytes(), original)
             install.assert_not_called()
+
+
+class ArenaDataPublisherTests(unittest.TestCase):
+    def test_stale_mode_keeps_snapshot_and_invalid_new_mode_leaves_all_files_alone(self):
+        spec = importlib.util.spec_from_file_location('arena_publisher', ROOT / 'scripts/update-arena-data.py')
+        publisher = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(publisher)
+        modes = read_object((PUBLISHED / CLASS_FILE).read_bytes())['modes']
+        modes['arena']['source_lastUpdated'] = '2020-01-01T00:00:00Z'
+        cards = read_object((PUBLISHED / CARD_FILE).read_bytes())['classes']
+        sources = {row['url']: row for row in modes.values()}
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / 'arena'
+            shutil.copytree(PUBLISHED, output)
+            original = {path.name: path.read_bytes() for path in output.iterdir()}
+            with patch.multiple(publisher, PUBLISHED=output, fetch=lambda url: (b'', None),
+                                parse_tierlist=lambda html: cards, fetch_mode=sources.__getitem__):
+                publisher.update()
+                self.assertEqual({path.name: path.read_bytes() for path in output.iterdir()}, original)
+                modes['arena-underground']['classes'].clear()
+                with self.assertRaises(ValueError):
+                    publisher.update()
+                self.assertEqual({path.name: path.read_bytes() for path in output.iterdir()}, original)
