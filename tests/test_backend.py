@@ -32,6 +32,35 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         else:sys.modules['decky']=self.old
         self.tmp.cleanup()
         self.refresh_patch.stop()
+
+    async def test_arena_data_checks_on_first_background_poll_after_suspend(self):
+        from engine.arena_data import FILES, RAW_URL
+        from engine.arena_data_update import INTERVAL
+
+        wall = time.time()
+        service = self.plugin.arena_data
+        loop = asyncio.get_running_loop()
+        started = asyncio.Event()
+
+        def fetch_manifest():
+            loop.call_soon_threadsafe(started.set)
+            return {name: {'url': RAW_URL + name, 'sha256': service.hashes[name]} for name in FILES}
+
+        with patch('engine.arena_data_update.time', types.SimpleNamespace(time=lambda: wall)), \
+                patch('engine.arena_data_update.load_manifest', side_effect=fetch_manifest) as fetch:
+            await self.plugin.configure({'arena_data_auto_update': True, 'visible': False})
+            await asyncio.wait_for(started.wait(), 2)
+            await service.wait()
+            self.assertEqual(service.last_checked, wall)
+            started.clear()
+
+            # Simulate several days asleep without advancing the event loop clock.
+            wall += 3 * INTERVAL
+            await asyncio.wait_for(started.wait(), 2)
+            await service.wait()
+            self.assertEqual(service.last_checked, wall)
+            self.assertEqual(fetch.call_count, 2)
+
     async def test_settings_validation_and_visibility(self):
         with self.assertRaises(ValueError):await self.plugin.configure({'scale':float('nan')})
         with self.assertRaises(ValueError):await self.plugin.configure({'opacity':8})

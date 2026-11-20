@@ -61,7 +61,6 @@ class ArenaDataUpdater:
         self.last_checked = 0
         self.results = dict.fromkeys(FILES, 'idle')
         self.task = None
-        self.timer = None
         self.enabled = False
         self.automatic = False
         self.models = {}
@@ -98,24 +97,19 @@ class ArenaDataUpdater:
     def set_policy(self, enabled, automatic):
         self.enabled = enabled
         self.automatic = automatic
-        self._schedule()
+        self.check_if_due()
 
-    def _schedule(self):
-        if self.timer is not None:
-            self.timer.cancel()
-            self.timer = None
+    def check_if_due(self):
+        # Wall time includes system suspend, unlike the Linux event loop clock.
         if self.enabled and self.automatic and self.task is None:
-            delay = max(0, INTERVAL - max(0, time.time() - self.last_checked))
-            if not self.last_checked:
-                delay = 0
-            self.timer = asyncio.get_running_loop().call_later(delay, self.check)
+            if not self.last_checked or time.time() - self.last_checked >= INTERVAL:
+                self.check()
 
     def check(self):
         if self.enabled and self.task is None:
             self.results = dict.fromkeys(FILES, 'checking')
             self.last_checked = time.time()
             self.task = asyncio.create_task(self._check())
-            self._schedule()
 
     async def wait(self):
         if self.task is not None:
@@ -152,7 +146,6 @@ class ArenaDataUpdater:
             except OSError as exc:
                 log.warning('Could not save arena check time: %s', exc)
             self.task = None
-            self._schedule()
 
     async def _update(self, name, entry):
         try:

@@ -164,6 +164,7 @@ class Plugin:
         self.io_pool=ThreadPoolExecutor(max_workers=3,thread_name_prefix='hud-io-'+str(id(self)))
         self.full_cards.prepare()
         self.loop_stop=asyncio.Event();self.last_scan=float('-inf')
+        self.arena_data.set_policy(True, self.settings['arena_data_auto_update'])
         self.task=asyncio.create_task(self._loop())
         if self.settings['arena_memory']:self.memory_watch.start()
         if not self.cards.by_id:self.cards._phase('prepare')
@@ -172,7 +173,6 @@ class Plugin:
             try:await self._start_renderer()
             except Exception as exc:self.error=str(exc)
         self.lifecycle_state='running'
-        self.arena_data.set_policy(True, self.settings['arena_data_auto_update'])
 
     async def _stop_services(self):
         # No cancellation of executor futures: drain requests before disposing workers.
@@ -589,6 +589,7 @@ class Plugin:
     async def _loop(self):
         while not self.loop_stop.is_set():
             try:
+                self.arena_data.check_if_due()
                 if time.monotonic()-self.last_scan >= 3:
                     scan_key = (self.settings['game_dir'],self.settings['log_dir'])
                     process = await self._io(discover_process)

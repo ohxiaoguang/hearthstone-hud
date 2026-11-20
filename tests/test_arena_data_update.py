@@ -1,5 +1,4 @@
 """Check compatibility and isolated updates using the published snapshots."""
-import asyncio
 import importlib.util
 import json
 from hashlib import sha256
@@ -59,7 +58,7 @@ class ArenaDataUpdateTests(unittest.IsolatedAsyncioTestCase):
             reloaded = ArenaDataUpdater(cache, install)
             self.assertEqual(reloaded.last_checked, service.last_checked)
             reloaded.set_policy(True, True)
-            self.assertGreater(reloaded.timer.when() - asyncio.get_running_loop().time(), INTERVAL - 5)
+            self.assertIsNone(reloaded.task)
             requests.clear()
             damaged = False
             reloaded.check()
@@ -67,7 +66,52 @@ class ArenaDataUpdateTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(reloaded.results, {CARD_FILE: 'updated', CLASS_FILE: 'unchanged'})
             self.assertEqual(requests, [MANIFEST_URL, RAW_URL + CARD_FILE])
             reloaded.set_policy(False, True)
-            self.assertIsNone(reloaded.timer)
+
+    async def test_daily_check_deadline_follows_manual_check_and_survives_restart(self):
+        start = 1_800_000_000
+        clock = Mock()
+        clock.time.return_value = start
+        with tempfile.TemporaryDirectory() as folder, patch('engine.arena_data_update.time', clock), \
+                patch('engine.arena_data_update.load_manifest') as fetch:
+            cache = Path(folder)
+            service = ArenaDataUpdater(cache, Mock())
+            fetch.return_value = {
+                name: {'url': RAW_URL + name, 'sha256': service.hashes[name]} for name in FILES
+            }
+            service.set_policy(True, True)
+            self.assertIsNotNone(service.task)
+            await service.wait()
+            self.assertEqual(service.last_checked, start)
+
+            service.set_policy(True, False)
+            manual_time = start + INTERVAL
+            clock.time.return_value = manual_time
+            service.check_if_due()
+            self.assertIsNone(service.task)
+            service.check()
+            self.assertIsNotNone(service.task)
+            await service.wait()
+
+            reloaded = ArenaDataUpdater(cache, Mock())
+            self.assertEqual(reloaded.last_checked, manual_time)
+            reloaded.set_policy(True, True)
+            clock.time.return_value = manual_time + INTERVAL - 1
+            reloaded.check_if_due()
+            self.assertIsNone(reloaded.task)
+            self.assertEqual(fetch.call_count, 2)
+
+            clock.time.return_value += 1
+            reloaded.check_if_due()
+            self.assertIsNotNone(reloaded.task)
+            await reloaded.wait()
+            self.assertEqual(fetch.call_count, 3)
+
+            clock.time.return_value += 2 * INTERVAL
+            overdue = ArenaDataUpdater(cache, Mock())
+            overdue.set_policy(True, True)
+            self.assertIsNotNone(overdue.task)
+            await overdue.wait()
+            self.assertEqual(fetch.call_count, 4)
 
     async def test_matching_hash_cannot_install_an_empty_class_table(self):
         manifest = read_object((PUBLISHED / 'manifest.json').read_bytes())
