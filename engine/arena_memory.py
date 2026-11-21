@@ -68,8 +68,7 @@ class HearthstoneMemory:
         self.deck_meta=dict(slots=0,reason='no_deck_object',notes=[])
         self.snapshot_start=0;self.snapshot_wall=0
         self.removal_key=None
-        self.removal_deck=Counter()
-        self.previous_mode=''
+        self.removal_pool=Counter()
         self.last_phase=None
         self.last_transition=''
         self.phase_diag={}
@@ -86,7 +85,6 @@ class HearthstoneMemory:
         identity=(self.pid,found.get('instance',''))
         if identity!=self.observed_identity:
             self.removal_key=None
-            self.previous_mode=''
             self.last_phase=None
             self.last_transition=''
         self.observed_identity=identity
@@ -202,33 +200,29 @@ class HearthstoneMemory:
             self.removal_key=None
             return ''
         if key is not None and key!=self.removal_key:self.removal_key=None
-        if not complete or partial_offer:return ''
+        if not complete:return ''
 
-        # REDRAFTING spans both picking and cutting. A full pool establishes
-        # direction; subsequent decks must contain only surviving copies.
+        # Keep the first full multiset for the round. An undo may restore
+        # copies missing from the previous snapshot, up to their original count.
         copies=Counter(cards)
-        if len(cards)==35 and mode!='NO_DISPLAY':
+        if self.removal_key is None:
+            if len(cards)!=35 or mode=='NO_DISPLAY' or partial_offer:return ''
             self.removal_key=key
-        elif self.removal_key is None or not (30<=len(cards)<=35 and copies<=self.removal_deck):
-            self.removal_key=None
+            self.removal_pool=copies
+        if not (30<=len(cards)<=35 and copies<=self.removal_pool):
             return ''
-        self.removal_deck=copies
-        return 'complete' if len(cards)==30 else 'removal'
+        return 'at_target' if len(cards)==30 else 'removal'
 
     def draft_state(self):
         display=self.mono.static('DraftDisplay','s_instance')
         self.phase_diag['display_present']=display is not None
-        if display is None and (self.removal_key is None or self.removal_deck.total()==30):
-            self.removal_key=None
+        if display is None and self.removal_key is None:
             return None
         if display and display.class_name!='DraftDisplay':raise UnsupportedLayout('wrong DraftDisplay instance')
         raw_mode=display['m_currentMode'] if display else None
         self.phase_diag['raw_mode']=raw_mode
         mode=enum(raw_mode,DRAFT_MODES) if display else 'NO_DISPLAY'
         self.phase_diag['display_mode']=mode
-        if self.previous_mode=='ACTIVE_DRAFT_DECK' and mode=='REDRAFTING' and self.removal_deck.total()==30:
-            self.removal_key=None
-        self.previous_mode=mode
         deck_only=mode in ('ACTIVE_DRAFT_DECK','NO_DISPLAY')
         if mode!='REDRAFTING' and not deck_only:self.removal_key=None
         if mode not in ('DRAFTING','REDRAFTING') and not deck_only:return None
@@ -307,7 +301,7 @@ class HearthstoneMemory:
             if [c['m_cardID'] for c in options.list_objects(3)]!=[c.card_id for c in choices]:raise NotReady('choices changed during snapshot')
         self.snapshot_start=start
         self.snapshot_wall=max(start,settled) if deck is not None else 0
-        key=(self.identity,deck_id or deck.addr) if deck_read else None
+        key=(self.identity,deck_id or deck.addr,wins,losses) if deck_read else None
         complete=deck_read and meta['reason'] in ('','empty') and 'null_count' not in meta['notes']
         self.phase_diag.update(snapshot_cards=len(cards) if complete else None,snapshot_reason=meta['reason'] or ','.join(meta['notes']))
         phase=self._redraft_phase(mode,underground,slot,key,cards,complete,len(entries) in (1,2))

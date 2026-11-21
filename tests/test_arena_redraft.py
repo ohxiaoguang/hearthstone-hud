@@ -106,6 +106,10 @@ class RedraftTests(unittest.TestCase):
         self.write(self.slots[1], 'm_count', 3)
         self.write(self.slots[2], 'm_count', 5)
         self.assertFalse(self.marked(self.view()))  # A copy appeared while cutting.
+        self.write(self.slots[1], 'm_count', 4)
+        self.assertFalse(self.marked(self.view()))  # A different 35 cannot replace the baseline.
+        self.write(self.slots[2], 'm_count', 4)
+        self.assertEqual(len(self.marked(self.view())), 4)
 
     def test_active_mode_can_precede_or_follow_the_first_full_pool(self):
         for first_mode in ('REDRAFTING','ACTIVE_DRAFT_DECK'):
@@ -137,7 +141,12 @@ class RedraftTests(unittest.TestCase):
         self.assertEqual(len(self.marked(view)), 4)
         self.write(self.slots[0], 'm_count', 21)
         self.assertEqual(self.view()['count'], 30)
-        self.assertTrue(self.view()['memory']['inactive'])
+        for count in (30,31,32,30,35,31,30):
+            self.write(self.slots[0], 'm_count', count-9)
+            view=self.view()
+            self.assertEqual(len(view['picks']), count)
+            self.assertEqual(len(self.marked(view)), count-30)
+            self.assertFalse(view['memory']['inactive'])
 
     def test_partial_offer_then_empty_offer_and_no_slot(self):
         self.write(self.slots[0], 'm_count', 26)
@@ -156,4 +165,8 @@ class RedraftTests(unittest.TestCase):
         self.set_mode('REDRAFTING')
         self.write(options, '_size', 3)
         self.write(self.reader._manager(), 'm_currentUndergroundSlotType', 1)
+        self.write(self.slots[0], 'm_count', 22)
+        self.assertEqual(len(self.marked(self.view())), 1)
+        manager=self.reader._manager()
+        self.write(manager, 'm_undergroundLosses', manager['m_undergroundLosses']+1)
         self.assertEqual(len(self.view()['candidates']), 3)
