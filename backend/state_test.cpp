@@ -81,6 +81,12 @@ int main(){
     good["ui_language"]="en";good.erase("labels");good.erase("show_card_names");
     arena["stage"]="hero_selection";arena["show_count"]=false;good["arena_state"]=arena;
     if(!valid_hud_state(good))return 27;
+    auto cuts=good;
+    cuts["arena_state"]["stage"]="removal";
+    cuts["arena_state"]["picks"][0]["suggest_remove"]=true;
+    if(!valid_hud_state(cuts)||!arena_rows(cuts["arena_state"],false)[0].value("suggest_remove",false))return 101;
+    cuts["arena_state"]["picks"][0]["suggest_remove"]="yes";
+    if(valid_hud_state(cuts))return 102;
     bad=good;bad["arena_state"]["stage"]="invented";if(valid_hud_state(bad))return 28;
     bad=good;bad["arena_state"]["candidates"][0]["hero_stats"]={{"winrate",2},{"games",10},{"rank",1},{"of",11}};if(valid_hud_state(bad))return 29;
     bad=good;bad["arena_state"]["show_count"]="no";if(valid_hud_state(bad))return 30;

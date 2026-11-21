@@ -25,7 +25,7 @@ inline bool valid_arena_state(const nlohmann::json& a){
     for(const auto* k:{"mode","class_name"})if(!a.contains(k)||!a[k].is_string()||a[k].get_ref<const std::string&>().size()>256)return false;
     if(a.contains("count_exact")&&!a["count_exact"].is_boolean())return false;
     if(a.contains("show_count")&&!a["show_count"].is_boolean())return false;
-    if(a.contains("stage")&&(!a["stage"].is_string() || (a["stage"]!="none" && a["stage"]!="hero_selection" && a["stage"]!="card_selection" && a["stage"]!="hero_power_selection" && a["stage"]!="drafting" && a["stage"]!="redrafting")))return false;
+    if(a.contains("stage")&&(!a["stage"].is_string() || (a["stage"]!="none" && a["stage"]!="hero_selection" && a["stage"]!="card_selection" && a["stage"]!="hero_power_selection" && a["stage"]!="drafting" && a["stage"]!="redrafting" && a["stage"]!="removal")))return false;
     if(!a.contains("count")||!a["count"].is_number_integer())return false;
     for(const auto* k:{"candidates","picks","redraft_picks","history_picks"}){
         if(std::string(k)=="history_picks"&&!a.contains(k))continue;
@@ -34,6 +34,7 @@ inline bool valid_arena_state(const nlohmann::json& a){
             if(!r.is_object())return false;
             for(const auto* field:{"id","name","image","rating_label","tier"})if(!r.contains(field)||!r[field].is_string()||r[field].get_ref<const std::string&>().size()>4096)return false;
             if(r.contains("hero_row")&&!r["hero_row"].is_boolean())return false;
+            if(r.contains("suggest_remove")&&!r["suggest_remove"].is_boolean())return false;
             if(r.contains("class_name")&&(!r["class_name"].is_string()||r["class_name"].get_ref<const std::string&>().size()>256))return false;
             if(r.contains("hero_stats")&&!r["hero_stats"].is_null()){
                 const auto& stats=r["hero_stats"];

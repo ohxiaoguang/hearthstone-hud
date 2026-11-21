@@ -115,6 +115,11 @@ static void panel(const char* id,const std::string& title,const json& rows,bool 
         draw->AddText(ImGui::GetFont(),font_size*scale,{name_pos.x+scale,name_pos.y+scale},IM_COL32(0,0,0,230),name.c_str(),nullptr,0,&clip);
         draw->AddText(ImGui::GetFont(),font_size*scale,name_pos,white,name.c_str(),nullptr,0,&clip);
         if(arena&&row.value("best",false))draw->AddRect(pos,{pos.x+width,pos.y+row_height},IM_COL32(255,215,90,255),0,0,2*scale);
+        if(arena&&row.value("suggest_remove",false)){
+            const auto coral=IM_COL32(255,110,85,255);
+            draw->AddRect(pos,{pos.x+width,pos.y+row_height},coral,0,0,2*scale);
+            draw->AddRectFilled(pos,{pos.x+3*scale,pos.y+row_height},coral);
+        }
         const ImVec4 count_clip(pos.x+width-count_width+scale,pos.y,pos.x+width,pos.y+row_height);
         float label_size=(arena?24.f:22.f)*scale;
         const auto extent=ImGui::GetFont()->CalcTextSizeA(label_size,FLT_MAX,0,label.c_str());

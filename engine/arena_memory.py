@@ -1,7 +1,8 @@
 # Adapted from justfaked/hs-decktracker-linux@649534be99f35cb499ed2fae371625bd04b95b1d
 # Copyright (c) 2026 justfaked. MIT: licenses/hs-decktracker-linux-MIT.txt.
 """Bounded DraftDisplay/DraftManager snapshots; never confirms logged picks."""
-from dataclasses import dataclass, field
+from collections import Counter
+from dataclasses import dataclass
 import time
 from .mono_memory import T_CLASS,T_GENERICINST,T_OBJECT,T_VALUETYPE,T_I4,T_I8,T_BOOLEAN,Mono, Obj, Process, MemoryReadError, UnsupportedLayout, MonoMissing, NotReady, Cancelled, MissingField
 from . import i18n
@@ -45,6 +46,7 @@ class DraftState:
     deck_slots: int = 0
     deck_reason: str = ''
     deck_note: str = ''
+    removing: bool = False
 
 
 def card_id(value,empty=False):
@@ -65,6 +67,9 @@ class HearthstoneMemory:
         self.process=None;self.mono=None;self.identity=None;self.pid=None;self.observed_identity=None
         self.deck_meta=dict(slots=0,reason='no_deck_object',notes=[])
         self.snapshot_start=0;self.snapshot_wall=0
+        self.removal_key=None
+        self.removal_deck=Counter()
+        self.previous_mode=''
 
     def close(self):
         process,self.process=self.process,None
@@ -173,7 +178,7 @@ class HearthstoneMemory:
                 try:copies=counts.list_ints(16)
                 except UnsupportedLayout:
                     self.deck_meta['reason']='count_layout';return []
-            if any(type(n) is not int or not 0<=n<=30 for n in copies):
+            if any(type(n) is not int or not 0<=n<=35 for n in copies):
                 self.deck_meta['reason']='count_range';return []
             total=sum(copies)
             if len(cards)+total>MAX_DECK_COPIES:
@@ -182,23 +187,48 @@ class HearthstoneMemory:
         if not cards:self.deck_meta['reason']='empty'
         return cards
 
+    def _redraft_phase(self, mode, underground, slot, key, cards, complete, partial_offer):
+        """Classify one verified pool before the next poll can replace it."""
+        if not underground or slot not in ('CARD','NONE') or mode not in ('REDRAFTING','ACTIVE_DRAFT_DECK'):
+            self.removal_key=None
+            return ''
+        if key is not None and key!=self.removal_key:self.removal_key=None
+        if not complete or partial_offer:return ''
+
+        # REDRAFTING spans both picking and cutting. A full pool establishes
+        # direction; subsequent decks must contain only surviving copies.
+        copies=Counter(cards)
+        if mode=='REDRAFTING' and len(cards)==35:
+            self.removal_key=key
+        elif self.removal_key is None or not (30<=len(cards)<=35 and copies<=self.removal_deck):
+            self.removal_key=None
+            return ''
+        self.removal_deck=copies
+        return 'complete' if len(cards)==30 else 'removal'
+
     def draft_state(self):
         display=self.mono.static('DraftDisplay','s_instance')
-        if display is None:return None
+        if display is None:
+            self.removal_key=None
+            return None
         if display.class_name!='DraftDisplay':raise UnsupportedLayout('wrong DraftDisplay instance')
         mode=enum(display['m_currentMode'],DRAFT_MODES)
-        if mode not in ('DRAFTING','REDRAFTING'):return None
+        if self.previous_mode=='ACTIVE_DRAFT_DECK' and mode=='REDRAFTING':self.removal_key=None
+        self.previous_mode=mode
+        finishing=mode=='ACTIVE_DRAFT_DECK' and self.removal_key is not None
+        if mode!='REDRAFTING' and not finishing:self.removal_key=None
+        if mode not in ('DRAFTING','REDRAFTING') and not finishing:return None
         manager=self._manager()
         underground=manager['m_undergroundActive']
         if type(underground) is not bool:raise UnsupportedLayout('invalid underground flag')
         prefix='m_currentUnderground' if underground else 'm_current'
         slot=enum(manager[prefix+'SlotType'],SLOT_TYPES)
         options=display['m_choices'];choices=[]
-        for choice in options.list_objects(3) if options else []:
+        limit=MAX_DECK_COPIES if underground and mode=='REDRAFTING' else 3
+        entries=options.list_objects(limit) if options and not finishing else []
+        for choice in entries if len(entries)==3 else []:
             package=choice.get('m_packageCardIds')
             choices.append(DraftChoice(card_id(choice['m_cardID']),tuple(card_id(c) for c in package.list_strings(30)) if package else ()))
-        # A torn/partial update must not publish one or two old candidates.
-        if len(choices)!=3:choices=[]
         wins=manager['m_undergroundWins' if underground else 'm_wins']
         losses=manager['m_undergroundLosses' if underground else 'm_losses']
         if type(wins) is not int or type(losses) is not int or not 0<=wins<=50 or not 0<=losses<=20:raise UnsupportedLayout('implausible arena record')
@@ -237,6 +267,7 @@ class HearthstoneMemory:
             except UnsupportedLayout:second_hero=hero
             if deck.get('ID')!=number or second_hero!=hero:raise NotReady('arena identity changed during snapshot')
             second=self._deck_cards(deck)
+            if mode=='REDRAFTING' and self.deck_meta!=meta:raise NotReady('draft deck layout changed during snapshot')
             # The published read owns the diagnostics; the verification read
             # must not replace its reason with its own.
             self.deck_meta=meta
@@ -247,12 +278,18 @@ class HearthstoneMemory:
             settled=wall_clock()
         elif deck is not None:
             settled=start
-        if options and choices:
+        if options and not finishing and options['_size']!=len(entries):raise NotReady('choices changed during snapshot')
+        if choices:
             if [c['m_cardID'] for c in options.list_objects(3)]!=[c.card_id for c in choices]:raise NotReady('choices changed during snapshot')
         self.snapshot_start=start
         self.snapshot_wall=max(start,settled) if deck is not None else 0
+        key=(self.identity,deck_id or deck.addr) if deck_read else None
+        complete=deck_read and meta['reason'] in ('','empty') and 'null_count' not in meta['notes']
+        phase=self._redraft_phase(mode,underground,slot,key,cards,complete,len(entries) in (1,2))
+        if finishing and phase!='complete':return None
+        if phase:choices=[]
         return DraftState(mode,slot,underground,tuple(choices),deck_id,hero,tuple(cards),wins,losses,
-                          deck is not None,meta['slots'],meta['reason'],','.join(meta.get('notes') or ()))
+                          deck is not None,meta['slots'],meta['reason'],','.join(meta.get('notes') or ()),phase=='removal')
 
     def poll(self):
         try:
