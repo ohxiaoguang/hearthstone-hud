@@ -2,6 +2,11 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
+## v1.0.11
+
+- Keep the Underground Arena deck and suggested cuts visible when the game switches draft modes before all five cuts are complete. Recommendations follow verified deck counts until 30 cards remain.
+- Arena memory diagnostics now include the raw mode, slot, snapshot count, display presence and last phase transition.
+
 ## v1.0.10
 
 - Underground Arena shows HearthArena ratings for all three redraft offers and highlights the highest score.

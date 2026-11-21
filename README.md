@@ -6,7 +6,7 @@ A [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin that 
 always-on overlay for Hearthstone on SteamOS and other Linux handhelds: your remaining
 deck, both players' played cards, and an arena drafting panel with card ratings.
 
-Current release: **v1.0.10** · [Changelog](CHANGELOG.md) · [中文说明](README.zh-CN.md)
+Current release: **v1.0.11** · [Changelog](CHANGELOG.md) · [中文说明](README.zh-CN.md)
 
 > This is an unofficial community project. It is not affiliated with, endorsed by, or
 > sponsored by Blizzard Entertainment or HearthSim. Hearthstone and its card data and art
