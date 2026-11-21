@@ -2,8 +2,8 @@
   "schema": 1,
   "source": "HearthArena tier list (static snapshot)",
   "url": "https://www.heartharena.com/tierlist",
-  "captured_at": "2026-11-20T06:54:21.440933+00:00",
-  "source_sha256": "3381cd70532b55bc6682333bc3fd0c42d25c1e5ed887d23066d24ca4515f1233",
+  "captured_at": "2026-11-21T14:50:36.089818+00:00",
+  "source_sha256": "e981865080214886f047367411455336c1aebe7989c23f85194100c07954f6b0",
   "parser_reference": "justfaked/hs-decktracker-linux@649534be99f35cb499ed2fae371625bd04b95b1d/decktracker/ratings.py (MIT)",
   "classes": {
     "DEATHKNIGHT": {
@@ -1243,59 +1243,43 @@
         "score": 130,
         "tier": "Great"
       },
-      "TTN_090": {
-        "score": 125,
+      "BE_784": {
+        "score": 129,
         "tier": "Great"
       },
-      "BE_784": {
-        "score": 124,
+      "BE_013": {
+        "score": 121,
         "tier": "Great"
       },
       "BE_287": {
         "score": 119,
         "tier": "Great"
       },
-      "BE_009": {
-        "score": 118,
+      "TTN_090": {
+        "score": 110,
         "tier": "Great"
       },
       "BE_781": {
         "score": 109,
         "tier": "Great"
       },
-      "WON_145": {
-        "score": 105,
-        "tier": "Great"
-      },
       "WW_379": {
         "score": 103,
         "tier": "Great"
       },
-      "ULD_178": {
-        "score": 103,
+      "BE_009": {
+        "score": 100,
         "tier": "Great"
-      },
-      "TTN_330": {
-        "score": 99,
-        "tier": "Good"
-      },
-      "VAC_702": {
-        "score": 98,
-        "tier": "Good"
-      },
-      "YOG_516": {
-        "score": 97,
-        "tier": "Good"
-      },
-      "BE_013": {
-        "score": 96,
-        "tier": "Good"
       },
       "WW_359": {
         "score": 96,
         "tier": "Good"
       },
       "BG31_BOB": {
+        "score": 95,
+        "tier": "Good"
+      },
+      "VAC_702": {
         "score": 95,
         "tier": "Good"
       },
@@ -1307,12 +1291,28 @@
         "score": 94,
         "tier": "Good"
       },
+      "YOG_516": {
+        "score": 94,
+        "tier": "Good"
+      },
+      "TTN_330": {
+        "score": 93,
+        "tier": "Good"
+      },
       "VAC_955": {
         "score": 91,
         "tier": "Good"
       },
       "GIFT_01": {
         "score": 91,
+        "tier": "Good"
+      },
+      "ULD_178": {
+        "score": 91,
+        "tier": "Good"
+      },
+      "DEEP_037": {
+        "score": 90,
         "tier": "Good"
       },
       "RLK_706": {
@@ -1329,6 +1329,10 @@
       },
       "CS3_024": {
         "score": 81,
+        "tier": "Above average"
+      },
+      "WON_145": {
+        "score": 80,
         "tier": "Above average"
       },
       "JAIL_EVENT_100": {
@@ -1353,6 +1357,10 @@
       },
       "CS3_025": {
         "score": 76,
+        "tier": "Average"
+      },
+      "END_037": {
+        "score": 75,
         "tier": "Average"
       },
       "RLK_223": {
@@ -1381,10 +1389,6 @@
       },
       "TIME_038": {
         "score": 71,
-        "tier": "Average"
-      },
-      "END_037": {
-        "score": 70,
         "tier": "Average"
       },
       "RLK_086": {
@@ -1419,6 +1423,10 @@
         "score": 61,
         "tier": "Below average"
       },
+      "BE_017": {
+        "score": 58,
+        "tier": "Bad"
+      },
       "VAC_321": {
         "score": 55,
         "tier": "Bad"
@@ -1443,16 +1451,8 @@
         "score": 52,
         "tier": "Bad"
       },
-      "DEEP_037": {
-        "score": 52,
-        "tier": "Bad"
-      },
       "CATA_EVENT_110": {
         "score": 50,
-        "tier": "Bad"
-      },
-      "BE_017": {
-        "score": 45,
         "tier": "Bad"
       },
       "WORK_043": {
@@ -2657,49 +2657,29 @@
         "score": 15,
         "tier": "Terrible"
       },
+      "BE_013": {
+        "score": 138,
+        "tier": "Great"
+      },
       "TTN_862": {
         "score": 130,
         "tier": "Great"
       },
-      "TTN_090": {
-        "score": 125,
-        "tier": "Great"
-      },
       "BE_784": {
-        "score": 124,
+        "score": 129,
         "tier": "Great"
       },
-      "BE_009": {
-        "score": 118,
-        "tier": "Great"
-      },
-      "BE_013": {
-        "score": 113,
-        "tier": "Great"
-      },
-      "WON_145": {
-        "score": 105,
+      "TTN_090": {
+        "score": 110,
         "tier": "Great"
       },
       "WW_379": {
         "score": 105,
         "tier": "Great"
       },
-      "ULD_178": {
-        "score": 103,
+      "BE_009": {
+        "score": 100,
         "tier": "Great"
-      },
-      "TTN_330": {
-        "score": 99,
-        "tier": "Good"
-      },
-      "VAC_702": {
-        "score": 98,
-        "tier": "Good"
-      },
-      "YOG_516": {
-        "score": 97,
-        "tier": "Good"
       },
       "WW_359": {
         "score": 96,
@@ -2709,8 +2689,20 @@
         "score": 95,
         "tier": "Good"
       },
+      "VAC_702": {
+        "score": 95,
+        "tier": "Good"
+      },
       "KAR_061": {
         "score": 94,
+        "tier": "Good"
+      },
+      "YOG_516": {
+        "score": 94,
+        "tier": "Good"
+      },
+      "TTN_330": {
+        "score": 93,
         "tier": "Good"
       },
       "WW_400": {
@@ -2725,6 +2717,14 @@
         "score": 91,
         "tier": "Good"
       },
+      "ULD_178": {
+        "score": 91,
+        "tier": "Good"
+      },
+      "DEEP_037": {
+        "score": 90,
+        "tier": "Good"
+      },
       "END_006": {
         "score": 86,
         "tier": "Above average"
@@ -2735,6 +2735,10 @@
       },
       "CS3_024": {
         "score": 81,
+        "tier": "Above average"
+      },
+      "WON_145": {
+        "score": 80,
         "tier": "Above average"
       },
       "JAIL_EVENT_100": {
@@ -2759,6 +2763,10 @@
       },
       "CS3_025": {
         "score": 76,
+        "tier": "Average"
+      },
+      "END_037": {
+        "score": 75,
         "tier": "Average"
       },
       "VAC_933": {
@@ -2787,10 +2795,6 @@
       },
       "EX1_189": {
         "score": 71,
-        "tier": "Average"
-      },
-      "END_037": {
-        "score": 70,
         "tier": "Average"
       },
       "TIME_038": {
@@ -2849,10 +2853,6 @@
         "score": 52,
         "tier": "Bad"
       },
-      "DEEP_037": {
-        "score": 52,
-        "tier": "Bad"
-      },
       "VAC_446": {
         "score": 51,
         "tier": "Bad"
@@ -2862,7 +2862,7 @@
         "tier": "Bad"
       },
       "BE_017": {
-        "score": 47,
+        "score": 45,
         "tier": "Bad"
       },
       "WORK_043": {
@@ -4087,57 +4087,37 @@
         "score": 15,
         "tier": "Terrible"
       },
-      "TTN_090": {
-        "score": 125,
+      "BE_784": {
+        "score": 129,
         "tier": "Great"
       },
       "WW_824": {
         "score": 125,
         "tier": "Great"
       },
-      "BE_784": {
-        "score": 124,
-        "tier": "Great"
-      },
       "TTN_903": {
         "score": 122,
         "tier": "Great"
       },
-      "BE_009": {
-        "score": 118,
+      "BE_013": {
+        "score": 121,
         "tier": "Great"
       },
-      "WON_145": {
-        "score": 105,
+      "TTN_090": {
+        "score": 110,
         "tier": "Great"
       },
       "WW_379": {
         "score": 105,
         "tier": "Great"
       },
-      "ULD_178": {
-        "score": 103,
-        "tier": "Great"
-      },
       "WW_825": {
         "score": 100,
         "tier": "Great"
       },
-      "TTN_330": {
-        "score": 99,
-        "tier": "Good"
-      },
-      "VAC_702": {
-        "score": 98,
-        "tier": "Good"
-      },
-      "YOG_516": {
-        "score": 97,
-        "tier": "Good"
-      },
-      "BE_013": {
-        "score": 96,
-        "tier": "Good"
+      "BE_009": {
+        "score": 100,
+        "tier": "Great"
       },
       "WW_359": {
         "score": 96,
@@ -4147,8 +4127,20 @@
         "score": 95,
         "tier": "Good"
       },
+      "VAC_702": {
+        "score": 95,
+        "tier": "Good"
+      },
       "KAR_061": {
         "score": 94,
+        "tier": "Good"
+      },
+      "YOG_516": {
+        "score": 94,
+        "tier": "Good"
+      },
+      "TTN_330": {
+        "score": 93,
         "tier": "Good"
       },
       "VAC_955": {
@@ -4159,12 +4151,24 @@
         "score": 91,
         "tier": "Good"
       },
+      "ULD_178": {
+        "score": 91,
+        "tier": "Good"
+      },
+      "DEEP_037": {
+        "score": 90,
+        "tier": "Good"
+      },
       "EX1_002": {
         "score": 83,
         "tier": "Above average"
       },
       "CS3_024": {
         "score": 81,
+        "tier": "Above average"
+      },
+      "WON_145": {
+        "score": 80,
         "tier": "Above average"
       },
       "JAIL_EVENT_100": {
@@ -4185,6 +4189,10 @@
       },
       "CS3_025": {
         "score": 76,
+        "tier": "Average"
+      },
+      "END_037": {
+        "score": 75,
         "tier": "Average"
       },
       "WORK_027": {
@@ -4216,10 +4224,6 @@
         "tier": "Average"
       },
       "VAC_506": {
-        "score": 70,
-        "tier": "Average"
-      },
-      "END_037": {
         "score": 70,
         "tier": "Average"
       },
@@ -4276,10 +4280,6 @@
         "tier": "Bad"
       },
       "EX1_014": {
-        "score": 52,
-        "tier": "Bad"
-      },
-      "DEEP_037": {
         "score": 52,
         "tier": "Bad"
       },
@@ -5509,48 +5509,28 @@
         "score": 137,
         "tier": "Great"
       },
-      "TTN_090": {
-        "score": 125,
-        "tier": "Great"
-      },
       "BE_784": {
-        "score": 124,
+        "score": 123,
         "tier": "Great"
       },
-      "BE_009": {
-        "score": 118,
+      "BE_013": {
+        "score": 121,
         "tier": "Great"
       },
-      "WON_145": {
-        "score": 105,
+      "TTN_090": {
+        "score": 110,
         "tier": "Great"
       },
       "WW_379": {
         "score": 105,
         "tier": "Great"
       },
-      "ULD_178": {
-        "score": 103,
+      "BE_009": {
+        "score": 100,
         "tier": "Great"
-      },
-      "TTN_330": {
-        "score": 99,
-        "tier": "Good"
-      },
-      "VAC_702": {
-        "score": 98,
-        "tier": "Good"
       },
       "WW_814": {
         "score": 97,
-        "tier": "Good"
-      },
-      "YOG_516": {
-        "score": 97,
-        "tier": "Good"
-      },
-      "BE_013": {
-        "score": 96,
         "tier": "Good"
       },
       "TTN_752": {
@@ -5565,8 +5545,20 @@
         "score": 95,
         "tier": "Good"
       },
+      "VAC_702": {
+        "score": 95,
+        "tier": "Good"
+      },
       "KAR_061": {
         "score": 94,
+        "tier": "Good"
+      },
+      "YOG_516": {
+        "score": 94,
+        "tier": "Good"
+      },
+      "TTN_330": {
+        "score": 93,
         "tier": "Good"
       },
       "TIME_609": {
@@ -5581,12 +5573,24 @@
         "score": 91,
         "tier": "Good"
       },
+      "ULD_178": {
+        "score": 91,
+        "tier": "Good"
+      },
+      "DEEP_037": {
+        "score": 90,
+        "tier": "Good"
+      },
       "VAC_415": {
         "score": 90,
         "tier": "Good"
       },
       "EX1_002": {
         "score": 83,
+        "tier": "Above average"
+      },
+      "WON_145": {
+        "score": 80,
         "tier": "Above average"
       },
       "JAIL_EVENT_100": {
@@ -5603,6 +5607,10 @@
       },
       "CS3_025": {
         "score": 76,
+        "tier": "Average"
+      },
+      "END_037": {
+        "score": 75,
         "tier": "Average"
       },
       "SCH_717": {
@@ -5637,10 +5645,6 @@
         "score": 70,
         "tier": "Average"
       },
-      "END_037": {
-        "score": 70,
-        "tier": "Average"
-      },
       "BE_732": {
         "score": 70,
         "tier": "Average"
@@ -5669,10 +5673,6 @@
         "score": 63,
         "tier": "Below average"
       },
-      "BE_017": {
-        "score": 63,
-        "tier": "Below average"
-      },
       "WW_440": {
         "score": 62,
         "tier": "Below average"
@@ -5689,16 +5689,16 @@
         "score": 55,
         "tier": "Bad"
       },
+      "BE_017": {
+        "score": 55,
+        "tier": "Bad"
+      },
       "WW_421": {
         "score": 53,
         "tier": "Bad"
       },
       "TIME_063": {
         "score": 53,
-        "tier": "Bad"
-      },
-      "DEEP_037": {
-        "score": 52,
         "tier": "Bad"
       },
       "VAC_446": {
@@ -6931,49 +6931,29 @@
         "score": 15,
         "tier": "Terrible"
       },
-      "TTN_090": {
-        "score": 125,
-        "tier": "Great"
-      },
       "BE_784": {
-        "score": 124,
+        "score": 123,
         "tier": "Great"
       },
-      "BE_009": {
-        "score": 118,
+      "BE_013": {
+        "score": 121,
         "tier": "Great"
       },
-      "WON_145": {
-        "score": 105,
+      "TTN_090": {
+        "score": 110,
         "tier": "Great"
       },
       "WW_379": {
         "score": 105,
         "tier": "Great"
       },
-      "ULD_178": {
-        "score": 103,
-        "tier": "Great"
-      },
       "TTN_075": {
         "score": 101,
         "tier": "Great"
       },
-      "TTN_330": {
-        "score": 99,
-        "tier": "Good"
-      },
-      "VAC_702": {
-        "score": 98,
-        "tier": "Good"
-      },
-      "YOG_516": {
-        "score": 97,
-        "tier": "Good"
-      },
-      "BE_013": {
-        "score": 96,
-        "tier": "Good"
+      "BE_009": {
+        "score": 100,
+        "tier": "Great"
       },
       "WW_359": {
         "score": 96,
@@ -6983,8 +6963,24 @@
         "score": 95,
         "tier": "Good"
       },
+      "VAC_702": {
+        "score": 95,
+        "tier": "Good"
+      },
       "KAR_061": {
         "score": 94,
+        "tier": "Good"
+      },
+      "YOG_516": {
+        "score": 94,
+        "tier": "Good"
+      },
+      "TTN_330": {
+        "score": 93,
+        "tier": "Good"
+      },
+      "DEEP_037": {
+        "score": 93,
         "tier": "Good"
       },
       "VAC_955": {
@@ -6995,8 +6991,16 @@
         "score": 91,
         "tier": "Good"
       },
+      "ULD_178": {
+        "score": 91,
+        "tier": "Good"
+      },
       "EX1_002": {
         "score": 81,
+        "tier": "Above average"
+      },
+      "WON_145": {
+        "score": 80,
         "tier": "Above average"
       },
       "DAL_575": {
@@ -7035,6 +7039,10 @@
         "score": 76,
         "tier": "Average"
       },
+      "END_037": {
+        "score": 75,
+        "tier": "Average"
+      },
       "WW_429": {
         "score": 75,
         "tier": "Average"
@@ -7071,10 +7079,6 @@
         "score": 71,
         "tier": "Average"
       },
-      "END_037": {
-        "score": 70,
-        "tier": "Average"
-      },
       "END_036": {
         "score": 70,
         "tier": "Average"
@@ -7104,10 +7108,6 @@
         "tier": "Bad"
       },
       "WW_421": {
-        "score": 53,
-        "tier": "Bad"
-      },
-      "DEEP_037": {
         "score": 53,
         "tier": "Bad"
       },
@@ -7163,12 +7163,12 @@
         "score": 30,
         "tier": "Terrible"
       },
-      "TIME_024": {
-        "score": 25,
+      "BE_017": {
+        "score": 30,
         "tier": "Terrible"
       },
-      "BE_017": {
-        "score": 20,
+      "TIME_024": {
+        "score": 25,
         "tier": "Terrible"
       },
       "CFM_670": {
@@ -8365,53 +8365,33 @@
         "score": 129,
         "tier": "Great"
       },
-      "TTN_090": {
-        "score": 125,
+      "BE_784": {
+        "score": 129,
         "tier": "Great"
       },
-      "BE_784": {
-        "score": 124,
+      "BE_013": {
+        "score": 121,
         "tier": "Great"
       },
       "TIME_009": {
         "score": 119,
         "tier": "Great"
       },
-      "BE_009": {
-        "score": 118,
-        "tier": "Great"
-      },
       "TTN_858": {
         "score": 117,
         "tier": "Great"
       },
-      "WON_145": {
-        "score": 105,
+      "TTN_090": {
+        "score": 110,
         "tier": "Great"
       },
       "WW_379": {
         "score": 105,
         "tier": "Great"
       },
-      "ULD_178": {
-        "score": 103,
+      "BE_009": {
+        "score": 100,
         "tier": "Great"
-      },
-      "TTN_330": {
-        "score": 99,
-        "tier": "Good"
-      },
-      "VAC_702": {
-        "score": 98,
-        "tier": "Good"
-      },
-      "YOG_516": {
-        "score": 97,
-        "tier": "Good"
-      },
-      "BE_013": {
-        "score": 96,
-        "tier": "Good"
       },
       "WW_359": {
         "score": 96,
@@ -8421,8 +8401,20 @@
         "score": 95,
         "tier": "Good"
       },
+      "VAC_702": {
+        "score": 95,
+        "tier": "Good"
+      },
       "KAR_061": {
         "score": 94,
+        "tier": "Good"
+      },
+      "YOG_516": {
+        "score": 94,
+        "tier": "Good"
+      },
+      "TTN_330": {
+        "score": 93,
         "tier": "Good"
       },
       "VAC_923": {
@@ -8435,6 +8427,14 @@
       },
       "GIFT_01": {
         "score": 91,
+        "tier": "Good"
+      },
+      "ULD_178": {
+        "score": 91,
+        "tier": "Good"
+      },
+      "DEEP_037": {
+        "score": 90,
         "tier": "Good"
       },
       "EX1_383": {
@@ -8451,6 +8451,10 @@
       },
       "CS3_024": {
         "score": 81,
+        "tier": "Above average"
+      },
+      "WON_145": {
+        "score": 80,
         "tier": "Above average"
       },
       "TIME_EVENT_998": {
@@ -8493,6 +8497,10 @@
         "score": 76,
         "tier": "Average"
       },
+      "END_037": {
+        "score": 75,
+        "tier": "Average"
+      },
       "WORK_027": {
         "score": 74,
         "tier": "Average"
@@ -8515,10 +8523,6 @@
       },
       "TIME_038": {
         "score": 71,
-        "tier": "Average"
-      },
-      "END_037": {
-        "score": 70,
         "tier": "Average"
       },
       "END_036": {
@@ -8569,10 +8573,6 @@
         "score": 52,
         "tier": "Bad"
       },
-      "DEEP_037": {
-        "score": 52,
-        "tier": "Bad"
-      },
       "CATA_EVENT_110": {
         "score": 50,
         "tier": "Bad"
@@ -8597,12 +8597,12 @@
         "score": 35,
         "tier": "Terrible"
       },
-      "TIME_024": {
-        "score": 25,
+      "BE_017": {
+        "score": 28,
         "tier": "Terrible"
       },
-      "BE_017": {
-        "score": 20,
+      "TIME_024": {
+        "score": 25,
         "tier": "Terrible"
       },
       "CFM_670": {
@@ -9791,52 +9791,32 @@
         "score": 17,
         "tier": "Terrible"
       },
+      "BE_013": {
+        "score": 133,
+        "tier": "Great"
+      },
       "TIME_890": {
         "score": 132,
         "tier": "Great"
       },
-      "TTN_090": {
-        "score": 125,
-        "tier": "Great"
-      },
       "BE_784": {
-        "score": 124,
+        "score": 123,
         "tier": "Great"
       },
-      "BE_009": {
-        "score": 118,
-        "tier": "Great"
-      },
-      "WON_145": {
-        "score": 105,
-        "tier": "Great"
-      },
-      "BE_013": {
-        "score": 105,
+      "TTN_090": {
+        "score": 110,
         "tier": "Great"
       },
       "WW_379": {
         "score": 105,
         "tier": "Great"
       },
-      "ULD_178": {
-        "score": 103,
+      "BE_009": {
+        "score": 100,
         "tier": "Great"
-      },
-      "TTN_330": {
-        "score": 99,
-        "tier": "Good"
       },
       "WW_392": {
         "score": 98,
-        "tier": "Good"
-      },
-      "VAC_702": {
-        "score": 98,
-        "tier": "Good"
-      },
-      "YOG_516": {
-        "score": 97,
         "tier": "Good"
       },
       "TTN_481": {
@@ -9851,8 +9831,20 @@
         "score": 95,
         "tier": "Good"
       },
+      "VAC_702": {
+        "score": 95,
+        "tier": "Good"
+      },
       "KAR_061": {
         "score": 94,
+        "tier": "Good"
+      },
+      "YOG_516": {
+        "score": 94,
+        "tier": "Good"
+      },
+      "TTN_330": {
+        "score": 93,
         "tier": "Good"
       },
       "EX1_198": {
@@ -9865,6 +9857,14 @@
       },
       "GIFT_01": {
         "score": 91,
+        "tier": "Good"
+      },
+      "ULD_178": {
+        "score": 91,
+        "tier": "Good"
+      },
+      "DEEP_037": {
+        "score": 90,
         "tier": "Good"
       },
       "TIME_435": {
@@ -9887,6 +9887,10 @@
         "score": 81,
         "tier": "Above average"
       },
+      "WON_145": {
+        "score": 80,
+        "tier": "Above average"
+      },
       "JAIL_EVENT_100": {
         "score": 80,
         "tier": "Above average"
@@ -9905,6 +9909,10 @@
       },
       "TTN_716": {
         "score": 76,
+        "tier": "Average"
+      },
+      "END_037": {
+        "score": 75,
         "tier": "Average"
       },
       "BE_790": {
@@ -9935,10 +9943,6 @@
         "score": 71,
         "tier": "Average"
       },
-      "END_037": {
-        "score": 70,
-        "tier": "Average"
-      },
       "END_036": {
         "score": 70,
         "tier": "Average"
@@ -9952,6 +9956,10 @@
         "tier": "Below average"
       },
       "TIME_064": {
+        "score": 60,
+        "tier": "Below average"
+      },
+      "BE_017": {
         "score": 60,
         "tier": "Below average"
       },
@@ -9979,10 +9987,6 @@
         "score": 52,
         "tier": "Bad"
       },
-      "DEEP_037": {
-        "score": 52,
-        "tier": "Bad"
-      },
       "YOG_520": {
         "score": 52,
         "tier": "Bad"
@@ -9993,10 +9997,6 @@
       },
       "CATA_EVENT_110": {
         "score": 50,
-        "tier": "Bad"
-      },
-      "BE_017": {
-        "score": 48,
         "tier": "Bad"
       },
       "BE_227": {
@@ -11221,28 +11221,24 @@
         "score": 125,
         "tier": "Great"
       },
-      "TTN_090": {
-        "score": 125,
-        "tier": "Great"
-      },
       "BE_784": {
-        "score": 124,
+        "score": 123,
         "tier": "Great"
       },
-      "BE_009": {
-        "score": 118,
+      "BE_013": {
+        "score": 121,
         "tier": "Great"
       },
       "BE_703": {
         "score": 110,
         "tier": "Great"
       },
-      "VAC_464": {
-        "score": 109,
+      "TTN_090": {
+        "score": 110,
         "tier": "Great"
       },
-      "WON_145": {
-        "score": 105,
+      "VAC_464": {
+        "score": 109,
         "tier": "Great"
       },
       "WW_379": {
@@ -11253,25 +11249,9 @@
         "score": 105,
         "tier": "Great"
       },
-      "ULD_178": {
-        "score": 103,
+      "BE_009": {
+        "score": 100,
         "tier": "Great"
-      },
-      "TTN_330": {
-        "score": 99,
-        "tier": "Good"
-      },
-      "VAC_702": {
-        "score": 98,
-        "tier": "Good"
-      },
-      "YOG_516": {
-        "score": 97,
-        "tier": "Good"
-      },
-      "BE_013": {
-        "score": 96,
-        "tier": "Good"
       },
       "WW_359": {
         "score": 96,
@@ -11281,8 +11261,20 @@
         "score": 95,
         "tier": "Good"
       },
+      "VAC_702": {
+        "score": 95,
+        "tier": "Good"
+      },
       "KAR_061": {
         "score": 94,
+        "tier": "Good"
+      },
+      "YOG_516": {
+        "score": 94,
+        "tier": "Good"
+      },
+      "TTN_330": {
+        "score": 93,
         "tier": "Good"
       },
       "TTN_721": {
@@ -11297,6 +11289,14 @@
         "score": 91,
         "tier": "Good"
       },
+      "ULD_178": {
+        "score": 91,
+        "tier": "Good"
+      },
+      "DEEP_037": {
+        "score": 90,
+        "tier": "Good"
+      },
       "WW_364": {
         "score": 90,
         "tier": "Good"
@@ -11307,6 +11307,10 @@
       },
       "CS3_024": {
         "score": 81,
+        "tier": "Above average"
+      },
+      "WON_145": {
+        "score": 80,
         "tier": "Above average"
       },
       "JAIL_EVENT_100": {
@@ -11327,6 +11331,10 @@
       },
       "CS3_025": {
         "score": 76,
+        "tier": "Average"
+      },
+      "END_037": {
+        "score": 75,
         "tier": "Average"
       },
       "WORK_027": {
@@ -11355,10 +11363,6 @@
       },
       "TIME_038": {
         "score": 71,
-        "tier": "Average"
-      },
-      "END_037": {
-        "score": 70,
         "tier": "Average"
       },
       "END_036": {
@@ -11405,10 +11409,6 @@
         "score": 52,
         "tier": "Bad"
       },
-      "DEEP_037": {
-        "score": 52,
-        "tier": "Bad"
-      },
       "VAC_446": {
         "score": 51,
         "tier": "Bad"
@@ -11422,7 +11422,7 @@
         "tier": "Bad"
       },
       "BE_017": {
-        "score": 48,
+        "score": 45,
         "tier": "Bad"
       },
       "WORK_043": {
@@ -12635,60 +12635,40 @@
         "score": 15,
         "tier": "Terrible"
       },
+      "BE_013": {
+        "score": 143,
+        "tier": "Great"
+      },
       "WW_010": {
         "score": 135,
         "tier": "Great"
       },
-      "TTN_090": {
-        "score": 125,
-        "tier": "Great"
-      },
       "BE_784": {
-        "score": 124,
+        "score": 123,
         "tier": "Great"
       },
-      "BE_013": {
-        "score": 118,
-        "tier": "Great"
-      },
-      "BE_009": {
-        "score": 118,
-        "tier": "Great"
-      },
-      "WON_145": {
-        "score": 105,
+      "TTN_090": {
+        "score": 110,
         "tier": "Great"
       },
       "WW_379": {
         "score": 105,
         "tier": "Great"
       },
-      "ULD_178": {
-        "score": 103,
-        "tier": "Great"
-      },
       "TIME_013": {
         "score": 102,
+        "tier": "Great"
+      },
+      "BE_009": {
+        "score": 100,
         "tier": "Great"
       },
       "WW_026": {
         "score": 100,
         "tier": "Great"
       },
-      "TTN_330": {
-        "score": 99,
-        "tier": "Good"
-      },
       "BE_337": {
         "score": 99,
-        "tier": "Good"
-      },
-      "VAC_702": {
-        "score": 98,
-        "tier": "Good"
-      },
-      "YOG_516": {
-        "score": 97,
         "tier": "Good"
       },
       "TIME_209": {
@@ -12703,8 +12683,24 @@
         "score": 95,
         "tier": "Good"
       },
+      "VAC_702": {
+        "score": 95,
+        "tier": "Good"
+      },
+      "DEEP_037": {
+        "score": 95,
+        "tier": "Good"
+      },
       "KAR_061": {
         "score": 94,
+        "tier": "Good"
+      },
+      "YOG_516": {
+        "score": 94,
+        "tier": "Good"
+      },
+      "TTN_330": {
+        "score": 93,
         "tier": "Good"
       },
       "VAC_955": {
@@ -12715,12 +12711,20 @@
         "score": 91,
         "tier": "Good"
       },
+      "ULD_178": {
+        "score": 91,
+        "tier": "Good"
+      },
       "EX1_002": {
         "score": 83,
         "tier": "Above average"
       },
       "CS3_024": {
         "score": 81,
+        "tier": "Above average"
+      },
+      "WON_145": {
+        "score": 80,
         "tier": "Above average"
       },
       "JAIL_EVENT_100": {
@@ -12745,6 +12749,10 @@
       },
       "CS3_025": {
         "score": 76,
+        "tier": "Average"
+      },
+      "END_037": {
+        "score": 75,
         "tier": "Average"
       },
       "WORK_027": {
@@ -12776,10 +12784,6 @@
         "tier": "Average"
       },
       "VAC_449": {
-        "score": 70,
-        "tier": "Average"
-      },
-      "END_037": {
         "score": 70,
         "tier": "Average"
       },
@@ -12820,10 +12824,6 @@
         "tier": "Bad"
       },
       "WW_421": {
-        "score": 53,
-        "tier": "Bad"
-      },
-      "DEEP_037": {
         "score": 53,
         "tier": "Bad"
       },
@@ -14061,24 +14061,16 @@
         "score": 10,
         "tier": "Terrible"
       },
-      "TTN_090": {
-        "score": 125,
+      "BE_013": {
+        "score": 135,
         "tier": "Great"
       },
       "BE_784": {
-        "score": 124,
+        "score": 123,
         "tier": "Great"
       },
-      "BE_009": {
-        "score": 118,
-        "tier": "Great"
-      },
-      "BE_013": {
+      "TTN_090": {
         "score": 110,
-        "tier": "Great"
-      },
-      "WON_145": {
-        "score": 105,
         "tier": "Great"
       },
       "WW_379": {
@@ -14089,25 +14081,13 @@
         "score": 103,
         "tier": "Great"
       },
-      "ULD_178": {
-        "score": 103,
-        "tier": "Great"
-      },
       "WW_091": {
         "score": 102,
         "tier": "Great"
       },
-      "TTN_330": {
-        "score": 99,
-        "tier": "Good"
-      },
-      "VAC_702": {
-        "score": 98,
-        "tier": "Good"
-      },
-      "YOG_516": {
-        "score": 97,
-        "tier": "Good"
+      "BE_009": {
+        "score": 100,
+        "tier": "Great"
       },
       "WW_359": {
         "score": 96,
@@ -14117,12 +14097,24 @@
         "score": 95,
         "tier": "Good"
       },
+      "VAC_702": {
+        "score": 95,
+        "tier": "Good"
+      },
       "WW_437": {
         "score": 95,
         "tier": "Good"
       },
       "KAR_061": {
         "score": 94,
+        "tier": "Good"
+      },
+      "YOG_516": {
+        "score": 94,
+        "tier": "Good"
+      },
+      "TTN_330": {
+        "score": 93,
         "tier": "Good"
       },
       "EX1_323": {
@@ -14141,12 +14133,24 @@
         "score": 91,
         "tier": "Good"
       },
+      "ULD_178": {
+        "score": 91,
+        "tier": "Good"
+      },
+      "DEEP_037": {
+        "score": 90,
+        "tier": "Good"
+      },
       "EX1_002": {
         "score": 83,
         "tier": "Above average"
       },
       "CS3_024": {
         "score": 81,
+        "tier": "Above average"
+      },
+      "WON_145": {
+        "score": 80,
         "tier": "Above average"
       },
       "JAIL_EVENT_100": {
@@ -14169,6 +14173,10 @@
         "score": 76,
         "tier": "Average"
       },
+      "END_037": {
+        "score": 75,
+        "tier": "Average"
+      },
       "WORK_027": {
         "score": 74,
         "tier": "Average"
@@ -14187,10 +14195,6 @@
       },
       "TIME_038": {
         "score": 71,
-        "tier": "Average"
-      },
-      "END_037": {
-        "score": 70,
         "tier": "Average"
       },
       "END_036": {
@@ -14250,10 +14254,6 @@
         "tier": "Bad"
       },
       "EX1_014": {
-        "score": 52,
-        "tier": "Bad"
-      },
-      "DEEP_037": {
         "score": 52,
         "tier": "Bad"
       },
@@ -15471,28 +15471,24 @@
         "score": 1,
         "tier": "Terrible"
       },
-      "TTN_090": {
-        "score": 125,
-        "tier": "Great"
-      },
       "BE_784": {
-        "score": 124,
+        "score": 123,
         "tier": "Great"
       },
-      "BE_009": {
-        "score": 118,
+      "BE_013": {
+        "score": 121,
         "tier": "Great"
       },
       "BE_055": {
         "score": 111,
         "tier": "Great"
       },
-      "TTN_415": {
-        "score": 106,
+      "TTN_090": {
+        "score": 110,
         "tier": "Great"
       },
-      "WON_145": {
-        "score": 105,
+      "TTN_415": {
+        "score": 106,
         "tier": "Great"
       },
       "WW_379": {
@@ -15503,25 +15499,9 @@
         "score": 104,
         "tier": "Great"
       },
-      "ULD_178": {
-        "score": 103,
+      "BE_009": {
+        "score": 100,
         "tier": "Great"
-      },
-      "TTN_330": {
-        "score": 99,
-        "tier": "Good"
-      },
-      "VAC_702": {
-        "score": 98,
-        "tier": "Good"
-      },
-      "YOG_516": {
-        "score": 97,
-        "tier": "Good"
-      },
-      "BE_013": {
-        "score": 96,
-        "tier": "Good"
       },
       "TTN_811": {
         "score": 96,
@@ -15535,8 +15515,20 @@
         "score": 95,
         "tier": "Good"
       },
+      "VAC_702": {
+        "score": 95,
+        "tier": "Good"
+      },
       "KAR_061": {
         "score": 94,
+        "tier": "Good"
+      },
+      "YOG_516": {
+        "score": 94,
+        "tier": "Good"
+      },
+      "TTN_330": {
+        "score": 93,
         "tier": "Good"
       },
       "YOG_500": {
@@ -15549,6 +15541,14 @@
       },
       "GIFT_01": {
         "score": 91,
+        "tier": "Good"
+      },
+      "ULD_178": {
+        "score": 91,
+        "tier": "Good"
+      },
+      "DEEP_037": {
+        "score": 90,
         "tier": "Good"
       },
       "TIME_850": {
@@ -15565,6 +15565,10 @@
       },
       "CS3_024": {
         "score": 81,
+        "tier": "Above average"
+      },
+      "WON_145": {
+        "score": 80,
         "tier": "Above average"
       },
       "WW_372": {
@@ -15591,6 +15595,10 @@
         "score": 76,
         "tier": "Average"
       },
+      "END_037": {
+        "score": 75,
+        "tier": "Average"
+      },
       "WORK_027": {
         "score": 74,
         "tier": "Average"
@@ -15613,10 +15621,6 @@
       },
       "TIME_038": {
         "score": 71,
-        "tier": "Average"
-      },
-      "END_037": {
-        "score": 70,
         "tier": "Average"
       },
       "END_036": {
@@ -15660,10 +15664,6 @@
         "tier": "Bad"
       },
       "EX1_014": {
-        "score": 52,
-        "tier": "Bad"
-      },
-      "DEEP_037": {
         "score": 52,
         "tier": "Bad"
       },
@@ -16781,45 +16781,25 @@
         "score": 16,
         "tier": "Terrible"
       },
-      "TTN_090": {
-        "score": 125,
-        "tier": "Great"
-      },
       "BE_784": {
-        "score": 124,
+        "score": 123,
         "tier": "Great"
       },
-      "BE_009": {
-        "score": 118,
+      "BE_013": {
+        "score": 121,
         "tier": "Great"
       },
-      "WON_145": {
-        "score": 105,
+      "TTN_090": {
+        "score": 110,
         "tier": "Great"
       },
       "WW_379": {
         "score": 105,
         "tier": "Great"
       },
-      "ULD_178": {
-        "score": 103,
+      "BE_009": {
+        "score": 100,
         "tier": "Great"
-      },
-      "TTN_330": {
-        "score": 99,
-        "tier": "Good"
-      },
-      "VAC_702": {
-        "score": 98,
-        "tier": "Good"
-      },
-      "YOG_516": {
-        "score": 97,
-        "tier": "Good"
-      },
-      "BE_013": {
-        "score": 96,
-        "tier": "Good"
       },
       "WW_359": {
         "score": 96,
@@ -16829,8 +16809,20 @@
         "score": 95,
         "tier": "Good"
       },
+      "VAC_702": {
+        "score": 95,
+        "tier": "Good"
+      },
       "KAR_061": {
         "score": 94,
+        "tier": "Good"
+      },
+      "YOG_516": {
+        "score": 94,
+        "tier": "Good"
+      },
+      "TTN_330": {
+        "score": 93,
         "tier": "Good"
       },
       "VAC_955": {
@@ -16841,12 +16833,24 @@
         "score": 91,
         "tier": "Good"
       },
+      "ULD_178": {
+        "score": 91,
+        "tier": "Good"
+      },
+      "DEEP_037": {
+        "score": 90,
+        "tier": "Good"
+      },
       "EX1_002": {
         "score": 83,
         "tier": "Above average"
       },
       "CS3_024": {
         "score": 81,
+        "tier": "Above average"
+      },
+      "WON_145": {
+        "score": 80,
         "tier": "Above average"
       },
       "JAIL_EVENT_100": {
@@ -16867,6 +16871,10 @@
       },
       "CS3_025": {
         "score": 76,
+        "tier": "Average"
+      },
+      "END_037": {
+        "score": 75,
         "tier": "Average"
       },
       "WORK_027": {
@@ -16891,10 +16899,6 @@
       },
       "TIME_038": {
         "score": 71,
-        "tier": "Average"
-      },
-      "END_037": {
-        "score": 70,
         "tier": "Average"
       },
       "END_036": {
@@ -16934,10 +16938,6 @@
         "tier": "Bad"
       },
       "EX1_014": {
-        "score": 52,
-        "tier": "Bad"
-      },
-      "DEEP_037": {
         "score": 52,
         "tier": "Bad"
       },
