@@ -113,7 +113,7 @@ class ArenaPreview:
         picks.sort(key=mana_order)
         count=len(picks)
         stage='none';slot='CARD';drafting=False;candidates=[]
-        if state is not None and state.mode in ('DRAFTING','REDRAFTING'):
+        if state is not None and (state.removing or state.mode in ('DRAFTING','REDRAFTING')):
             slot=state.slot
             stage={'HERO':'hero_selection','HERO_POWER':'hero_power_selection',
                    'CARD':'redrafting' if state.mode=='REDRAFTING' else 'card_selection'}.get(slot,'none')

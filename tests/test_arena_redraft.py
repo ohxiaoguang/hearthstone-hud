@@ -107,6 +107,38 @@ class RedraftTests(unittest.TestCase):
         self.write(self.slots[2], 'm_count', 5)
         self.assertFalse(self.marked(self.view()))  # A copy appeared while cutting.
 
+    def test_active_mode_can_precede_or_follow_the_first_full_pool(self):
+        for first_mode in ('REDRAFTING','ACTIVE_DRAFT_DECK'):
+            with self.subTest(first_mode=first_mode):
+                self.set_mode('REDRAFTING')
+                self.write(self.slots[0], 'm_count', 25)
+                self.view()
+                self.set_mode(first_mode)
+                self.write(self.display['m_choices'], '_size', 0)
+                self.write(self.slots[0], 'm_count', 26)
+                self.assertEqual(self.view()['stage'], 'removal')
+                self.set_mode('ACTIVE_DRAFT_DECK')
+                for count in range(35,29,-1):
+                    self.write(self.slots[0], 'm_count', count-9)
+                    view=self.view()
+                    self.assertEqual(len(view['picks']), count)
+                    self.assertEqual(len(self.marked(view)), count-30)
+                    self.assertFalse(view['candidates'])
+                    self.assertEqual(view['memory']['snapshot_cards'], count)
+                    self.assertIn('ACTIVE_DRAFT_DECK', view['memory']['last_transition'])
+
+    def test_confirmed_pool_can_outlive_display(self):
+        self.write(self.slots[0], 'm_count', 26)
+        self.assertEqual(self.view()['stage'], 'removal')
+        self.heap.set_static(self.display.klass, 's_instance', None)
+        self.write(self.slots[0], 'm_count', 25)
+        view=self.view()
+        self.assertFalse(view['memory']['display_present'])
+        self.assertEqual(len(self.marked(view)), 4)
+        self.write(self.slots[0], 'm_count', 21)
+        self.assertEqual(self.view()['count'], 30)
+        self.assertTrue(self.view()['memory']['inactive'])
+
     def test_partial_offer_then_empty_offer_and_no_slot(self):
         self.write(self.slots[0], 'm_count', 26)
         options = self.display['m_choices']

@@ -70,6 +70,9 @@ class HearthstoneMemory:
         self.removal_key=None
         self.removal_deck=Counter()
         self.previous_mode=''
+        self.last_phase=None
+        self.last_transition=''
+        self.phase_diag={}
 
     def close(self):
         process,self.process=self.process,None
@@ -80,7 +83,13 @@ class HearthstoneMemory:
         found=self.finder();self.pid=found.get('pid') if found.get('found') else None
         if self.pid is None:
             self.close();return False
-        identity=(self.pid,found.get('instance',''));self.observed_identity=identity
+        identity=(self.pid,found.get('instance',''))
+        if identity!=self.observed_identity:
+            self.removal_key=None
+            self.previous_mode=''
+            self.last_phase=None
+            self.last_transition=''
+        self.observed_identity=identity
         if identity!=self.identity or self.mono is None:
             self.close()
             try:
@@ -189,7 +198,7 @@ class HearthstoneMemory:
 
     def _redraft_phase(self, mode, underground, slot, key, cards, complete, partial_offer):
         """Classify one verified pool before the next poll can replace it."""
-        if not underground or slot not in ('CARD','NONE') or mode not in ('REDRAFTING','ACTIVE_DRAFT_DECK'):
+        if not underground or slot not in ('CARD','NONE') or mode not in ('REDRAFTING','ACTIVE_DRAFT_DECK','NO_DISPLAY'):
             self.removal_key=None
             return ''
         if key is not None and key!=self.removal_key:self.removal_key=None
@@ -198,7 +207,7 @@ class HearthstoneMemory:
         # REDRAFTING spans both picking and cutting. A full pool establishes
         # direction; subsequent decks must contain only surviving copies.
         copies=Counter(cards)
-        if mode=='REDRAFTING' and len(cards)==35:
+        if len(cards)==35 and mode!='NO_DISPLAY':
             self.removal_key=key
         elif self.removal_key is None or not (30<=len(cards)<=35 and copies<=self.removal_deck):
             self.removal_key=None
@@ -208,24 +217,36 @@ class HearthstoneMemory:
 
     def draft_state(self):
         display=self.mono.static('DraftDisplay','s_instance')
-        if display is None:
+        self.phase_diag['display_present']=display is not None
+        if display is None and (self.removal_key is None or self.removal_deck.total()==30):
             self.removal_key=None
             return None
-        if display.class_name!='DraftDisplay':raise UnsupportedLayout('wrong DraftDisplay instance')
-        mode=enum(display['m_currentMode'],DRAFT_MODES)
-        if self.previous_mode=='ACTIVE_DRAFT_DECK' and mode=='REDRAFTING':self.removal_key=None
+        if display and display.class_name!='DraftDisplay':raise UnsupportedLayout('wrong DraftDisplay instance')
+        raw_mode=display['m_currentMode'] if display else None
+        self.phase_diag['raw_mode']=raw_mode
+        mode=enum(raw_mode,DRAFT_MODES) if display else 'NO_DISPLAY'
+        self.phase_diag['display_mode']=mode
+        if self.previous_mode=='ACTIVE_DRAFT_DECK' and mode=='REDRAFTING' and self.removal_deck.total()==30:
+            self.removal_key=None
         self.previous_mode=mode
-        finishing=mode=='ACTIVE_DRAFT_DECK' and self.removal_key is not None
-        if mode!='REDRAFTING' and not finishing:self.removal_key=None
-        if mode not in ('DRAFTING','REDRAFTING') and not finishing:return None
+        deck_only=mode in ('ACTIVE_DRAFT_DECK','NO_DISPLAY')
+        if mode!='REDRAFTING' and not deck_only:self.removal_key=None
+        if mode not in ('DRAFTING','REDRAFTING') and not deck_only:return None
         manager=self._manager()
         underground=manager['m_undergroundActive']
         if type(underground) is not bool:raise UnsupportedLayout('invalid underground flag')
+        self.phase_diag['underground']=underground
+        if deck_only and not underground:
+            self.removal_key=None
+            return None
         prefix='m_currentUnderground' if underground else 'm_current'
-        slot=enum(manager[prefix+'SlotType'],SLOT_TYPES)
-        options=display['m_choices'];choices=[]
+        raw_slot=manager[prefix+'SlotType']
+        self.phase_diag['raw_slot']=raw_slot
+        slot=enum(raw_slot,SLOT_TYPES)
+        self.phase_diag['manager_slot']=slot
+        options=display['m_choices'] if display else None;choices=[]
         limit=MAX_DECK_COPIES if underground and mode=='REDRAFTING' else 3
-        entries=options.list_objects(limit) if options and not finishing else []
+        entries=options.list_objects(limit) if options and not deck_only else []
         for choice in entries if len(entries)==3 else []:
             package=choice.get('m_packageCardIds')
             choices.append(DraftChoice(card_id(choice['m_cardID']),tuple(card_id(c) for c in package.list_strings(30)) if package else ()))
@@ -257,8 +278,11 @@ class HearthstoneMemory:
                 except UnsupportedLayout:
                     cards=[];meta=dict(slots=0,reason='slot_layout',notes=[])
         # Re-read selection identity to reject concurrent mode/choice transitions.
-        check_options=display['m_choices']
-        if manager['m_undergroundActive']!=underground or display['m_currentMode']!=DRAFT_MODES.index(mode) or (check_options.addr if check_options else 0)!=(options.addr if options else 0) or manager[prefix+'SlotType']!=SLOT_TYPES.index(slot):
+        current_display=self.mono.static('DraftDisplay','s_instance')
+        if (current_display.addr if current_display else 0)!=(display.addr if display else 0):
+            raise NotReady('draft display changed during snapshot')
+        check_options=display['m_choices'] if display else None
+        if manager['m_undergroundActive']!=underground or (display and display['m_currentMode']!=raw_mode) or (check_options.addr if check_options else 0)!=(options.addr if options else 0) or manager[prefix+'SlotType']!=SLOT_TYPES.index(slot):
             raise NotReady('draft changed during snapshot')
         current_deck=manager['m_undergroundDraftDeck' if underground else 'm_draftDeck']
         if (current_deck.addr if current_deck else 0)!=(deck.addr if deck else 0):raise NotReady('arena deck changed during snapshot')
@@ -267,7 +291,7 @@ class HearthstoneMemory:
             except UnsupportedLayout:second_hero=hero
             if deck.get('ID')!=number or second_hero!=hero:raise NotReady('arena identity changed during snapshot')
             second=self._deck_cards(deck)
-            if mode=='REDRAFTING' and self.deck_meta!=meta:raise NotReady('draft deck layout changed during snapshot')
+            if (mode=='REDRAFTING' or deck_only) and self.deck_meta!=meta:raise NotReady('draft deck layout changed during snapshot')
             # The published read owns the diagnostics; the verification read
             # must not replace its reason with its own.
             self.deck_meta=meta
@@ -278,28 +302,39 @@ class HearthstoneMemory:
             settled=wall_clock()
         elif deck is not None:
             settled=start
-        if options and not finishing and options['_size']!=len(entries):raise NotReady('choices changed during snapshot')
+        if options and not deck_only and options['_size']!=len(entries):raise NotReady('choices changed during snapshot')
         if choices:
             if [c['m_cardID'] for c in options.list_objects(3)]!=[c.card_id for c in choices]:raise NotReady('choices changed during snapshot')
         self.snapshot_start=start
         self.snapshot_wall=max(start,settled) if deck is not None else 0
         key=(self.identity,deck_id or deck.addr) if deck_read else None
         complete=deck_read and meta['reason'] in ('','empty') and 'null_count' not in meta['notes']
+        self.phase_diag.update(snapshot_cards=len(cards) if complete else None,snapshot_reason=meta['reason'] or ','.join(meta['notes']))
         phase=self._redraft_phase(mode,underground,slot,key,cards,complete,len(entries) in (1,2))
-        if finishing and phase!='complete':return None
+        self.phase_diag['redraft_phase']=phase or 'unconfirmed'
+        if deck_only and not phase:
+            if not complete and self.removal_key is not None:raise NotReady('underground deck snapshot incomplete')
+            return None
         if phase:choices=[]
         return DraftState(mode,slot,underground,tuple(choices),deck_id,hero,tuple(cards),wins,losses,
                           deck is not None,meta['slots'],meta['reason'],','.join(meta.get('notes') or ()),phase=='removal')
 
     def poll(self):
+        self.phase_diag={}
         try:
             if not self.connect():return None,dict(code='not_running',status=i18n.t('mem.not_running'),pid=None,error='')
             state=self.draft_state()
+            phase=self.phase_diag.get('redraft_phase','unconfirmed') if state else 'inactive'
+            current=(self.phase_diag.get('display_mode','no_display'),phase)
+            if current!=self.last_phase:
+                prior='/'.join(self.last_phase) if self.last_phase else 'start'
+                self.last_transition=prior+' -> '+'/'.join(current)
+                self.last_phase=current
             stage=state.slot if state and state.choices else ''
             code={'HERO':'hero_selection','CARD':'card_selection','HERO_POWER':'hero_power_selection'}.get(stage,'reading')
             message={'hero_selection':i18n.t('mem.hero'),'card_selection':i18n.t('mem.card'),
                      'hero_power_selection':i18n.t('mem.hero_power')}.get(code,i18n.t('mem.reading'))
-            return state,dict(inactive=state is None,code=code,status=message,pid=self.pid,error='',profile='Unity 6000.3 x64 / Assembly-CSharp',unity_version='.'.join(map(str,self.mono.version)),process_instance=str(self.identity),
+            return state,dict(**self.phase_diag,last_transition=self.last_transition,inactive=state is None,code=code,status=message,pid=self.pid,error='',profile='Unity 6000.3 x64 / Assembly-CSharp',unity_version='.'.join(map(str,self.mono.version)),process_instance=str(self.identity),
                               deck_object=bool(state and state.deck_object),deck_slots=int(state.deck_slots) if state else 0,
                               deck_parsed=len(state.deck) if state else 0,deck_reason=(state.deck_reason if state else ''),
                               deck_note=(state.deck_note if state else ''),observed_start=(self.snapshot_start if state else 0),
@@ -313,4 +348,4 @@ class HearthstoneMemory:
             status={'permission_denied':i18n.t('mem.permission'),'not_running':i18n.t('mem.exited'),'mono_missing':i18n.t('mem.no_mono'),
                     'not_ready':i18n.t('mem.not_ready'),'incompatible':i18n.t('mem.incompatible'),'read_error':i18n.t('mem.failed')}[code]
             pid=self.pid;self.close()
-            return None,dict(code=code,status=status,pid=pid,error=str(exc)[:300],process_instance=str(self.observed_identity))
+            return None,dict(**self.phase_diag,last_transition=self.last_transition,code=code,status=status,pid=pid,error=str(exc)[:300],process_instance=str(self.observed_identity))
