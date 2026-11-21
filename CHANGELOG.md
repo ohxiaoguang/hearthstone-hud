@@ -2,6 +2,10 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
+## v1.0.12
+
+- In Underground Arena, the deck stays visible at 30 cards. Undoing a cut restores the suggestions immediately, using the original 35-card pool and its copy counts.
+
 ## v1.0.11
 
 - Keep the Underground Arena deck and suggested cuts visible when the game switches draft modes before all five cuts are complete. Recommendations follow verified deck counts until 30 cards remain.
