@@ -125,10 +125,9 @@ class ArenaPreview:
         title_key='arena.hero' if slot=='HERO' else 'arena.hero_power' if slot=='HERO_POWER' else 'arena.card'
         show_count=bool(picks) or (state is not None and slot=='CARD' and not self.stale)
         target=35 if state and state.underground and stage=='redrafting' and candidates else 30
-        offer_title=''
-        if candidates:
-            offer_title=i18n.t(title_key)
-            if show_count and count<=target and not self.stale:offer_title+=f' · {count}/{target}'
+        offer_title='' if stage=='removal' else i18n.t(title_key)
+        if candidates and show_count and count<=target and not self.stale:
+            offer_title+=f' · {count}/{target}'
         picked_title=i18n.t('arena.picked_uncertain' if self.stale else 'arena.picked',count=count)
         if target==35 and not self.stale:
             picked_title=i18n.t('arena.redraft_pool',count=count)

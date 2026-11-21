@@ -114,7 +114,7 @@ class RedraftTests(unittest.TestCase):
         partial = self.view()
         self.assertFalse(self.marked(partial))
         self.assertEqual(partial['picked_title'], '35 cards')
-        self.assertEqual(partial['offer_title'], '')
+        self.assertEqual(partial['offer_title'], 'Arena · Card selection')
         self.write(options, '_size', 0)
         self.write(self.reader._manager(), 'm_currentUndergroundSlotType', 0)
         self.assertEqual(len(self.marked(self.view())), 5)
