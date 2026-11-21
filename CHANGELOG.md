@@ -2,6 +2,11 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
+## v1.0.10
+
+- Underground Arena shows HearthArena ratings for all three redraft offers and highlights the highest score.
+- Once the 35-card deck is confirmed, the offer panel closes. The deck panel highlights the lowest-rated copies and updates the number of cuts after each removal. At 30 cards the highlights clear.
+
 ## v1.0.9
 
 - Refresh HearthArena card ratings and Firestone class win-rate data in the background.

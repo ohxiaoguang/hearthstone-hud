@@ -111,24 +111,30 @@ class ArenaPreview:
         cls=hero_class(cards,self.hero)
         picks=[self._row(cards,ratings,cls,cid) for cid in self.deck]
         picks.sort(key=mana_order)
+        count=len(picks)
         stage='none';slot='CARD';drafting=False;candidates=[]
         if state is not None and state.mode in ('DRAFTING','REDRAFTING'):
             slot=state.slot
             stage={'HERO':'hero_selection','HERO_POWER':'hero_power_selection',
                    'CARD':'redrafting' if state.mode=='REDRAFTING' else 'card_selection'}.get(slot,'none')
             drafting=slot=='CARD' and state.mode in ('DRAFTING','REDRAFTING')
-            if len(state.choices)==3:candidates=self._candidates(cards,ratings,cls,state)
-        count=len(picks)
+            if state.removing and not self.stale and 30<count<=35:
+                stage='removal'
+            elif len(state.choices)==3:
+                candidates=self._candidates(cards,ratings,cls,state)
         title_key='arena.hero' if slot=='HERO' else 'arena.hero_power' if slot=='HERO_POWER' else 'arena.card'
         show_count=bool(picks) or (state is not None and slot=='CARD' and not self.stale)
         target=35 if state and state.underground and stage=='redrafting' and candidates else 30
-        offer_title=i18n.t(title_key)+(f' · {count}/{target}' if show_count else '')
+        offer_title=''
+        if candidates:
+            offer_title=i18n.t(title_key)
+            if show_count and count<=target and not self.stale:offer_title+=f' · {count}/{target}'
         picked_title=i18n.t('arena.picked_uncertain' if self.stale else 'arena.picked',count=count)
         if target==35 and not self.stale:
             picked_title=i18n.t('arena.redraft_pool',count=count)
-        if state and state.removing and not self.stale and 30<count<=35:
-            stage='removal'
-            candidates=[]
+        elif count>30:
+            picked_title=i18n.t('arena.deck_size_uncertain' if self.stale else 'arena.deck_size',count=count)
+        if stage=='removal':
             remaining=count-30
             rated=sorted((row for row in picks if row['score'] is not None),
                          key=lambda row:(row['score'],row['id']))
@@ -137,7 +143,7 @@ class ArenaPreview:
             title='arena.suggest_remove' if len(rated)>=remaining else 'arena.removal'
             picked_title=i18n.t(title,count=count,remaining=remaining)
         return dict(stage=stage,slot=slot,source='memory',offer_title=offer_title,picked_title=picked_title,
-                    show_count=bool(picks) or (state is not None and slot=='CARD' and not self.stale),
+                    show_count=show_count,
                     source_note=i18n.t('arena.source_note'),
                     deck_id=self.deck_id,phase=('draft:'+self.deck_id) if self.deck_id else '',round=0,
                     mode=self.mode,class_name=i18n.class_label(cls,'arena.class_unidentified'),

@@ -53,11 +53,13 @@ class RedraftTests(unittest.TestCase):
 
     def test_offer_then_real_deletions_through_finished_deck(self):
         offer = self.view()
+        self.assertTrue(offer['offer_title'].endswith('34/35'))
         self.assertEqual(self.marked(offer), [])
         self.assertEqual([r['best'] for r in offer['candidates']], [False,False,True])
         self.write(self.slots[0], 'm_count', 26)
         full = self.view()
         self.assertEqual(full['picked_title'], '35 cards · Suggested cuts: 5')
+        self.assertEqual(full['offer_title'], '')
         self.assertEqual(full['candidates'], [])
         self.assertEqual(self.marked(full), ['CARD_A']*4 + ['CARD_B'])
         i18n.set_ui_language('zh-CN')
@@ -65,6 +67,8 @@ class RedraftTests(unittest.TestCase):
             # Player removes high-scoring copies, ignoring the recommendations.
             self.write(self.slots[0], 'm_count', count-9)
             view = self.view()
+            self.assertEqual(view['offer_title'], '')
+            self.assertEqual(view['candidates'], [])
             self.assertEqual(view['picked_title'], f'{count} 张 · 建议移除 {count-30} 张')
             self.assertEqual(self.marked(view), ['CARD_A']*(count-30))
         self.write(self.slots[0], 'm_count', 21)
@@ -85,6 +89,8 @@ class RedraftTests(unittest.TestCase):
         self.write(self.slots[1], 'm_count', -1)
         stale = self.view()
         self.assertTrue(stale['deck_stale'])
+        self.assertEqual(stale['picked_title'], '35 cards (count unconfirmed)')
+        self.assertNotIn('35/30', stale['offer_title'])
         self.assertFalse(self.marked(stale))
         self.write(self.slots[1], 'm_count', 4)
         self.assertEqual(len(self.marked(self.view())), 4)
@@ -105,7 +111,10 @@ class RedraftTests(unittest.TestCase):
         self.write(self.slots[0], 'm_count', 26)
         options = self.display['m_choices']
         self.write(options, '_size', 2)
-        self.assertFalse(self.marked(self.view()))
+        partial = self.view()
+        self.assertFalse(self.marked(partial))
+        self.assertEqual(partial['picked_title'], '35 cards')
+        self.assertEqual(partial['offer_title'], '')
         self.write(options, '_size', 0)
         self.write(self.reader._manager(), 'm_currentUndergroundSlotType', 0)
         self.assertEqual(len(self.marked(self.view())), 5)

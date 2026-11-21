@@ -254,16 +254,16 @@ int main(int argc,char** argv){
         if(visible){
         if(state.contains("arena_state")&&state["arena_state"].value("visible",false)){
             const auto& arena=state["arena_state"];
-            const std::string count=number(arena.value("count",json()))+"/30";
             const auto stage=arena.value("stage","");
             const bool hero=stage=="hero_selection",power=stage=="hero_power_selection";
             const bool show_count=arena.value("show_count",true)&&!hero&&!power;
-            const std::string base=hero?labels.value("arena_hero","Arena · Hero selection")
-                :power?labels.value("arena_hero_power","Arena · Hero power selection")
-                :labels.value("arena_card","Arena · Card selection");
-            const std::string title=arena.value("offer_title",base+(show_count?" · "+count:""));
-            const float available=std::max(80.f,sh-ly-16*scale);
-            panel("arena-offer",title,arena_rows(arena,true),false,lx,ly,scale,opacity,state.value("card_images",true),state.value("show_card_names",true),labels,textures,frames,width,std::min(available,230*scale),font_size,card_regions);
+            if(stage!="removal" && arena["candidates"].size()==3){
+                const std::string base=hero?labels.value("arena_hero","Arena · Hero selection")
+                    :power?labels.value("arena_hero_power","Arena · Hero power selection")
+                    :labels.value("arena_card","Arena · Card selection");
+                const float available=std::max(80.f,sh-ly-16*scale);
+                panel("arena-offer",arena.value("offer_title",base),arena_rows(arena,true),false,lx,ly,scale,opacity,state.value("card_images",true),state.value("show_card_names",true),labels,textures,frames,width,std::min(available,230*scale),font_size,card_regions);
+            }
             if(show_count)panel("arena-picked",arena.value("picked_title",arena_picked_title(arena)),arena_rows(arena,false),false,rx,ry,scale,opacity,state.value("card_images",true),state.value("show_card_names",true),labels,textures,frames,width,std::max(80.f,sh-ry-16*scale),font_size,card_regions);
         }else{
         if(state.value("show_summary",true)){
