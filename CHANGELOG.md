@@ -2,6 +2,11 @@
 
 User-visible changes per version. 中文版：[CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
+## v1.0.13
+
+- The match HUD shows active opponent Secrets. Revealed Secrets display their cards. Unknown Secrets share a class candidate list with duplicate printings grouped and a notice that format legality is unfiltered.
+- Secret hints are on by default in Decky settings. The panel supports English and Chinese card names and hover previews, and closes when the last Secret leaves play.
+
 ## v1.0.12
 
 - In Underground Arena, the deck stays visible at 30 cards. Undoing a cut restores the suggestions immediately, using the original 35-card pool and its copy counts.
