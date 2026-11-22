@@ -73,6 +73,32 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
     async def test_no_missing_binary_launch(self):
         with self.assertRaises(RuntimeError):await self.plugin.start_hud()
         self.assertFalse((await self.plugin.status())['running'])
+
+    async def test_secret_toggle_updates_published_rows_and_image_requests(self):
+        from test_tracking import TrackingTests
+        fixture=TrackingTests();fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        fixture.entity(16,'','PLAY',2)
+        fixture.feed('tag=CLASS value=MAGE')
+        fixture.feed('TAG_CHANGE Entity=3 tag=HERO_ENTITY value=16')
+        fixture.entity(21,'','SECRET',2)
+        self.plugin.parser=fixture.p
+        self.plugin.cards.install([dict(id='TEST_SECRET',name='Alpha',cardClass='MAGE',mechanics=['SECRET'])])
+        self.plugin.active=self.plugin.caught_up=True
+        state_path=self.plugin.runtime/'state.json'
+        requested=[]
+        with patch.object(self.plugin.cards,'request_images',side_effect=lambda ids:requested.extend(ids)):
+            self.plugin._publish()
+            state=json.loads(state_path.read_text(encoding='utf-8'))
+            self.assertIs(state['secret_hints'],True)
+            self.assertEqual(state['tracking']['secret_candidates'][0]['id'],'TEST_SECRET')
+            self.assertIn('TEST_SECRET',requested)
+            requested.clear()
+            await self.plugin.configure({'secret_hints':False})
+            state=json.loads(state_path.read_text(encoding='utf-8'))
+            self.assertIs(state['secret_hints'],False)
+            self.assertFalse(state['tracking'].get('secret_candidates'))
+            self.assertNotIn('TEST_SECRET',requested)
     async def test_stop_idempotent(self):
         await self.plugin.stop_hud();await self.plugin.stop_hud()
         self.assertFalse((await self.plugin.status())['running'])

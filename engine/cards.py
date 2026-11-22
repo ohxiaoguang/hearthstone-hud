@@ -27,7 +27,35 @@ from .images import TileStore, valid_id, validate_png, atomic_image, MAX_IMAGE
 
 DATA_URL='https://api.hearthstonejson.com/v1/latest/{locale}/cards.json'
 IMAGE_URL='https://art.hearthstonejson.com/v1/tiles/{card_id}.png'
-FIELDS=('id','dbfId','name','cost','cardClass','type')
+FIELDS=('id','dbfId','name','cost','cardClass','classes','type','mechanics','collectible')
+CACHE_SCHEMA=2  # Includes mechanics and class membership for secret candidates.
+
+
+def metadata_row(card):
+    row = {k: card[k] for k in FIELDS if k in card}
+    if 'SECRET' in card.get('mechanics', ()) and isinstance(card.get('text'), str):
+        row['text'] = card['text']
+    return row
+
+
+def index_secrets(rows):
+    """Index once per database install. Prefer original printings for display."""
+    secrets = [c for c in rows if 'SECRET' in c.get('mechanics', ())]
+    secrets.sort(key=lambda c: (not c.get('collectible', False),
+                                c['id'].startswith(('CORE_', 'VAN_')), c['id']))
+    # Some printings have unrelated IDs. Only group those when their name,
+    # mana cost and rules text agree, so a same-name variant can still appear.
+    signatures = {c['id']: (c['name'].casefold(), c.get('cost'), c.get('text', '')) for c in secrets}
+    by_class = {}
+    for card in secrets:
+        base_id = card['id'].removeprefix('CORE_').removeprefix('VAN_')
+        signature = signatures.get(base_id, signatures[card['id']])
+        classes = card.get('classes') or [card.get('cardClass')]
+        for cls in classes:
+            if isinstance(cls, str) and cls:
+                by_class.setdefault(cls, {}).setdefault(signature, card['id'])
+    return {cls: sorted(printings.values(), key=lambda cid: (signatures[cid][0], cid))
+            for cls, printings in by_class.items()}
 
 
 def fetch(url, limit, verify=True):
@@ -71,7 +99,12 @@ def validate_dataset(data):
             continue
         if c.get('cost') is not None and (not isinstance(c['cost'],int) or isinstance(c['cost'],bool)):
             raise ValueError(i18n.t('cards.data_cost'))
-        rows.append({k:c[k] for k in FIELDS if k in c})
+        for field in ('mechanics', 'classes'):
+            if field in c and not (isinstance(c[field], list) and all(isinstance(v, str) for v in c[field])):
+                raise ValueError(i18n.t('cards.data_shape'))
+        if 'cardClass' in c and not isinstance(c['cardClass'], str):
+            raise ValueError(i18n.t('cards.data_shape'))
+        rows.append(metadata_row(c))
     if len(rows)<MIN_CARDS:raise ValueError(i18n.t('cards.data_min',min=MIN_CARDS))
     return rows
 
@@ -91,6 +124,7 @@ class Cards:
         self.image_verify_tls=True
         self.database_verify_tls=True
         self.by_id={};self.by_dbf={};self.updated=0;self.error=''
+        self.secrets_by_class={};self.has_mechanics=False
         self.language=i18n.card_language(language,None) if language else i18n.card_language('auto',i18n.ui_language())
         self.data_language=''
         self.need_download=False
@@ -124,15 +158,15 @@ class Cards:
         self.download_state=i18n.t(keys[phase],**values)
 
     def _read_cache(self,path):
-        data=json.loads(path.read_text())
+        data=json.loads(path.read_text(encoding='utf-8'))
         rows=validate_dataset(data['cards'])
-        return rows,float(data['updated']),data.get('source','')
+        return rows,float(data['updated']),data.get('source',''),data.get('schema')==CACHE_SCHEMA
 
     def _load_cached(self,locale):
         """Load this locale's cache. Returns True when rows were installed."""
         path=self.cache_path(locale)
         try:
-            rows,updated,source=self._read_cache(path)
+            rows,updated,source,has_mechanics=self._read_cache(path)
         except (OSError,ValueError,KeyError,TypeError):
             rows=None
         found=locale
@@ -143,9 +177,10 @@ class Cards:
             self.need_download=bool(self.by_id)
             self._phase('prepare')
             return False
-        self.install(rows);self.updated=updated;self.data_language=found
+        self.install(rows,has_mechanics=has_mechanics);self.updated=updated;self.data_language=found
         self.source=source or i18n.t('cards.source',locale=found)
-        self.need_download=found!=locale;self.download_phase='ok'
+        self.need_download=not has_mechanics
+        self._phase('prepare' if self.need_download else 'ok')
         return True
 
     def set_language(self,locale):
@@ -168,7 +203,6 @@ class Cards:
             self.need_download=True     # Cleared by `_load_cached` on a cache hit.
             self.auto_download=True     # An explicit switch always wants the file.
         if self._load_cached(locale):
-            self._phase('ok')
             return True
         # Cache miss: `_load_cached` only flags a switch away from data we already
         # have, so make the pending download explicit here.
@@ -179,11 +213,13 @@ class Cards:
         return True
 
     # -- metadata ----------------------------------------------------------
-    def install(self, data):
+    def install(self, data, has_mechanics=True):
         if not isinstance(data,list):raise ValueError(i18n.t('cards.data_shape'))
-        rows=[{k:c[k] for k in FIELDS if k in c} for c in data if isinstance(c,dict) and isinstance(c.get('id'),str)]
+        rows=[metadata_row(c) for c in data if isinstance(c,dict) and isinstance(c.get('id'),str)]
         self.by_id={c['id']:c for c in rows}
         self.by_dbf={c['dbfId']:c['id'] for c in rows if isinstance(c.get('dbfId'),int)}
+        self.secrets_by_class=index_secrets(rows) if has_mechanics else {}
+        self.has_mechanics=has_mechanics
         # Rows are installed for whatever language they came from; callers that
         # know better (`_load_cached`) may still request a download afterwards.
         if rows:self.need_download=False
@@ -384,6 +420,7 @@ class Cards:
             if locale!=self.language:return False
             self.generation+=1
             self.by_id={};self.by_dbf={};self.updated=0;self.data_language=''
+            self.secrets_by_class={};self.has_mechanics=False
             self.need_download=False;self.auto_download=False;self.error=''
             self.source=i18n.t('cards.source',locale=locale)
             self.attempted=time.time()
@@ -400,7 +437,7 @@ class Cards:
             if expected is not None and expected!=self.generation:
                 return None  # A manual import/newer refresh won the race.
             updated=time.time()
-            atomic_json(self.cache_path(locale),dict(updated=updated,source=source,locale=locale,cards=rows))
+            atomic_json(self.cache_path(locale),dict(schema=CACHE_SCHEMA,updated=updated,source=source,locale=locale,cards=rows))
             self.generation+=1
             return dict(rows=rows,updated=updated,source=source,locale=locale,generation=self.generation)
 
@@ -457,6 +494,7 @@ class Cards:
             self.images.mkdir(parents=True,exist_ok=True)
             self.tiles=TileStore(self.images)
             self.by_id={};self.by_dbf={};self.updated=0;self.attempted=0
+            self.secrets_by_class={};self.has_mechanics=False
             self.error='';self.image_error='';self.data_language=''
             self.source=i18n.t('cards.source',locale=self.language)
             self._phase('prepare')

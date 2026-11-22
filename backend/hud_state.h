@@ -68,15 +68,15 @@ inline bool valid_hud_state(const nlohmann::json& s) {
     if(s.contains("card_locale")&&(!s["card_locale"].is_string() || s["card_locale"].get<std::string>().size()!=4 || s["card_locale"].get<std::string>().find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")!=std::string::npos))return false;
     for(const auto* k:{"scale","preview_scale","opacity","x","y","right_x","right_y","panel_width","font_size"})
         if(s.contains(k) && (!s[k].is_number() || !std::isfinite(s[k].get<double>())))return false;
-    for(const auto* k:{"visible","own_deck","opponent_deck","opponent_hand","card_images","own_played","opponent_played","show_summary","hide_exhausted"})
+    for(const auto* k:{"visible","own_deck","opponent_deck","opponent_hand","card_images","own_played","opponent_played","secret_hints","show_summary","hide_exhausted"})
         if(s.contains(k) && !s[k].is_boolean())return false;
     if(s.contains("arena_state")&&!valid_arena_state(s["arena_state"]))return false;
     if(!s.contains("tracking") || !s["tracking"].is_object())return false;
     const auto& t=s["tracking"];
     if(!t.contains("status") || !t["status"].is_string() || !t.contains("turn") || !t["turn"].is_number_integer())return false;
-    for(const auto* k:{"own_label","own_class","opponent_class","deck_name"})if(t.contains(k) && !t[k].is_string())return false;
+    for(const auto* k:{"own_label","own_class","opponent_class","deck_name","secret_title","secret_empty"})if(t.contains(k) && !t[k].is_string())return false;
     for(const auto* k:{"opponent_hand","opponent_deck","own_deck","own_remaining","opponent_unknown"})if(t.contains(k) && !t[k].is_null() && !t[k].is_number_integer())return false;
-    for(const auto* k:{"own","opponent","own_added","own_played","opponent_seen","opponent_played"}) {
+    for(const auto* k:{"own","opponent","own_added","own_played","opponent_seen","opponent_played","secrets","secret_candidates"}) {
         const bool events=std::string(k)=="own_played" || std::string(k)=="opponent_played";
         if(!t.contains(k) && std::string(k)!="own" && std::string(k)!="opponent")continue;
         if(!t.contains(k) || !t[k].is_array() || t[k].size()>(events?65536:256))return false;
@@ -129,16 +129,33 @@ inline nlohmann::json played_rows(const nlohmann::json& t,const char* key){
     if(t.contains(key))for(auto it=t[key].rbegin();it!=t[key].rend();++it){auto r=*it;r["event"]=true;rows.push_back(r);}
     return rows;
 }
+inline nlohmann::json secret_rows(const nlohmann::json& tracking,const nlohmann::json& labels){
+    using nlohmann::json;
+    auto rows=json::array();
+    if(!tracking.contains("secrets") || tracking["secrets"].empty())return rows;
+    for(const auto* key:{"secrets","secret_candidates"}){
+        if(!tracking.contains(key))continue;
+        const auto label=std::string(key)=="secrets"?labels.value("secret_known","Known"):labels.value("secret_candidate","Possible");
+        for(const auto& card:tracking[key]){
+            if(card["id"]=="")continue;
+            rows.push_back(card);
+            rows.back()["secret_label"]=label;
+        }
+    }
+    const auto empty=tracking.value("secret_empty","");
+    if(!empty.empty())rows.push_back({{"section",true},{"name",empty}});
+    return rows;
+}
 struct HudRegion {float y=0,height=0;bool visible=false;};
 struct PanelLayout {int per_page,pages,page;float height;};
-inline PanelLayout panel_layout(size_t rows,float font_size,float scale,float available,long long tick,float padding=16){
+inline PanelLayout panel_layout(size_t rows,float font_size,float scale,float available,long long tick,float padding=16,int title_lines=1){
     const float stride=(std::max(32.f,font_size+8)+2)*scale;
     const float heading=(19.2f+2)*scale;
-    const int per_page=std::max(1,int((available-padding-heading*2)/stride));
+    const int per_page=std::max(1,int((available-padding-heading*(title_lines+1))/stride));
     const int pages=std::max(1,int((rows+per_page-1)/per_page));
     const int page=int(tick%pages);
     const size_t shown=std::min(size_t(per_page),rows-size_t(page*per_page));
-    return {per_page,pages,page,rows?std::min(available,padding+heading*(pages>1?2:1)+shown*stride-2*scale):0.f};
+    return {per_page,pages,page,rows?std::min(available,padding+heading*(title_lines+(pages>1))+shown*stride-2*scale):0.f};
 }
 struct LeftRegions {HudRegion opponent,own;};
 inline LeftRegions left_regions(bool opponent,bool own,float y,float height,float gap){

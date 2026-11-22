@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from engine import i18n
-from engine.cards import Cards, MIN_CARDS
+from engine.cards import CACHE_SCHEMA, Cards, MIN_CARDS
 from image_support import tile_png
 
 
@@ -34,7 +34,7 @@ class ResourceHelpers:
     def cache(self,locale,count=MIN_CARDS):
         self.folder.mkdir(parents=True,exist_ok=True)
         path=self.folder/f'cards-{locale}.json'
-        path.write_text(json.dumps(dict(updated=time.time(),source='test',locale=locale,cards=rows(count))))
+        path.write_text(json.dumps(dict(schema=CACHE_SCHEMA,updated=time.time(),source='test',locale=locale,cards=rows(count))))
         return path
 
     def worker(self,cards,download=None,fetch=None,until=None,seconds=.5):

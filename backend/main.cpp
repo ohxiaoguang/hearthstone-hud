@@ -60,19 +60,26 @@ public:
 };
 static std::string number(const json& value){return value.is_number_integer()?std::to_string(value.get<int>()):"?";}
 static constexpr auto flags=ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoInputs|ImGuiWindowFlags_NoFocusOnAppearing;
-static void panel(const char* id,const std::string& title,const json& rows,bool own,float x,float y,float scale,float opacity,bool images,bool show_names,const json& labels,TextureCache& textures,unsigned long frame,float width,float height,float font_size,CardRegions& regions){
+static float panel(const char* id,const std::string& title,const json& rows,bool own,float x,float y,float scale,float opacity,bool images,bool show_names,const json& labels,TextureCache& textures,unsigned long frame,float width,float height,float font_size,CardRegions& regions){
     regions.panel(id,rows.size());
-    if(rows.empty())return;
+    if(rows.empty())return 0;
     const float row_height=std::max(32.f,font_size+8)*scale;
     const auto seconds=std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
     const auto padding=ImGui::GetStyle().WindowPadding;
-    const auto layout=panel_layout(rows.size(),font_size,scale,height,seconds/8,padding.y*2);
+    const int title_lines=1+std::count(title.begin(),title.end(),'\n');
+    const auto layout=panel_layout(rows.size(),font_size,scale,height,seconds/8,padding.y*2,title_lines);
     const int per_page=layout.per_page,pages=layout.pages,page=layout.page;
     height=layout.height;
     ImGui::SetNextWindowPos({x,y});ImGui::SetNextWindowSize({width+padding.x*2,height});ImGui::SetNextWindowBgAlpha(opacity);
-    if(!ImGui::Begin(id,nullptr,flags & ~ImGuiWindowFlags_AlwaysAutoResize)){regions.skipped(id);ImGui::End();return;}
+    if(!ImGui::Begin(id,nullptr,flags & ~ImGuiWindowFlags_AlwaysAutoResize)){regions.skipped(id);ImGui::End();return 0;}
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,ImVec2(0,2*scale));ImGui::SetWindowFontScale(scale*.8f);
-    ImGui::TextUnformatted(title.c_str());if(pages>1)ImGui::Text("%d / %d",page+1,pages);
+    if(title_lines>1){
+        const float title_width=ImGui::CalcTextSize(title.c_str()).x;
+        if(title_width>width)ImGui::SetWindowFontScale(scale*.8f*width/title_width);
+    }
+    ImGui::TextUnformatted(title.c_str());
+    if(title_lines>1)ImGui::SetWindowFontScale(scale*.8f);
+    if(pages>1)ImGui::Text("%d / %d",page+1,pages);
     if(rows.empty())ImGui::TextUnformatted(labels.value(own?"empty_own":"empty_other",own?"No remaining cards or waiting for log evidence":"No plays recorded yet").c_str());
     auto* draw=ImGui::GetWindowDrawList();
     for(size_t i=page*per_page;i<rows.size() && i<size_t((page+1)*per_page);++i){
@@ -88,9 +95,12 @@ static void panel(const char* id,const std::string& title,const json& rows,bool 
         regions.add(id,cid,{pos.x,pos.y},{pos.x+width,pos.y+row_height},
                     {clip_min.x,clip_min.y},{clip_max.x,clip_max.y});
         const bool event=row.value("event",false),deck=row.value("deck_row",false),arena=row.value("arena_row",false);
-        const auto label=arena?row.value("rating_label",labels.value("no_rating","No rating")):event?"":card_count_label(row,deck);
+        const bool secret=row.contains("secret_label");
+        const auto label=secret?row.value("secret_label",""):
+                         arena?row.value("rating_label",labels.value("no_rating","No rating")):
+                         event?"":card_count_label(row,deck);
         const float rating_width=ImGui::GetFont()->CalcTextSizeA(24*scale,FLT_MAX,0,label.c_str()).x+12*scale;
-        const float count_width=arena?std::min(width*.45f,std::max(36*scale,rating_width)):label.empty()?0:36*scale;
+        const float count_width=(arena||secret)?std::min(width*.45f,std::max(36*scale,rating_width)):label.empty()?0:36*scale;
         const bool exhausted=deck && row.value("remaining",json())==json(0);
         const auto white=exhausted?IM_COL32(170,170,170,200):IM_COL32(255,255,255,255);
         draw->AddRectFilled(pos,{pos.x+width,pos.y+row_height},IM_COL32(24,30,39,230));
@@ -127,7 +137,7 @@ static void panel(const char* id,const std::string& title,const json& rows,bool 
         const auto fitted=ImGui::GetFont()->CalcTextSizeA(label_size,FLT_MAX,0,label.c_str());
         if(!event)draw->AddText(ImGui::GetFont(),label_size,{pos.x+width-count_width+(count_width-fitted.x)*.5f,pos.y+(row_height-label_size)*.5f},white,label.c_str(),nullptr,0,&count_clip);
     }
-    ImGui::PopStyleVar();ImGui::End();
+    ImGui::PopStyleVar();ImGui::End();return height;
 }
 int main(int argc,char** argv){
     if(argc!=4) return 2;
@@ -278,7 +288,7 @@ int main(int argc,char** argv){
         const auto opponent_rows=played_rows(tracking,"opponent_played"),own_rows=played_rows(tracking,"own_played");
         const auto left=left_regions(state.value("opponent_played",true)&&!opponent_rows.empty(),state.value("own_played",true)&&!own_rows.empty(),ly,std::max(80.f,sh-ly-16*scale),8*scale);
         const auto render=[&](const char* id,const std::string& title,const json& rows,bool deck,float x,float y,float height){
-            panel(id,title,rows,deck,x,y,scale,opacity,state.value("card_images",true),state.value("show_card_names",true),labels,textures,frames,width,height,font_size,card_regions);
+            return panel(id,title,rows,deck,x,y,scale,opacity,state.value("card_images",true),state.value("show_card_names",true),labels,textures,frames,width,height,font_size,card_regions);
         };
         if(left.opponent.visible)render("opponent-played",labels.value("opponent_played","Opponent played · newest first"),opponent_rows,false,lx,left.opponent.y,left.opponent.height);
         const auto tick=std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch()).count()/8;
@@ -289,7 +299,15 @@ int main(int argc,char** argv){
             ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize,0);ImGui::Begin("idle",nullptr,flags|ImGuiWindowFlags_NoBackground);
             ImGui::SetWindowFontScale(scale*.8f);ImGui::TextUnformatted(labels.value("waiting","Waiting for match").c_str());ImGui::End();ImGui::PopStyleVar();
         }
-        if(state.value("own_deck",true))render("remaining",tracking.value("remaining_title","Your remaining deck · "+number(tracking.value("own_remaining",json()))),deck_rows(tracking,state.value("hide_exhausted",false),labels),true,rx,ry,std::max(80.f,sh-ry-16*scale));
+        const auto deck=state.value("own_deck",true)?deck_rows(tracking,state.value("hide_exhausted",false),labels):json::array();
+        const float right_height=std::max(80.f,sh-ry-16*scale);
+        float offset=0;
+        if(state.value("secret_hints",true) && tracking.contains("secrets") && !tracking["secrets"].empty()){
+            const float gap=8*scale;
+            const float available=deck.empty()?right_height:(right_height-gap)*.5f;
+            offset=render("secrets",tracking.value("secret_title","Opponent secrets"),secret_rows(tracking,labels),false,rx,ry,available)+gap;
+        }
+        if(state.value("own_deck",true))render("remaining",tracking.value("remaining_title","Your remaining deck · "+number(tracking.value("own_remaining",json()))),deck,true,rx,ry+offset,right_height-offset);
         }
         } // Hidden HUD submits an empty transparent frame.
         try{preview.cache_changed(state.value("full_card_generation",0));preview.render(std::filesystem::path(argv[1]).parent_path(),state.value("card_locale","enUS"),labels.value("loading","Loading card..."),labels.value("preview_unavailable","Card preview unavailable"),frames,float(sw),float(sh),scale,card_regions,std::clamp(state.value("preview_scale",1.f),.5f,2.f));}catch(const std::exception& e){preview.failure(e.what());std::cerr<<"preview: "<<e.what()<<'\n';}

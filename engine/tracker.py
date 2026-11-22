@@ -193,12 +193,44 @@ class Tracker(PowerParser):
             self.failures += 1
             return False
 
-    def view(self, cards):
+    def _secret_view(self, cards, opponent):
         game = self.game
+        active = []
+        for ent in game.entities.values():
+            if ent.controller != opponent.player_id or ent.zone != 'SECRET':
+                continue
+            # Quests and other public objectives can occupy the same zone.
+            if any(ent.tags.get(tag) == '1' for tag in ('QUEST', 'SIDE_QUEST', 'QUESTLINE', 'OBJECTIVE')):
+                continue
+            card = cards.by_id.get(ent.card_id)
+            if ent.tags.get('SECRET') != '1' and card and cards.has_mechanics and 'SECRET' not in card.get('mechanics', ()):
+                continue
+            active.append(dict(cards.info(ent.card_id), entity_id=ent.id))
+
+        if not active:
+            return {}
+        candidates = []
+        unknown = sum(not row['id'] for row in active)
+        title = i18n.t('hud.secrets', count=len(active))
+        empty_label = ''
+        if unknown:
+            cls = game.hero_class(opponent) or cards.by_id.get(game.hero_card(opponent), {}).get('cardClass')
+            candidates = [cards.info(cid) for cid in cards.secrets_by_class.get(cls, ())]
+            title += i18n.t('hud.secret_unknown', count=unknown)
+            if candidates:
+                title += '\n' + i18n.t('hud.secret_unfiltered')
+            else:
+                empty_label = i18n.t('hud.secret_no_candidates' if cls else 'hud.secret_no_class')
+        return dict(secrets=active, secret_candidates=candidates, secret_title=title, secret_empty=empty_label)
+
+    def view(self, cards, secret_hints=True):
+        game = self.game
+        result = dict(turn=0, own=[], own_added=[], own_played=[], opponent=[], opponent_seen=[],
+                      opponent_played=[], opponent_hand=None, opponent_deck=None, secrets=[], secret_candidates=[])
         if game is None or game.complete:
-            return dict(status='waiting',turn=0,own=[],own_added=[],own_played=[],opponent=[],opponent_seen=[],opponent_played=[],own_label=i18n.t('track.waiting_new'),opponent_hand=None,opponent_deck=None)
+            return dict(result, status='waiting', own_label=i18n.t('track.waiting_new'))
         if game.game_type.startswith(('GT_BATTLEGROUNDS','GT_MERCENARIES')):
-            return dict(status='unsupported',turn=0,own=[],own_added=[],own_played=[],opponent=[],opponent_seen=[],opponent_played=[],own_label=i18n.t('track.unsupported'),opponent_hand=None,opponent_deck=None)
+            return dict(result, status='unsupported', own_label=i18n.t('track.unsupported'))
         # Cross-file buffers can expose a queue-time deck block after CREATE_GAME.
         # Bind only a deck timestamped before this game, after the previous one.
         if not self.initial_dbf:
@@ -206,12 +238,14 @@ class Tracker(PowerParser):
         if self.arena is not None and game.game_type in ('GT_ARENA','GT_UNDERGROUND_ARENA'):
             self.initial_dbf = self.arena.definition_for_game(datetime.fromisoformat(game.key))
         me,opp = game.friendly,game.opponent
-        result = dict(status='playing' if me and opp else 'identifying',turn=(game.turn+1)//2,
-                      own=[],own_added=[],own_played=[],opponent=[],opponent_seen=[],opponent_played=[],own_label=i18n.t('track.deck_unknown'),opponent_hand=None,opponent_deck=None,
+        result.update(status='playing' if me and opp else 'identifying',turn=(game.turn+1)//2,
+                      own_label=i18n.t('track.deck_unknown'),
                       own_class=game.hero_class(me) if me else '',opponent_class=game.hero_class(opp) if opp else '')
         if not me or not opp:
             return result
         entities=list(game.entities.values())
+        if secret_hints and not (game.result(me) or game.result(opp)):
+            result.update(self._secret_view(cards, opp))
         # CardID came from a logged FULL/SHOW/CHANGE event. Never fill unknown IDs.
         for e in entities:
             if e.controller==opp.player_id and e.card_id and e.tags.get('CARDTYPE') not in ('HERO','HERO_POWER','PLAYER','GAME') and not e.card_id.startswith('HERO_'):

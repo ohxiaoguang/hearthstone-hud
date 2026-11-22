@@ -150,7 +150,7 @@ class Game:
 
     def hero_card(self, player: Player) -> str:
         hero = self.entities.get(int(self.player_tag(player, "HERO_ENTITY") or 0))
-        return hero.known_id if hero else ""
+        return hero.card_id if hero else ""
 
     def hero_class(self, player: Player) -> str:
         hero = self.entities.get(int(self.player_tag(player, "HERO_ENTITY") or 0))
@@ -252,7 +252,8 @@ class PowerParser:
                     self._reset_seen.add(ent.id)
         elif m := RE_CHANGE.match(payload):
             if ent := self._entity(m[1]):
-                ent.card_id = m[2] or ent.card_id
+                # A hidden transformation invalidates the previous current identity.
+                ent.card_id = m[2]
                 self._current = ent
         elif m := RE_HIDE.match(payload):
             if ent := self._entity(m[1]):

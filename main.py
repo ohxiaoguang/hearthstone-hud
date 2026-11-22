@@ -30,10 +30,11 @@ from engine.logconfig import ensure_power, ensure_decks, ensure_arena, inspect_c
 ROOT = Path(__file__).resolve().parent
 REPOSITORY = 'https://github.com/ohxiaoguang/hearthstone-hud'
 VERSION = json.loads((ROOT/'package.json').read_text())['version']
+TRACKING_IMAGE_ROWS = ('own','own_added','own_played','opponent_seen','opponent_played','secrets','secret_candidates')
 DEFAULTS = dict(enabled=True,game_dir='/home/deck/Games/battlegame/Hearthstone',
     proton_prefix='',
     log_dir='', display=':0', x=40, y=80, scale=1.0, opacity=0.85,
-    visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=True, right_x=1540, right_y=80, preview_scale=1.0, card_images=True, show_card_names=True, image_tls_verify=False, database_tls_verify=False, own_played=True, opponent_played=True, show_summary=True, panel_width=320, font_size=22, hide_exhausted=False, arena_memory=False, auto_logs=False,
+    visible=True, own_deck=True, opponent_deck=True, opponent_hand=True, arena=True, right_x=1540, right_y=80, preview_scale=1.0, card_images=True, show_card_names=True, image_tls_verify=False, database_tls_verify=False, own_played=True, opponent_played=True, secret_hints=True, show_summary=True, panel_width=320, font_size=22, hide_exhausted=False, arena_memory=False, auto_logs=False,
     ui_language=i18n.DEFAULT_UI, arena_data_auto_update=True)
 
 
@@ -381,8 +382,8 @@ class Plugin:
 
     @active_operation
     async def download_missing_images(self):
-        tracking = self.parser.view(self.cards)
-        ids={r['id'] for key in ('own','own_added','own_played','opponent_seen','opponent_played') for r in tracking.get(key,[])}
+        tracking = self.parser.view(self.cards, secret_hints=self.settings['secret_hints'])
+        ids={r['id'] for key in TRACKING_IMAGE_ROWS for r in tracking.get(key,[])}
         ids.update(self.cards.id_for_dbf(dbf) for dbf in self.parser.initial_dbf)
         game=self.parser.game
         if game:
@@ -528,7 +529,7 @@ class Plugin:
 
     async def status(self):
         game = self.parser.game
-        tracking = self.parser.view(self.cards) if self.active and self.caught_up else dict(status='waiting')
+        tracking = self.parser.view(self.cards, secret_hints=self.settings['secret_hints']) if self.active and self.caught_up else dict(status='waiting')
         self._tracking_titles(tracking)
         stage = i18n.t('match.found') if game and not game.complete else i18n.t('match.over') if game else i18n.t('match.none')
         identities = i18n.t('identity.both') if game and game.friendly and game.opponent else i18n.t('identity.partial')
@@ -557,6 +558,7 @@ class Plugin:
         """Static HUD labels in the selected interface language."""
         return dict(waiting=i18n.t('hud.waiting'),loading=i18n.t('hud.loading'),preview_unavailable=i18n.t('hud.preview_unavailable'),arena_hero=i18n.t('arena.hero'),arena_hero_power=i18n.t('arena.hero_power'),arena_card=i18n.t('arena.card'),
                     opponent_played=i18n.t('hud.opponent_played'),own_played=i18n.t('hud.own_played'),
+                    secret_known=i18n.t('hud.secret_known'),secret_candidate=i18n.t('hud.secret_candidate'),
                     empty_own=i18n.t('hud.empty_own'),empty_other=i18n.t('hud.empty_other'),no_rating=i18n.t('arena.no_rating'),
                     deck_original=i18n.t('hud.deck_original'),deck_added=i18n.t('hud.deck_added'))
 
@@ -574,10 +576,10 @@ class Plugin:
     def _publish(self):
         if getattr(self,'full_cards',None) and not self.full_cache_resetting:
             self.full_cards.request(self.card_locale(),self.settings['enabled'] and self.settings['visible'],self.settings['image_tls_verify'])
-        tracking = self.parser.view(self.cards) if self.active and self.caught_up else dict(status='waiting',turn=0,own=[],opponent=[],own_label=i18n.t('track.waiting_log'),opponent_hand=None,opponent_deck=None)
+        tracking = self.parser.view(self.cards, secret_hints=self.settings['secret_hints']) if self.active and self.caught_up else dict(status='waiting',turn=0,own=[],opponent=[],own_label=i18n.t('track.waiting_log'),opponent_hand=None,opponent_deck=None)
         self._tracking_titles(tracking)
         if self.settings['enabled'] and self.settings['card_images'] and not self.cache_resetting:
-            self.cards.request_images(r['id'] for key in ('own','own_added','own_played','opponent_seen','opponent_played') for r in tracking.get(key,[]))
+            self.cards.request_images(r['id'] for key in TRACKING_IMAGE_ROWS for r in tracking.get(key,[]))
         arena=self._arena_view()
         # The panel follows the memory snapshot alone; Arena.log no longer gates it.
         arena['visible']=bool(self.settings['enabled'] and self.settings['arena'] and (arena['count'] or arena['candidates']) and tracking['status']!='playing')
