@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated_at": "2026-11-25T17:28:28.611004+00:00",
+  "updated_at": "2026-11-26T17:09:56.513758+00:00",
   "files": {
     "arena_ratings.json": {
       "url": "https://raw.githubusercontent.com/ohxiaoguang/hearthstone-hud/main/data/arena/arena_ratings.json",
@@ -12,17 +12,17 @@
     },
     "arena_class_ratings.json": {
       "url": "https://raw.githubusercontent.com/ohxiaoguang/hearthstone-hud/main/data/arena/arena_class_ratings.json",
-      "sha256": "148a5571d712c270bc4d09c4c7f62f04d85c96e07b2e28ff1e9a063ecea23468",
+      "sha256": "0446de6459e0bea67afda9b395c4074028175eb71777819021a547d83af0d967",
       "source": "Firestone / Zero-to-Heroes static public class statistics",
-      "captured_at": "2026-11-25T17:28:28.611004+00:00",
+      "captured_at": "2026-11-26T17:09:56.513758+00:00",
       "modes": {
         "arena": {
           "source_url": "https://static.zerotoheroes.com/api/arena/stats/classes/arena/last-patch/overview.gz.json",
-          "upstream_updated_at": "2026-11-25T17:25:42.381Z"
+          "upstream_updated_at": "2026-11-26T16:25:42.489Z"
         },
         "arena-underground": {
           "source_url": "https://static.zerotoheroes.com/api/arena/stats/classes/arena-underground/last-patch/overview.gz.json",
-          "upstream_updated_at": "2026-11-25T17:25:42.299Z"
+          "upstream_updated_at": "2026-11-26T16:25:42.253Z"
         }
       }
     }
