@@ -1,118 +1,118 @@
 {
   "schema": 1,
   "source": "Firestone / Zero-to-Heroes static public class statistics",
-  "captured_at": "2026-11-26T17:09:56.513758+00:00",
+  "captured_at": "2026-11-27T16:52:50.667305+00:00",
   "aggregation": "sum totalGames and totalsWins by playerClass; rank by exact wins/games ratio",
   "modes": {
     "arena": {
       "url": "https://static.zerotoheroes.com/api/arena/stats/classes/arena/last-patch/overview.gz.json",
-      "source_sha256": "8defc83d415cc5f698e5e4d26cf50695bd1b0f3fae4ec1b4e0dad6db2a99a09a",
-      "json_sha256": "8defc83d415cc5f698e5e4d26cf50695bd1b0f3fae4ec1b4e0dad6db2a99a09a",
-      "source_bytes": 26979,
-      "source_lastUpdated": "2026-11-26T16:25:42.489Z",
+      "source_sha256": "f8035de882a3060f314b30a91e1fc6bcdbbe3680585d893890d86ddedfc74a6d",
+      "json_sha256": "f8035de882a3060f314b30a91e1fc6bcdbbe3680585d893890d86ddedfc74a6d",
+      "source_bytes": 27213,
+      "source_lastUpdated": "2026-11-27T16:25:42.025Z",
       "source_timePeriod": "last-patch",
-      "source_rows": 45,
+      "source_rows": 46,
       "validated": true,
       "classes": {
-        "HUNTER": {
-          "totalGames": 35681,
-          "totalsWins": 22266
-        },
-        "DEATHKNIGHT": {
-          "totalGames": 85056,
-          "totalsWins": 52877
-        },
-        "PRIEST": {
-          "totalGames": 29154,
-          "totalsWins": 16253
-        },
-        "WARRIOR": {
-          "totalGames": 38670,
-          "totalsWins": 21890
-        },
         "SHAMAN": {
-          "totalGames": 58963,
-          "totalsWins": 36432
-        },
-        "MAGE": {
-          "totalGames": 27506,
-          "totalsWins": 14992
+          "totalGames": 61239,
+          "totalsWins": 37826
         },
         "DEMONHUNTER": {
-          "totalGames": 5629,
-          "totalsWins": 2839
-        },
-        "ROGUE": {
-          "totalGames": 17755,
-          "totalsWins": 9598
+          "totalGames": 5828,
+          "totalsWins": 2948
         },
         "PALADIN": {
-          "totalGames": 38833,
-          "totalsWins": 24051
+          "totalGames": 40442,
+          "totalsWins": 25032
+        },
+        "WARRIOR": {
+          "totalGames": 40530,
+          "totalsWins": 22897
         },
         "WARLOCK": {
-          "totalGames": 32780,
-          "totalsWins": 19183
+          "totalGames": 33670,
+          "totalsWins": 19689
         },
         "DRUID": {
-          "totalGames": 10972,
-          "totalsWins": 5709
+          "totalGames": 11451,
+          "totalsWins": 5962
+        },
+        "ROGUE": {
+          "totalGames": 18395,
+          "totalsWins": 9963
+        },
+        "DEATHKNIGHT": {
+          "totalGames": 88683,
+          "totalsWins": 55130
+        },
+        "HUNTER": {
+          "totalGames": 37249,
+          "totalsWins": 23216
+        },
+        "MAGE": {
+          "totalGames": 28790,
+          "totalsWins": 15688
+        },
+        "PRIEST": {
+          "totalGames": 30571,
+          "totalsWins": 17086
         }
       }
     },
     "arena-underground": {
       "url": "https://static.zerotoheroes.com/api/arena/stats/classes/arena-underground/last-patch/overview.gz.json",
-      "source_sha256": "c97e6d5306077cb25cfced57cf8a28c4c000e2af28c1b36dddc28541b0d13b75",
-      "json_sha256": "c97e6d5306077cb25cfced57cf8a28c4c000e2af28c1b36dddc28541b0d13b75",
-      "source_bytes": 62434,
-      "source_lastUpdated": "2026-11-26T16:25:42.253Z",
+      "source_sha256": "63dc86989062f8434bd60d2c4e65d2348ce024faf142e70fcb21e877c101be66",
+      "json_sha256": "63dc86989062f8434bd60d2c4e65d2348ce024faf142e70fcb21e877c101be66",
+      "source_bytes": 63174,
+      "source_lastUpdated": "2026-11-27T16:25:42.037Z",
       "source_timePeriod": "last-patch",
-      "source_rows": 97,
+      "source_rows": 98,
       "validated": true,
       "classes": {
-        "MAGE": {
-          "totalGames": 333720,
-          "totalsWins": 174562
-        },
-        "HUNTER": {
-          "totalGames": 470710,
-          "totalsWins": 268344
-        },
-        "DEATHKNIGHT": {
-          "totalGames": 1119432,
-          "totalsWins": 653877
+        "WARRIOR": {
+          "totalGames": 622170,
+          "totalsWins": 342428
         },
         "SHAMAN": {
-          "totalGames": 771737,
-          "totalsWins": 437497
+          "totalGames": 801791,
+          "totalsWins": 454402
         },
-        "DRUID": {
-          "totalGames": 67544,
-          "totalsWins": 32955
+        "HUNTER": {
+          "totalGames": 491820,
+          "totalsWins": 280377
         },
-        "WARRIOR": {
-          "totalGames": 594598,
-          "totalsWins": 327422
+        "DEATHKNIGHT": {
+          "totalGames": 1169368,
+          "totalsWins": 683151
         },
-        "WARLOCK": {
-          "totalGames": 272361,
-          "totalsWins": 149648
+        "MAGE": {
+          "totalGames": 348038,
+          "totalsWins": 181984
         },
         "PALADIN": {
-          "totalGames": 408645,
-          "totalsWins": 229911
-        },
-        "ROGUE": {
-          "totalGames": 153736,
-          "totalsWins": 78290
+          "totalGames": 426114,
+          "totalsWins": 239810
         },
         "PRIEST": {
-          "totalGames": 305349,
-          "totalsWins": 166521
+          "totalGames": 321909,
+          "totalsWins": 175665
+        },
+        "WARLOCK": {
+          "totalGames": 279898,
+          "totalsWins": 153835
+        },
+        "DRUID": {
+          "totalGames": 71193,
+          "totalsWins": 34707
+        },
+        "ROGUE": {
+          "totalGames": 159811,
+          "totalsWins": 81419
         },
         "DEMONHUNTER": {
-          "totalGames": 24146,
-          "totalsWins": 11860
+          "totalGames": 24782,
+          "totalsWins": 12171
         }
       }
     }
